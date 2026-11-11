@@ -1,6 +1,6 @@
 # Digi-Laptop
 
-Web app operasional untuk DIGITAL LAPTOP JOMBANG: role pemilik/operator, cabang, produk, barcode dan stok, kasir, tiket servis, klaim garansi, serta katalog publik. App dibuat sebagai Vite SPA + PWA. Data bersama disimpan di Supabase; Vercel hanya menyajikan aplikasi.
+Web app operasional untuk DIGITAL LAPTOP JOMBANG: role pemilik/operator/teknisi, cabang, penerimaan borongan, barcode, QC dan repair, stok, kasir, tiket servis, klaim garansi, serta katalog publik. App dibuat sebagai Vite SPA + PWA. Data bersama disimpan di Supabase; Vercel hanya menyajikan aplikasi.
 
 ## Menjalankan di komputer
 
@@ -14,8 +14,15 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 ## Akun dan cabang
 
 - Buat akun pertama melalui **Buat akun**. Setelah konfirmasi email dan masuk, lengkapi penyiapan DIGITAL LAPTOP JOMBANG serta nama cabang yang benar.
-- Pemilik membuat undangan operator dari menu **Cabang & operator**. Operator membuat akun memakai email yang diundang; role operator mendapat akses kasir dan servis pada cabang yang dipilih.
-- Akun operator belum dibuat dari Supabase Admin API, jadi undangan tampil di aplikasi dan operator perlu mendaftar dengan email undangan tersebut.
+- Pemilik membuat undangan tim dari menu **Cabang & operator**. Pilih **Operator** untuk penerimaan, kasir, dan servis pelanggan; pilih **Teknisi** untuk halaman QC dan repair. Undangan membatasi anggota ke cabang yang dipilih.
+- Akun anggota tim belum dibuat dari Supabase Admin API, jadi undangan tampil di aplikasi dan operator/teknisi perlu mendaftar dengan email undangan tersebut.
+
+## Alur penerimaan, QC, dan repair
+
+1. Pemilik/operator membuat batch di **Penerimaan & barcode**. Laptop mendapatkan barcode unik per unit; lembar label dapat dicetak sekaligus sebelum laptop masuk rak. Produk selain laptop langsung masuk stok.
+2. Teknisi membuka **QC & repair**, memindai barcode, memasukkan serial/barcode supplier, dan mencatat hasil pemeriksaan. Unit laptop belum tersedia bagi kasir sampai lolos QC.
+3. Unit bermasalah masuk papan repair. Teknisi mencatat progres, memakai sparepart dari stok cabang, lalu mengirim unit ke QC akhir. Hanya unit yang lolos QC akhir masuk stok jual.
+4. Semua halaman mengacu pada data cabang yang sama. Perubahan penerimaan, QC, repair, dan stok disiarkan ke anggota tim secara langsung.
 
 ## Deploy ke Vercel
 
