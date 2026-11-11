@@ -96,6 +96,14 @@ a { color: inherit; }
 .card-value small { color: #68756b; font: 500 10px Inter, sans-serif; letter-spacing: 0; }
 .card-sub { margin-top: 4px; color: #859087; font-size: 8px; }
 .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(245px, .85fr); align-items: start; gap: 13px; margin-bottom: 13px; }
+.settings-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; margin-bottom: 13px; min-width: 0; }
+.team-table { width: 100%; table-layout: fixed; white-space: normal; }
+.team-table th:nth-child(1) { width: 27%; }
+.team-table th:nth-child(2) { width: 27%; }
+.team-table th:nth-child(3) { width: 17%; }
+.team-table th:nth-child(4) { width: 29%; }
+.team-table td { white-space: normal; overflow-wrap: anywhere; }
+.team-table .actions-cell { min-width: 0; }
 .panel { min-width: 0; padding: 14px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
 .panel-title { color: #233128; font: 700 11px Manrope, Inter, sans-serif; }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'digi-laptop-v19';
+const CACHE_NAME = 'digi-laptop-v20';
 const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/store-logo-transparent.png', '/login-laptops.webp', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
