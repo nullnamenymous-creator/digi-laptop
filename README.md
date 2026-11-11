@@ -26,10 +26,16 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 
 ## Pelanggan, supplier, dan keuangan
 
-- Barang baru dapat dibuat langsung di form **Penerimaan & barcode**; tidak perlu membuat produk lebih dulu. Pemasok bisa ditulis di form itu atau dikelola di halaman **Supplier**. Dua huruf awal nama pemasok dipakai sebagai awalan barcode, misalnya **AS-DL-…** untuk Asep.
-- Penjualan dapat dicatat lunas atau tempo. Sisa tempo masuk ke **Piutang**; pembayaran berikutnya memperbarui sisa saldo dan kas masuk.
-- Penerimaan barang mencatat nilai nota, pembayaran awal, dan jatuh tempo. Sisanya masuk **Hutang supplier**; pelunasan tercatat sebagai kas keluar.
+- Barang baru dapat dibuat langsung di form **Penerimaan & barcode**; tidak perlu membuat produk lebih dulu. Supplier terdaftar dipilih otomatis; supplier baru dapat dibuat di form yang sama. Dua huruf awal nama supplier dipakai sebagai awalan barcode, misalnya **AS-DL-…** untuk Asep.
+- Penjualan dapat dicatat lunas atau tempo. Piutang penjualan dan servis dikelola bersama kontak pada tab **Pelanggan**; pembayaran berikutnya memperbarui saldo dan kas masuk.
+- Penerimaan barang mencatat nilai nota, pembayaran awal, dan jatuh tempo. Sisa hutang tampil pada tab **Supplier**; pelunasan tercatat sebagai kas keluar.
 - Halaman **Keuangan** mencatat pengeluaran dan pemasukan lain, merangkum kas masuk/keluar bulan ini, serta menyediakan filter **Semua cabang** untuk pemilik. Operator hanya melihat cabangnya.
+
+## Akses berdasarkan role
+
+- **Pemilik:** ringkasan, penerimaan & barcode, produk & stok, garansi, pelanggan & supplier, keuangan, dan pengelolaan cabang/operator. Tidak ada menu kasir atau QC & repair.
+- **Operator:** ringkasan, penerimaan & barcode, produk & stok, kasir, servis pelanggan, garansi, pelanggan & supplier, dan keuangan untuk cabangnya.
+- **Teknisi:** hanya halaman QC & repair untuk cabangnya.
 
 ## Deploy ke Vercel
 
@@ -46,3 +52,5 @@ Setelah deploy pertama, tambahkan domain custom di **Project Settings → Domain
 - Foto kondisi awal dan bukti penyerahan servis diunggah ke bucket privat `service-evidence`.
 - PWA meng-cache kerangka app untuk membuka layar saat offline. Perubahan stok dan transaksi membutuhkan koneksi dan tidak disimpan antrean offline.
 - Portal publik tersedia di `/catalog` dan hanya menampilkan produk yang pemilik tandai **Publikasikan**.
+
+- Total nota barang masuk dihitung otomatis di database dari jumlah unit dikali harga modal per unit. Nilai sisa masuk ke saldo hutang supplier; harga modal per unit produk terdaftar otomatis terisi sebagai nilai awal.

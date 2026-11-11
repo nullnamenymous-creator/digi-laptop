@@ -145,8 +145,14 @@ tbody tr:hover td { background: #fafbf8; }
 
 /* Forms and dialogs */
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.form-grid.full { grid-column: 1 / -1; }
 .field { display: grid; gap: 5px; min-width: 0; }
 .field.full { grid-column: 1 / -1; }
+.contact-tabs { display: flex; gap: 0; margin: -5px 0 14px; border-bottom: 1px solid var(--line); }
+.contact-tab { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--body); font-size: 10px; font-weight: 600; }
+.contact-tab span { display: inline-grid; min-width: 19px; height: 19px; place-items: center; border: 1px solid var(--line); color: var(--muted); font: 9px 'DM Mono', monospace; }
+.contact-tab.active { border-bottom-color: var(--gold); color: var(--green-900); }
+.contact-tab.active span { border-color: var(--gold); color: var(--green-900); }
 .field label { color: #56645a; font-size: 8px; font-weight: 700; }
 .field input, .field select, .field textarea, .branch-select, .search, .status-select { outline: 0; }
 .field input, .field select, .field textarea { width: 100%; min-height: 35px; padding: 8px 9px; border: 1px solid #cbd4cc; background: #fff; color: #26342a; font-size: 9px; }
