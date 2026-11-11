@@ -126,7 +126,12 @@ async function subscribeOperationalUpdates() {
     }, 350);
   };
   const channel = supabase.channel(`digi-branch-${state.branchId}`);
-  for (const table of ['stock_items','stock_repairs','intake_batches']) channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `branch_id=eq.${state.branchId}` }, refresh);
+  for (const table of ['stock_items','stock_repairs','intake_batches','sales','service_tickets']) {
+    const subscription = { event: '*', schema: 'public', table };
+    if (!canManage()) subscription.filter = `branch_id=eq.${state.branchId}`;
+    channel.on('postgres_changes', subscription, refresh);
+  }
+  for (const table of ['products','suppliers','customers']) channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `organization_id=eq.${state.organization.id}` }, refresh);
   if (canManage()) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cash_transactions' }, refresh);
   else channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cash_transactions', filter: `branch_id=eq.${state.branchId}` }, refresh);
   state.realtimeChannel = channel.subscribe();
@@ -185,7 +190,11 @@ function productPhotoModal(product) {
 
 async function showPage(name) {
   const role = state.profile.role;
-  const allowed = role === 'technician' ? name === 'quality' : (name === 'dashboard' || (name === 'receiving' && canIntake()) || ['inventory','warranty','contacts','finance'].includes(name) || (['cashier','service'].includes(name) && role === 'operator') || (name === 'branches' && canManage()));
+  const allowed = role === 'technician'
+    ? name === 'quality'
+    : role === 'operator'
+      ? ['dashboard','receiving','inventory','cashier','service','warranty','contacts','finance'].includes(name)
+      : ['dashboard','receiving','inventory','warranty','contacts','finance','branches'].includes(name);
   if (!allowed) name = state.profile.role === 'technician' ? 'quality' : 'dashboard';
   state.page = name;
   if (!root.querySelector('.app')) showShell();

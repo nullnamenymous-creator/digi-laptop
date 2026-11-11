@@ -641,7 +641,7 @@ do $$
 declare v_table text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    foreach v_table in array array['stock_items','stock_repairs','intake_batches'] loop
+    foreach v_table in array array['stock_items','stock_repairs','intake_batches','sales','service_tickets','products','suppliers','customers'] loop
       if not exists (
         select 1 from pg_publication_tables
         where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_table
@@ -1075,6 +1075,13 @@ create policy product_images_upload on storage.objects for insert to authenticat
       and (storage.foldername(name))[1]=p.organization_id::text and (storage.foldername(name))[2]='products'
   )
 );
+drop policy if exists product_images_read_for_upsert on storage.objects;
+create policy product_images_read_for_upsert on storage.objects for select to authenticated using (
+  bucket_id='product-images' and exists (
+    select 1 from public.profiles p where p.id=auth.uid() and p.role in ('owner','operator')
+      and (storage.foldername(name))[1]=p.organization_id::text and (storage.foldername(name))[2]='products'
+  )
+);
 drop policy if exists product_images_update on storage.objects;
 create policy product_images_update on storage.objects for update to authenticated using (
   bucket_id='product-images' and exists (
@@ -1092,6 +1099,20 @@ create policy product_images_delete on storage.objects for delete to authenticat
   bucket_id='product-images' and exists (
     select 1 from public.profiles p where p.id=auth.uid() and p.role in ('owner','operator')
       and (storage.foldername(name))[1]=p.organization_id::text and (storage.foldername(name))[2]='products'
+  )
+);
+drop policy if exists service_evidence_update_member on storage.objects;
+create policy service_evidence_update_member on storage.objects for update to authenticated using (
+  bucket_id='service-evidence' and exists (
+    select 1 from public.profiles p where p.id=auth.uid()
+      and (storage.foldername(name))[1]=p.organization_id::text
+      and private.can_operate_branch(((storage.foldername(name))[2])::uuid)
+  )
+) with check (
+  bucket_id='service-evidence' and exists (
+    select 1 from public.profiles p where p.id=auth.uid()
+      and (storage.foldername(name))[1]=p.organization_id::text
+      and private.can_operate_branch(((storage.foldername(name))[2])::uuid)
   )
 );
 
