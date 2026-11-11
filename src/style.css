@@ -336,15 +336,17 @@ tbody tr:hover td { background: #f7faef; }
 .login-art::before { inset: 0; width: auto; height: auto; border: 0; transform: none; background: linear-gradient(180deg, #052c1d00 8%, #052c1d14 39%, #052c1de8 74%, #052c1df5 100%); }
 .login-art::after { top: auto; right: 0; bottom: 0; width: 4px; height: 96px; border: 0; transform: none; background: linear-gradient(180deg, #d4e95b, #38b84b); }
 .login-hero-photo { position: absolute; inset: 0 0 auto; width: 100%; height: 76%; object-fit: cover; object-position: center; }
-.login-art-inner { width: 100%; max-width: 440px; }
+.login-art-inner { width: 100%; max-width: 760px; }
 .login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
 .login-brand .brand-mark { width: 48px; height: 48px; }
 .login-brand .brand-text { display: flex; flex-direction: column; gap: 3px; color: #f4f6ea; }
 .login-brand .brand-text b { font: 800 15px/1.1 Manrope, sans-serif; letter-spacing: .12em; }
 .login-brand .brand-text b span { color: #d7e94e; }
 .login-brand .brand-text small { color: #bdcbbb; font-size: 8px; letter-spacing: .13em; }
-.login-art h1 { max-width: 410px; margin: 0 0 10px; font-size: clamp(32px, 3.5vw, 46px); }
-.login-art p { max-width: 370px; color: #c1cdc1; }
+.login-art h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(23px, 2.35vw, 34px); line-height: 1.18; letter-spacing: -.035em; }
+.login-art p { max-width: 540px; color: #c1cdc1; }
+.login-art .login-contact { font-size: 11px; line-height: 1.75; }
+.login-art .login-contact span { display: inline-block; margin-top: 3px; color: #dce969; font-weight: 700; letter-spacing: .035em; }
 .login-box .brand .brand-mark, .catalog-header .brand-mark { background: #fff; }
 .login-box-wrap { background: #f3f7ec; }
 .catalog-page { background: #f3f7ec; }
