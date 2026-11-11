@@ -66,6 +66,7 @@ create table if not exists public.stock_items (
   supplier text not null default '',
   quantity integer not null default 1 check (quantity >= 0),
   received_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
   warranty_until date,
   status text not null default 'available' check (status in ('available','sold','used_for_service','transferred')),
   created_by uuid references auth.users(id),
