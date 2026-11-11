@@ -172,27 +172,29 @@ create index if not exists service_parts_ticket_id_idx on public.service_parts(t
 create index if not exists service_parts_stock_item_id_idx on public.service_parts(stock_item_id);
 create index if not exists service_parts_created_by_idx on public.service_parts(created_by);
 
-create or replace function public.is_org_member(_organization_id uuid)
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.is_org_member(_organization_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.organization_id = _organization_id)
 $$;
 
-create or replace function public.is_owner(_organization_id uuid)
+create or replace function private.is_owner(_organization_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.organization_id = _organization_id and p.role = 'owner')
 $$;
 
-create or replace function public.can_access_branch(_branch_id uuid)
+create or replace function private.can_access_branch(_branch_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.profiles p where p.id = (select auth.uid()) and (p.role = 'owner' or p.branch_id = _branch_id))
 $$;
 
-revoke all on function public.is_org_member(uuid) from public;
-revoke all on function public.is_owner(uuid) from public;
-revoke all on function public.can_access_branch(uuid) from public;
-grant execute on function public.is_org_member(uuid), public.is_owner(uuid), public.can_access_branch(uuid) to authenticated;
+revoke all on function private.is_org_member(uuid), private.is_owner(uuid), private.can_access_branch(uuid) from public, anon;
+grant execute on function private.is_org_member(uuid), private.is_owner(uuid), private.can_access_branch(uuid) to authenticated;
 
-create or replace function public.bootstrap_owner(_store_name text, _branch_names text[])
+create or replace function private.bootstrap_owner(_store_name text, _branch_names text[])
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := (select auth.uid());
@@ -216,10 +218,14 @@ begin
   return v_org;
 end;
 $$;
-revoke all on function public.bootstrap_owner(text, text[]) from public;
+revoke all on function private.bootstrap_owner(text, text[]) from public, anon;
+grant execute on function private.bootstrap_owner(text, text[]) to authenticated;
+create or replace function public.bootstrap_owner(_store_name text, _branch_names text[])
+returns uuid language sql security invoker set search_path = '' as $$ select private.bootstrap_owner(_store_name, _branch_names) $$;
+revoke all on function public.bootstrap_owner(text, text[]) from public, anon;
 grant execute on function public.bootstrap_owner(text, text[]) to authenticated;
 
-create or replace function public.receive_stock(_branch_id uuid, _product_id uuid, _supplier text, _units jsonb)
+create or replace function private.receive_stock(_branch_id uuid, _product_id uuid, _supplier text, _units jsonb)
 returns integer language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := (select auth.uid()); v_org uuid; v_product public.products%rowtype; v_unit jsonb; v_count integer := 0; v_barcode text;
@@ -242,7 +248,11 @@ begin
   return v_count;
 end;
 $$;
-revoke all on function public.receive_stock(uuid,uuid,text,jsonb) from public;
+revoke all on function private.receive_stock(uuid,uuid,text,jsonb) from public, anon;
+grant execute on function private.receive_stock(uuid,uuid,text,jsonb) to authenticated;
+create or replace function public.receive_stock(_branch_id uuid, _product_id uuid, _supplier text, _units jsonb)
+returns integer language sql security invoker set search_path = '' as $$ select private.receive_stock(_branch_id, _product_id, _supplier, _units) $$;
+revoke all on function public.receive_stock(uuid,uuid,text,jsonb) from public, anon;
 grant execute on function public.receive_stock(uuid,uuid,text,jsonb) to authenticated;
 
 create or replace function public.accept_operator_invite()
@@ -262,7 +272,7 @@ $$;
 drop trigger if exists on_auth_user_accept_operator_invite on auth.users;
 create trigger on_auth_user_accept_operator_invite after insert on auth.users for each row execute procedure public.accept_operator_invite();
 
-create or replace function public.create_sale(_branch_id uuid, _customer_name text, _customer_type text, _payment_method text, _lines jsonb)
+create or replace function private.create_sale(_branch_id uuid, _customer_name text, _customer_type text, _payment_method text, _lines jsonb)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := (select auth.uid()); v_org uuid; v_sale uuid := gen_random_uuid(); v_total numeric(14,2) := 0;
@@ -270,7 +280,7 @@ declare
   v_line jsonb; v_product public.products%rowtype; v_stock public.stock_items%rowtype; v_qty integer; v_price numeric(14,2); v_left integer; v_take integer;
 begin
   select organization_id into v_org from public.profiles where id = v_uid;
-  if v_org is null or not public.can_access_branch(_branch_id) then raise exception 'Tidak punya akses ke cabang ini.'; end if;
+  if v_org is null or not private.can_access_branch(_branch_id) then raise exception 'Tidak punya akses ke cabang ini.'; end if;
   if _customer_type not in ('end_user','reseller') then raise exception 'Jenis harga tidak valid.'; end if;
   if _payment_method not in ('cash','transfer','qris','debit','other') then raise exception 'Metode pembayaran tidak valid.'; end if;
   if jsonb_typeof(_lines) <> 'array' or jsonb_array_length(_lines) = 0 then raise exception 'Keranjang masih kosong.'; end if;
@@ -308,16 +318,20 @@ begin
   return v_sale;
 end;
 $$;
-revoke all on function public.create_sale(uuid,text,text,text,jsonb) from public;
+revoke all on function private.create_sale(uuid,text,text,text,jsonb) from public, anon;
+grant execute on function private.create_sale(uuid,text,text,text,jsonb) to authenticated;
+create or replace function public.create_sale(_branch_id uuid, _customer_name text, _customer_type text, _payment_method text, _lines jsonb)
+returns uuid language sql security invoker set search_path = '' as $$ select private.create_sale(_branch_id, _customer_name, _customer_type, _payment_method, _lines) $$;
+revoke all on function public.create_sale(uuid,text,text,text,jsonb) from public, anon;
 grant execute on function public.create_sale(uuid,text,text,text,jsonb) to authenticated;
 
-create or replace function public.use_service_part(_ticket_id uuid, _stock_item_id uuid, _quantity integer)
+create or replace function private.use_service_part(_ticket_id uuid, _stock_item_id uuid, _quantity integer)
 returns void language plpgsql security definer set search_path = '' as $$
 declare v_ticket public.service_tickets%rowtype; v_stock public.stock_items%rowtype; v_uid uuid := (select auth.uid()); v_org uuid;
 begin
   select organization_id into v_org from public.profiles where id = v_uid;
   select * into v_ticket from public.service_tickets where id = _ticket_id and organization_id = v_org for update;
-  if not found or not public.can_access_branch(v_ticket.branch_id) then raise exception 'Tiket servis tidak ditemukan.'; end if;
+  if not found or not private.can_access_branch(v_ticket.branch_id) then raise exception 'Tiket servis tidak ditemukan.'; end if;
   select * into v_stock from public.stock_items where id = _stock_item_id and branch_id = v_ticket.branch_id and status = 'available' and quantity >= _quantity for update;
   if not found or _quantity < 1 then raise exception 'Stok sparepart tidak cukup.'; end if;
   update public.stock_items set quantity = quantity - _quantity, status = case when quantity - _quantity = 0 then 'used_for_service' else status end where id = v_stock.id;
@@ -327,17 +341,14 @@ begin
     values(v_org, v_ticket.branch_id, v_stock.product_id, v_stock.id, 'service_use', -_quantity, v_ticket.ticket_number, v_uid);
 end;
 $$;
-revoke all on function public.use_service_part(uuid,uuid,integer) from public;
+revoke all on function private.use_service_part(uuid,uuid,integer) from public, anon;
+grant execute on function private.use_service_part(uuid,uuid,integer) to authenticated;
+create or replace function public.use_service_part(_ticket_id uuid, _stock_item_id uuid, _quantity integer)
+returns void language sql security invoker set search_path = '' as $$ select private.use_service_part(_ticket_id, _stock_item_id, _quantity) $$;
+revoke all on function public.use_service_part(uuid,uuid,integer) from public, anon;
 grant execute on function public.use_service_part(uuid,uuid,integer) to authenticated;
 
 revoke execute on function public.accept_operator_invite() from public, anon, authenticated;
-revoke execute on function public.bootstrap_owner(text,text[]) from public, anon;
-revoke execute on function public.is_org_member(uuid) from public, anon;
-revoke execute on function public.is_owner(uuid) from public, anon;
-revoke execute on function public.can_access_branch(uuid) from public, anon;
-revoke execute on function public.receive_stock(uuid,uuid,text,jsonb) from public, anon;
-revoke execute on function public.create_sale(uuid,text,text,text,jsonb) from public, anon;
-revoke execute on function public.use_service_part(uuid,uuid,integer) from public, anon;
 
 alter table public.organizations enable row level security;
 alter table public.branches enable row level security;
@@ -361,47 +372,56 @@ grant select, insert, update, delete on public.service_tickets to authenticated;
 grant select (id, organization_id, name, brand, model, category, retail_price, is_public) on public.products to anon;
 
 drop policy if exists organizations_read_member on public.organizations;
-create policy organizations_read_member on public.organizations for select to authenticated using (public.is_org_member(id));
+create policy organizations_read_member on public.organizations for select to authenticated using (private.is_org_member(id));
 drop policy if exists organizations_update_owner on public.organizations;
-create policy organizations_update_owner on public.organizations for update to authenticated using (public.is_owner(id)) with check (public.is_owner(id));
+create policy organizations_update_owner on public.organizations for update to authenticated using (private.is_owner(id)) with check (private.is_owner(id));
 drop policy if exists branches_read_member on public.branches;
-create policy branches_read_member on public.branches for select to authenticated using (public.is_org_member(organization_id));
+create policy branches_read_member on public.branches for select to authenticated using (private.is_org_member(organization_id));
 drop policy if exists branches_owner_manage on public.branches;
-create policy branches_add_owner on public.branches for insert to authenticated with check (public.is_owner(organization_id));
-create policy branches_update_owner on public.branches for update to authenticated using (public.is_owner(organization_id)) with check (public.is_owner(organization_id));
-create policy branches_delete_owner on public.branches for delete to authenticated using (public.is_owner(organization_id));
+drop policy if exists branches_add_owner on public.branches;
+drop policy if exists branches_update_owner on public.branches;
+drop policy if exists branches_delete_owner on public.branches;
+create policy branches_add_owner on public.branches for insert to authenticated with check (private.is_owner(organization_id));
+create policy branches_update_owner on public.branches for update to authenticated using (private.is_owner(organization_id)) with check (private.is_owner(organization_id));
+create policy branches_delete_owner on public.branches for delete to authenticated using (private.is_owner(organization_id));
 drop policy if exists profiles_read_org on public.profiles;
-create policy profiles_read_org on public.profiles for select to authenticated using (public.is_org_member(organization_id));
+create policy profiles_read_org on public.profiles for select to authenticated using (private.is_org_member(organization_id));
 drop policy if exists invites_owner_manage on public.team_invites;
-create policy invites_owner_manage on public.team_invites for all to authenticated using (public.is_owner(organization_id)) with check (public.is_owner(organization_id));
+create policy invites_owner_manage on public.team_invites for all to authenticated using (private.is_owner(organization_id)) with check (private.is_owner(organization_id));
 drop policy if exists products_read_org on public.products;
-create policy products_read_org on public.products for select to authenticated using (public.is_org_member(organization_id));
+create policy products_read_org on public.products for select to authenticated using (private.is_org_member(organization_id));
 drop policy if exists products_public_catalog on public.products;
 create policy products_public_catalog on public.products for select to anon using (is_public);
 drop policy if exists products_owner_manage on public.products;
-create policy products_add_owner on public.products for insert to authenticated with check (public.is_owner(organization_id));
-create policy products_update_owner on public.products for update to authenticated using (public.is_owner(organization_id)) with check (public.is_owner(organization_id));
-create policy products_delete_owner on public.products for delete to authenticated using (public.is_owner(organization_id));
+drop policy if exists products_add_owner on public.products;
+drop policy if exists products_update_owner on public.products;
+drop policy if exists products_delete_owner on public.products;
+create policy products_add_owner on public.products for insert to authenticated with check (private.is_owner(organization_id));
+create policy products_update_owner on public.products for update to authenticated using (private.is_owner(organization_id)) with check (private.is_owner(organization_id));
+create policy products_delete_owner on public.products for delete to authenticated using (private.is_owner(organization_id));
 drop policy if exists stock_read_branch on public.stock_items;
-create policy stock_read_branch on public.stock_items for select to authenticated using (public.can_access_branch(branch_id));
+create policy stock_read_branch on public.stock_items for select to authenticated using (private.can_access_branch(branch_id));
 drop policy if exists stock_owner_manage on public.stock_items;
-create policy stock_add_owner on public.stock_items for insert to authenticated with check (public.is_owner(organization_id));
-create policy stock_update_owner on public.stock_items for update to authenticated using (public.is_owner(organization_id)) with check (public.is_owner(organization_id));
-create policy stock_delete_owner on public.stock_items for delete to authenticated using (public.is_owner(organization_id));
+drop policy if exists stock_add_owner on public.stock_items;
+drop policy if exists stock_update_owner on public.stock_items;
+drop policy if exists stock_delete_owner on public.stock_items;
+create policy stock_add_owner on public.stock_items for insert to authenticated with check (private.is_owner(organization_id));
+create policy stock_update_owner on public.stock_items for update to authenticated using (private.is_owner(organization_id)) with check (private.is_owner(organization_id));
+create policy stock_delete_owner on public.stock_items for delete to authenticated using (private.is_owner(organization_id));
 drop policy if exists movements_read_branch on public.stock_movements;
-create policy movements_read_branch on public.stock_movements for select to authenticated using (public.can_access_branch(branch_id));
+create policy movements_read_branch on public.stock_movements for select to authenticated using (private.can_access_branch(branch_id));
 drop policy if exists sales_read_branch on public.sales;
-create policy sales_read_branch on public.sales for select to authenticated using (public.can_access_branch(branch_id));
+create policy sales_read_branch on public.sales for select to authenticated using (private.can_access_branch(branch_id));
 drop policy if exists sale_items_read_branch on public.sale_items;
-create policy sale_items_read_branch on public.sale_items for select to authenticated using (exists (select 1 from public.sales s where s.id = sale_id and public.can_access_branch(s.branch_id)));
+create policy sale_items_read_branch on public.sale_items for select to authenticated using (exists (select 1 from public.sales s where s.id = sale_id and private.can_access_branch(s.branch_id)));
 drop policy if exists services_read_branch on public.service_tickets;
-create policy services_read_branch on public.service_tickets for select to authenticated using (public.can_access_branch(branch_id));
+create policy services_read_branch on public.service_tickets for select to authenticated using (private.can_access_branch(branch_id));
 drop policy if exists services_add_branch on public.service_tickets;
-create policy services_add_branch on public.service_tickets for insert to authenticated with check (public.can_access_branch(branch_id) and public.is_org_member(organization_id));
+create policy services_add_branch on public.service_tickets for insert to authenticated with check (private.can_access_branch(branch_id) and private.is_org_member(organization_id));
 drop policy if exists services_update_branch on public.service_tickets;
-create policy services_update_branch on public.service_tickets for update to authenticated using (public.can_access_branch(branch_id)) with check (public.can_access_branch(branch_id));
+create policy services_update_branch on public.service_tickets for update to authenticated using (private.can_access_branch(branch_id)) with check (private.can_access_branch(branch_id));
 drop policy if exists service_parts_read_branch on public.service_parts;
-create policy service_parts_read_branch on public.service_parts for select to authenticated using (exists (select 1 from public.service_tickets t where t.id = ticket_id and public.can_access_branch(t.branch_id)));
+create policy service_parts_read_branch on public.service_parts for select to authenticated using (exists (select 1 from public.service_tickets t where t.id = ticket_id and private.can_access_branch(t.branch_id)));
 
 create or replace view public.public_catalog with (security_invoker = true) as
 select id, name, brand, model, category, retail_price
@@ -413,9 +433,13 @@ values ('service-evidence', 'service-evidence', false, 5242880, array['image/jpe
 on conflict (id) do nothing;
 drop policy if exists service_evidence_read_member on storage.objects;
 create policy service_evidence_read_member on storage.objects for select to authenticated using (
-  bucket_id = 'service-evidence' and exists (select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'owner' or ((storage.foldername(name))[1] = p.organization_id::text and public.can_access_branch(((storage.foldername(name))[2])::uuid))))
+  bucket_id = 'service-evidence' and exists (select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'owner' or ((storage.foldername(name))[1] = p.organization_id::text and private.can_access_branch(((storage.foldername(name))[2])::uuid))))
 );
 drop policy if exists service_evidence_upload_member on storage.objects;
 create policy service_evidence_upload_member on storage.objects for insert to authenticated with check (
-  bucket_id = 'service-evidence' and exists (select 1 from public.profiles p where p.id = auth.uid() and (storage.foldername(name))[1] = p.organization_id::text and public.can_access_branch(((storage.foldername(name))[2])::uuid))
+  bucket_id = 'service-evidence' and exists (select 1 from public.profiles p where p.id = auth.uid() and (storage.foldername(name))[1] = p.organization_id::text and private.can_access_branch(((storage.foldername(name))[2])::uuid))
 );
+
+drop function if exists public.is_org_member(uuid);
+drop function if exists public.is_owner(uuid);
+drop function if exists public.can_access_branch(uuid);
