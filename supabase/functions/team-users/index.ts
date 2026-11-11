@@ -39,6 +39,18 @@ Deno.serve(async (req: Request) => {
     const action = String(body?.action || "");
     const organizationId = ownerProfile.organization_id;
 
+    if (action === "update-owner-account") {
+      const email = String(body?.email || "").trim().toLowerCase();
+      const password = typeof body?.password === "string" ? body.password : "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
+      if (password && (password.length < 8 || password.length > 128)) return reply({ error: "Password baru harus 8–128 karakter." }, 400);
+      const updates: { email: string; email_confirm: boolean; password?: string } = { email, email_confirm: true };
+      if (password) updates.password = password;
+      const { error: updateError } = await admin.auth.admin.updateUserById(authData.user.id, updates);
+      if (updateError) throw updateError;
+      return reply({ ok: true, email });
+    }
+
     if (action === "list") {
       const [{ data: profiles, error: listError }, { data: authUsers, error: authUsersError }] = await Promise.all([
         admin.from("profiles").select("id,full_name,role,branch_id,created_at").eq("organization_id", organizationId).order("full_name"),
