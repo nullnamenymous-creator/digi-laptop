@@ -24,6 +24,13 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 3. Unit bermasalah masuk papan repair. Teknisi mencatat progres, memakai sparepart dari stok cabang, lalu mengirim unit ke QC akhir. Hanya unit yang lolos QC akhir masuk stok jual.
 4. Semua halaman mengacu pada data cabang yang sama. Perubahan penerimaan, QC, repair, dan stok disiarkan ke anggota tim secara langsung.
 
+## Pelanggan, supplier, dan keuangan
+
+- Barang baru dapat dibuat langsung di form **Penerimaan & barcode**; tidak perlu membuat produk lebih dulu. Pemasok bisa ditulis di form itu atau dikelola di halaman **Supplier**. Dua huruf awal nama pemasok dipakai sebagai awalan barcode, misalnya **AS-DL-…** untuk Asep.
+- Penjualan dapat dicatat lunas atau tempo. Sisa tempo masuk ke **Piutang**; pembayaran berikutnya memperbarui sisa saldo dan kas masuk.
+- Penerimaan barang mencatat nilai nota, pembayaran awal, dan jatuh tempo. Sisanya masuk **Hutang supplier**; pelunasan tercatat sebagai kas keluar.
+- Halaman **Keuangan** mencatat pengeluaran dan pemasukan lain, merangkum kas masuk/keluar bulan ini, serta menyediakan filter **Semua cabang** untuk pemilik. Operator hanya melihat cabangnya.
+
 ## Deploy ke Vercel
 
 Import repo GitHub `nullnamenymous-creator/digi-laptop` sebagai project Vercel. Gunakan preset **Vite**, perintah build `npm run build`, dan output directory `dist`. Tambahkan environment variables berikut pada Vercel (Production, Preview, dan Development):
