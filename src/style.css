@@ -347,6 +347,7 @@ tbody tr:hover td { background: #f7faef; }
 .login-art p { max-width: 540px; color: #c1cdc1; }
 .login-art .login-contact { font-size: 11px; line-height: 1.75; }
 .login-art .login-contact span { display: inline-block; margin-top: 3px; color: #dce969; font-weight: 700; letter-spacing: .035em; }
+.login-box .brand-text b.login-brand-name { font-size: 15px; letter-spacing: .07em; }
 .login-box .brand .brand-mark, .catalog-header .brand-mark { background: #fff; }
 .login-box-wrap { background: #f3f7ec; }
 .catalog-page { background: #f3f7ec; }
