@@ -30,6 +30,9 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 - Penjualan dapat dicatat lunas atau tempo. Piutang penjualan dan servis dikelola bersama kontak pada tab **Pelanggan**; pembayaran berikutnya memperbarui saldo dan kas masuk.
 - Penerimaan barang mencatat nilai nota, pembayaran awal, dan jatuh tempo. Sisa hutang tampil pada tab **Supplier**; pelunasan tercatat sebagai kas keluar.
 - Halaman **Keuangan** mencatat pengeluaran dan pemasukan lain, merangkum kas masuk/keluar bulan ini, serta menyediakan filter **Semua cabang** untuk pemilik. Operator hanya melihat cabangnya.
+- Produk baru wajib memiliki foto. Foto dapat dipilih dari file PC/galeri ponsel atau diambil langsung dengan kamera; produk lama dapat dilengkapi dari tombol **Foto/Ganti foto**. Gambar tersimpan di Supabase Storage dan dipakai di stok serta portal katalog.
+- Beranda menampilkan laptop terlaris dan stok laptop siap jual per merek berdasarkan cabang terpilih. Daftar produk mendukung filter merek dan urutan harga terendah/tertinggi.
+- Arah visual aplikasi **Graphite Pro** memakai logo toko di area merek dan ikon instalasi PWA.
 
 ## Akses berdasarkan role
 

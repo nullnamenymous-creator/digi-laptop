@@ -1,5 +1,5 @@
-const CACHE_NAME = 'digi-laptop-v6';
-const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'digi-laptop-v7';
+const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/store-logo.jpg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));
