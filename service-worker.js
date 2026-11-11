@@ -1,4 +1,4 @@
-const CACHE_NAME = 'digi-laptop-v3';
+const CACHE_NAME = 'digi-laptop-v4';
 const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -18,6 +18,7 @@ self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
   if (requestUrl.pathname.startsWith('/rest/') || requestUrl.pathname.startsWith('/auth/') || requestUrl.pathname.startsWith('/storage/')) return;
+  if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/@vite/') || requestUrl.pathname.startsWith('/node_modules/') || requestUrl.pathname.startsWith('/@id/') || requestUrl.pathname.startsWith('/@fs/')) return;
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
       if (response.ok) {
