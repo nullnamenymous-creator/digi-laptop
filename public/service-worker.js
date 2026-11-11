@@ -1,5 +1,5 @@
-const CACHE_NAME = 'digi-laptop-v7';
-const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/store-logo.jpg'];
+const CACHE_NAME = 'digi-laptop-v16';
+const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/store-logo-transparent.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));
@@ -20,12 +20,16 @@ self.addEventListener('fetch', (event) => {
   if (requestUrl.pathname.startsWith('/rest/') || requestUrl.pathname.startsWith('/auth/') || requestUrl.pathname.startsWith('/storage/')) return;
   if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/@vite/') || requestUrl.pathname.startsWith('/node_modules/') || requestUrl.pathname.startsWith('/@id/') || requestUrl.pathname.startsWith('/@fs/')) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+    caches.match(event.request).then(async (cached) => {
+      if (cached) return cached;
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) { const copy = response.clone(); caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)); }
+        return response;
+      } catch (error) {
+        if (event.request.mode === 'navigate') return (await caches.match('/index.html')) || (await caches.match('/'));
+        throw error;
       }
-      return response;
-    }))
+    })
   );
 });
