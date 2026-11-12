@@ -451,6 +451,32 @@ tbody tr:hover td { background: #f7faef; }
 .catalog-art { height: 152px; padding: 9px; }
 .catalog-art img { width: 100%; height: 100%; object-fit: contain; }
 .catalog-art span { color: #88949a; font-size: 8px; }
+
+/* Branch color themes: only update the active branch's visual palette. */
+.app { --green-950: #073b25; --green-900: #0c542e; --green-800: #16813a; --green-700: #22a447; --gold: #f2cf45; --line-dark: #27603c; }
+.app[data-branch-theme="blue"] { --green-950: #10243f; --green-900: #173f72; --green-800: #245da8; --green-700: #3479cf; --gold: #8dd4ff; --line-dark: #315d92; }
+.app[data-branch-theme="amber"] { --green-950: #432b0c; --green-900: #79520e; --green-800: #ae780b; --green-700: #ce9818; --gold: #f5d879; --line-dark: #896b2b; }
+.app[data-branch-theme="purple"] { --green-950: #291c43; --green-900: #493277; --green-800: #6548a0; --green-700: #8062c2; --gold: #c9afff; --line-dark: #64528a; }
+.app .sidebar { background: linear-gradient(155deg, var(--green-950) 0%, var(--green-900) 64%, var(--green-950) 100%); border-right-color: var(--line-dark); }
+.app .nav-button:hover { background: var(--green-800); }
+.app .nav-button.active { border-left-color: var(--gold); background: var(--green-800); }
+.app .nav-button.active .nav-icon, .app .brand-text b span { color: var(--gold); }
+.app .side-note { background: color-mix(in srgb, var(--green-950) 76%, var(--green-900)); border-color: var(--line-dark); }
+.app .profile { border-color: var(--line-dark); }
+.app .avatar { background: var(--green-800); }
+.app .topbar { background: var(--green-900); border-color: var(--line-dark); }
+.app .online-label i { background: var(--gold); }
+.app .branch-select { border-color: var(--green-700); color: var(--green-950); }
+.app .eyebrow { color: var(--green-800); }
+.app .card-icon { border-color: var(--line); background: color-mix(in srgb, var(--green-700) 9%, white); color: var(--green-900); }
+.app th { background: color-mix(in srgb, var(--green-700) 7%, white); border-color: var(--line); color: var(--body); }
+.app .btn.primary { border-color: var(--green-900); background: var(--green-900); }
+.app .btn.primary:hover { border-color: var(--green-700); background: var(--green-700); }
+.app .toast { background: var(--green-900); }
+.app .link-button, .app .quick-link:hover b, .app .contact-tab.active, .app .contact-tab.active span, .app .finder-open, .app .finder-availability b { color: var(--green-800); }
+.app .insight-tag { border-color: var(--line); color: var(--green-900); }
+.app .laptop-stock-total { background: var(--green-900); }
+
 @media (max-width: 760px) {
   .dashboard-insights { grid-template-columns: 1fr; }
   .product-detail-content { grid-template-columns: 1fr; }
