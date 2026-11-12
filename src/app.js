@@ -4,7 +4,7 @@ import { hasBackendConfig, supabase } from './supabase.js';
 import './style.css';
 
 const root = document.querySelector('#app');
-const state = { user: null, profile: null, organization: null, branches: [], branchId: '', financeBranch: 'all', page: 'dashboard', products: [], cart: [], authMode: 'login', realtimeChannel: null, refreshTimer: null };
+const state = { user: null, profile: null, organization: null, branches: [], branchId: '', financeBranch: 'all', page: 'dashboard', products: [], cart: [], realtimeChannel: null, refreshTimer: null };
 const money = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
 const productImageUrl = (path) => path ? supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl : '';
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -42,9 +42,7 @@ function configurationScreen() {
 }
 
 function authScreen(message = '') {
-  const signup = state.authMode === 'signup';
-  root.innerHTML = `<main class="login-page"><section class="login-art"><img class="login-hero-photo" src="/login-laptops.webp" alt="Tiga laptop bisnis untuk DIGITAL LAPTOP JOMBANG" /><div class="login-art-inner"><div class="login-brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><form class="login-box" id="auth-form"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div>${signup ? '<h2>Buat akun Digi-Laptop</h2><p>Pembuatan akun pemilik pertama. Operator dan QC dibuat pemilik dari Pengaturan Aplikasi.</p>' : ''}${message ? `<div class="notice error">${esc(message)}</div>` : ''}${signup ? `<div class="field"><label>Nama lengkap</label><input name="full_name" autocomplete="name" required /></div>` : ''}<div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required /></div><div class="field"><label>Password</label><input name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="8" required /></div><button class="btn primary" type="submit">${signup ? 'Buat akun' : 'Masuk'}</button><div class="login-switch">${signup ? 'Sudah punya akun?' : 'Pemilik pertama kali?'} <button class="text-button" type="button" id="auth-switch">${signup ? 'Masuk' : 'Buat akun'}</button></div></form></section></main>`;
-  document.querySelector('#auth-switch').addEventListener('click', () => { state.authMode = signup ? 'login' : 'signup'; authScreen(); });
+  root.innerHTML = `<main class="login-page"><section class="login-art"><img class="login-hero-photo" src="/login-laptops.webp" alt="Tiga laptop bisnis untuk DIGITAL LAPTOP JOMBANG" /><div class="login-art-inner"><div class="login-brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><form class="login-box" id="auth-form"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div>${message ? `<div class="notice error">${esc(message)}</div>` : ''}<div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required /></div><div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" minlength="8" required /></div><button class="btn primary" type="submit">Masuk</button><div class="login-switch">Belum punya akun? Hubungi admin toko untuk dibuatkan.</div></form></section></main>`;
   document.querySelector('#auth-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -53,18 +51,10 @@ function authScreen(message = '') {
     const button = event.currentTarget.querySelector('button[type="submit"]');
     button.disabled = true;
     try {
-      if (signup) {
-        const fullName = String(form.get('full_name')).trim();
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName }, emailRedirectTo: location.origin } });
-        if (error) throw error;
-        if (data.session) { state.user = data.user; await afterAuth(); }
-        else authScreen('Akun dibuat. Cek email untuk konfirmasi, lalu masuk kembali.');
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        state.user = data.user;
-        await afterAuth();
-      }
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      state.user = data.user;
+      await afterAuth();
     } catch (error) { authScreen(error.message || 'Tidak bisa masuk. Periksa email dan password.'); }
   });
 }
