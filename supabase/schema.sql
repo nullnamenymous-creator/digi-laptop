@@ -933,13 +933,17 @@ alter table public.cash_transactions enable row level security;
 grant select,insert,update,delete on public.suppliers,public.customers to authenticated;
 grant select on public.cash_transactions to authenticated;
 drop policy if exists suppliers_read_member on public.suppliers;
-create policy suppliers_read_member on public.suppliers for select to authenticated using (private.is_org_member(organization_id) and exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.role in ('owner','operator')));
 drop policy if exists suppliers_manage_operator on public.suppliers;
-create policy suppliers_manage_operator on public.suppliers for all to authenticated using (private.is_owner(organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=organization_id and p.role='operator') ) with check (private.is_owner(organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=organization_id and p.role='operator'));
+create policy suppliers_read_member on public.suppliers for select to authenticated using (private.is_org_member(suppliers.organization_id) and exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=suppliers.organization_id and p.role in ('owner','operator')));
+create policy suppliers_add_member on public.suppliers for insert to authenticated with check (private.is_owner(suppliers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=suppliers.organization_id and p.role='operator'));
+create policy suppliers_update_member on public.suppliers for update to authenticated using (private.is_owner(suppliers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=suppliers.organization_id and p.role='operator')) with check (private.is_owner(suppliers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=suppliers.organization_id and p.role='operator'));
+create policy suppliers_delete_member on public.suppliers for delete to authenticated using (private.is_owner(suppliers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=suppliers.organization_id and p.role='operator'));
 drop policy if exists customers_read_member on public.customers;
-create policy customers_read_member on public.customers for select to authenticated using (private.is_org_member(organization_id) and exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.role in ('owner','operator')));
 drop policy if exists customers_manage_operator on public.customers;
-create policy customers_manage_operator on public.customers for all to authenticated using (private.is_owner(organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=organization_id and p.role='operator')) with check (private.is_owner(organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=organization_id and p.role='operator'));
+create policy customers_read_member on public.customers for select to authenticated using (private.is_org_member(customers.organization_id) and exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=customers.organization_id and p.role in ('owner','operator')));
+create policy customers_add_member on public.customers for insert to authenticated with check (private.is_owner(customers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=customers.organization_id and p.role='operator'));
+create policy customers_update_member on public.customers for update to authenticated using (private.is_owner(customers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=customers.organization_id and p.role='operator')) with check (private.is_owner(customers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=customers.organization_id and p.role='operator'));
+create policy customers_delete_member on public.customers for delete to authenticated using (private.is_owner(customers.organization_id) or exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.organization_id=customers.organization_id and p.role='operator'));
 drop policy if exists cash_transactions_read_branch on public.cash_transactions;
 create policy cash_transactions_read_branch on public.cash_transactions for select to authenticated using (private.can_operate_branch(branch_id));
 drop policy if exists intake_batches_read_branch on public.intake_batches;
@@ -2569,6 +2573,11 @@ $$;
 
 revoke all on function public.restore_digi_laptop_backup(jsonb) from public, anon;
 grant execute on function public.restore_digi_laptop_backup(jsonb) to authenticated;
+
+-- Final API privileges: internal helpers are not exposed to anonymous users.
+revoke usage on schema private from public, anon;
+grant usage on schema private to authenticated, service_role;
+revoke all on function private.copy_intake_unit_cost() from public, anon, authenticated;
 alter function public.restore_digi_laptop_backup(jsonb) set schema private;
 
 create or replace function public.restore_digi_laptop_backup(_backup jsonb)
