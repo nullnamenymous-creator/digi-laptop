@@ -6,6 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const OWNER_ADMIN_EMAIL = "admin@digital.laptop";
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -40,15 +41,15 @@ Deno.serve(async (req: Request) => {
     const organizationId = ownerProfile.organization_id;
 
     if (action === "update-owner-account") {
-      const email = String(body?.email || "").trim().toLowerCase();
+      const requestedEmail = String(body?.email || "").trim().toLowerCase();
       const password = typeof body?.password === "string" ? body.password : "";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
+      if (requestedEmail !== OWNER_ADMIN_EMAIL) return reply({ error: `Email admin ditetapkan ke ${OWNER_ADMIN_EMAIL}.` }, 400);
       if (password && (password.length < 8 || password.length > 128)) return reply({ error: "Password baru harus 8–128 karakter." }, 400);
-      const updates: { email: string; email_confirm: boolean; password?: string } = { email, email_confirm: true };
+      const updates: { email: string; email_confirm: boolean; password?: string } = { email: OWNER_ADMIN_EMAIL, email_confirm: true };
       if (password) updates.password = password;
       const { error: updateError } = await admin.auth.admin.updateUserById(authData.user.id, updates);
       if (updateError) throw updateError;
-      return reply({ ok: true, email });
+      return reply({ ok: true, email: OWNER_ADMIN_EMAIL });
     }
 
     if (action === "list") {
