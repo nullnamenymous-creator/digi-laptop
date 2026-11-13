@@ -378,6 +378,21 @@ async function qcResultsPanel() {
     waiting_parts: 'Menunggu sparepart', not_sellable: 'Karantina / retur',
     scrap: 'Rusak parah / scrap', pending_qc: 'Menunggu QC akhir', sold: 'Terjual', transferred: 'Dalam mutasi'
   };
+  const repairCosts = new Map();
+  if (canManage()) {
+    const jobs = await fetchAllRows(supabase.from('stock_repairs')
+      .select('id,stock_item_id,labor_cost,stock_repair_parts(id,product_name,quantity,cost,external_supplier,purchased_on,invoice_number,paid_at)')
+      .eq('branch_id', state.branchId));
+    for (const job of jobs) {
+      const costs = repairCosts.get(job.stock_item_id) || { total: 0, parts: [] };
+      costs.total += Number(job.labor_cost || 0);
+      for (const part of job.stock_repair_parts || []) {
+        costs.total += Number(part.cost || 0);
+        costs.parts.push({ ...part, repairId: job.id });
+      }
+      repairCosts.set(job.stock_item_id, costs);
+    }
+  }
   const names = new Map();
   if (canManage()) {
     const profiles = await fetchAllRows(supabase.from('profiles').select('id,full_name'));
@@ -386,9 +401,9 @@ async function qcResultsPanel() {
   return `<section class="panel table-panel" style="margin-top:14px">
     <div class="panel-head"><div><div class="panel-title">Hasil pemeriksaan QC</div><div class="panel-sub">Catatan pemeriksaan terakhir dan status terkini setiap unit.</div></div>
     <label>Status <select id="qc-result-status" class="status-select"><option value="">Semua status</option>${Object.entries(labels).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div>
-    <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th><th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
-    ${results.map((item) => `<tr data-qc-result="${esc(item.status)}"><td><b>${esc(item.barcode)}</b><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div></td><td><span class="pill">${esc(labels[item.status] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td><td>${new Date(item.qc_at).toLocaleString('id-ID')}${canManage() ? `<div class="field-hint">${esc(names.get(item.qc_by) || 'Pemeriksa tidak tercatat')}</div>` : ''}</td></tr>`).join('')}
-    <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="4"><div class="empty">Belum ada hasil QC untuk status ini.</div></td></tr></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${canManage() ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
+    ${results.map((item) => `<tr data-qc-result="${esc(item.status)}"><td><b>${esc(item.barcode)}</b><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div></td><td><span class="pill">${esc(labels[item.status] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${new Date(item.qc_at).toLocaleString('id-ID')}${canManage() ? `<div class="field-hint">${esc(names.get(item.qc_by) || 'Pemeriksa tidak tercatat')}</div>` : ''}</td></tr>`).join('')}
+    <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${canManage() ? 5 : 4}"><div class="empty">Belum ada hasil QC untuk status ini.</div></td></tr></tbody></table></div>
   </section>`;
 }
 
@@ -410,11 +425,12 @@ async function qualityPage(page) {
   if (canManage()) {
     page.innerHTML = `${header('Laporan QC Teknisi', 'Pantau hasil pemeriksaan dan status unit Cabang Pusat.')}${resultsPanel}`;
     bindQcResultFilter(page);
+    bindExternalPartPayments(page);
     return;
   }
   const [queue, repairs] = await Promise.all([
     fetchAllRows(supabase.from('stock_items').select('id,barcode,supplier_barcode,serial_number,supplier,created_at,qc_stage,acquisition_cost,products(name,sku,brand,model)').eq('branch_id', state.branchId).eq('status', 'pending_qc').order('created_at')),
-    fetchAllRows(supabase.from('stock_repairs').select('id,stock_item_id,issue,status,resolution,labor_cost,stock_repair_parts(cost),updated_at,stock_items(barcode,serial_number,acquisition_cost,products(name,sku))').eq('branch_id', state.branchId).in('status', ['repair_needed','repairing','waiting_parts','pending_final_qc']).order('updated_at', { ascending: false })),
+    fetchAllRows(supabase.from('stock_repairs').select('id,stock_item_id,issue,status,resolution,labor_cost,stock_repair_parts(id,product_name,quantity,cost,external_supplier,purchased_on,invoice_number,paid_at),updated_at,stock_items(barcode,serial_number,acquisition_cost,products(name,sku))').eq('branch_id', state.branchId).in('status', ['repair_needed','repairing','waiting_parts','pending_final_qc']).order('updated_at', { ascending: false })),
   ]);
   const statusLabel = { repair_needed: 'Perlu repair', repairing: 'Sedang diperbaiki', waiting_parts: 'Menunggu sparepart', pending_final_qc: 'Menunggu QC akhir' };
   page.innerHTML = `${header('QC & repair', 'Antrean teknisi untuk pemeriksaan laptop masuk, perbaikan, dan persetujuan stok jual.')}
@@ -422,7 +438,7 @@ async function qualityPage(page) {
     <div class="notice">Lulus QC awal → siap jual. Jika perlu perbaikan atau sparepart, lanjutkan repair lalu kirim ke QC akhir. Unit baru siap jual setelah lulus. Rusak parah → karantina atau scrap.</div>
     <section class="panel scan-panel"><div><div class="panel-title">Mulai dari hasil scan</div><div class="panel-sub">Pindai barcode label dengan scanner atau kamera untuk membuka unitnya.</div></div><form id="qc-scan" class="scan-form"><input name="barcode" placeholder="Scan / ketik DL-…" autocomplete="off" required /><button class="btn" type="button" id="qc-camera">▧ Kamera</button><button class="btn primary" type="submit">Buka QC</button></form><div id="qc-scanner"></div></section>
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Unit menunggu QC</div><div class="panel-sub">Unit yang lulus langsung tersinkron sebagai stok tersedia untuk kasir dan katalog.</div></div><input class="search" id="qc-search" placeholder="Cari barcode, serial, produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE / SERIAL</th><th>PRODUK</th><th>TAHAP</th><th>PEMASOK</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="qc-rows">${queue.map((item) => `<tr><td class="product-name">${esc(item.barcode)}<div class="field-hint">${esc(item.serial_number || 'Serial belum dicatat')}</div></td><td>${esc(item.products?.name || 'Produk')}<div class="field-hint">${esc(`${item.products?.brand || ''} ${item.products?.model || ''}`)}</div></td><td><span class="pill ${item.qc_stage === 'final' ? 'blue' : 'warn'}">${item.qc_stage === 'final' ? 'QC akhir' : 'QC awal'}</span></td><td>${esc(item.supplier || '—')}</td><td>${new Date(item.created_at).toLocaleDateString('id-ID')}</td><td><button class="small-btn" data-qc="${item.id}">Periksa unit</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty"><b>Antrean QC kosong</b>Unit yang baru diterima akan muncul di sini setelah barcode dicetak.</div></td></tr>'}</tbody></table></div></section>
-    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Papan repair</div><div class="panel-sub">Catatan kerusakan, progres teknisi, sparepart, dan ongkos repair melekat pada barcode laptop.</div></div></div><div class="table-wrap"><table><thead><tr><th>UNIT</th><th>MASALAH / CATATAN</th><th>MODAL TERKUMPUL</th><th>STATUS</th><th>DIUBAH</th><th>AKSI TEKNISI</th></tr></thead><tbody>${repairs.map((repair) => {const partCost=(repair.stock_repair_parts||[]).reduce((sum,line)=>sum+Number(line.cost||0),0),unitCost=Number(repair.stock_items?.acquisition_cost||0)+partCost+Number(repair.labor_cost||0);return `<tr><td class="product-name">${esc(repair.stock_items?.barcode || 'Unit')}<div class="field-hint">${esc(repair.stock_items?.products?.name || 'Laptop')} · ${esc(repair.stock_items?.serial_number || 'tanpa serial')}</div></td><td>${esc(repair.issue)}${repair.resolution ? `<div class="field-hint">${esc(repair.resolution)}</div>` : ''}</td><td><b>${money(unitCost)}</b><div class="field-hint">Beli ${money(repair.stock_items?.acquisition_cost)} · part ${money(partCost)} · jasa ${money(repair.labor_cost)}</div></td><td><span class="pill warn">${statusLabel[repair.status] || repair.status}</span></td><td>${new Date(repair.updated_at).toLocaleDateString('id-ID')}</td><td><div class="actions-cell">${repair.status === 'repair_needed' || repair.status === 'waiting_parts' ? `<button class="small-btn" data-repair="${repair.id}" data-status="repairing">Mulai repair</button>` : ''}${repair.status === 'repairing' ? `<button class="small-btn" data-parts="${repair.id}">＋ Sparepart</button><button class="small-btn" data-repair="${repair.id}" data-status="waiting_parts">Tunggu part</button><button class="small-btn" data-finish-repair="${repair.id}">Kirim QC akhir</button>` : ''}</div></td></tr>`}).join('') || '<tr><td colspan="6"><div class="empty">Belum ada unit dalam antrean repair.</div></td></tr>'}</tbody></table></div></section>`;
+    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Papan repair</div><div class="panel-sub">Catatan kerusakan, progres teknisi, sparepart, dan ongkos repair melekat pada barcode laptop.</div></div></div><div class="table-wrap"><table><thead><tr><th>UNIT</th><th>MASALAH / CATATAN</th><th>MODAL TERKUMPUL</th><th>STATUS</th><th>DIUBAH</th><th>AKSI TEKNISI</th></tr></thead><tbody>${repairs.map((repair) => {const partCost=(repair.stock_repair_parts||[]).reduce((sum,line)=>sum+Number(line.cost||0),0),unitCost=Number(repair.stock_items?.acquisition_cost||0)+partCost+Number(repair.labor_cost||0);return `<tr><td class="product-name">${esc(repair.stock_items?.barcode || 'Unit')}<div class="field-hint">${esc(repair.stock_items?.products?.name || 'Laptop')} · ${esc(repair.stock_items?.serial_number || 'tanpa serial')}</div></td><td>${esc(repair.issue)}${repair.resolution ? `<div class="field-hint">${esc(repair.resolution)}</div>` : ''}</td><td><b>${money(unitCost)}</b><div class="field-hint">Beli ${money(repair.stock_items?.acquisition_cost)} · part ${money(partCost)} · jasa ${money(repair.labor_cost)}</div>${(repair.stock_repair_parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)}${part.external_supplier ? ` · ${esc(part.external_supplier)} · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${repair.id}">Catat pembayaran</button>` : ''}` : ' · Stok Pusat'}</div>`).join('')}</td><td><span class="pill warn">${statusLabel[repair.status] || repair.status}</span></td><td>${new Date(repair.updated_at).toLocaleDateString('id-ID')}</td><td><div class="actions-cell">${repair.status === 'repair_needed' || repair.status === 'waiting_parts' ? `<button class="small-btn" data-repair="${repair.id}" data-status="repairing">Mulai repair</button>` : ''}${repair.status === 'repairing' ? `<button class="small-btn" data-parts="${repair.id}">＋ Stok Pusat</button><button class="small-btn" data-external-part="${repair.id}">＋ Beli dari luar</button><button class="small-btn" data-repair="${repair.id}" data-status="waiting_parts">Tunggu part</button><button class="small-btn" data-finish-repair="${repair.id}">Kirim QC akhir</button>` : ''}</div></td></tr>`}).join('') || '<tr><td colspan="6"><div class="empty">Belum ada unit dalam antrean repair.</div></td></tr>'}</tbody></table></div></section>`;
   page.insertAdjacentHTML('beforeend', resultsPanel);
   bindQcResultFilter(page);
   page.querySelector('#qc-search').addEventListener('input', (event) => { const query = event.target.value.toLowerCase(); page.querySelectorAll('#qc-rows tr').forEach((row) => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(query))); });
@@ -430,14 +446,49 @@ async function qualityPage(page) {
   page.querySelector('#qc-camera').addEventListener('click', () => startScanner(page.querySelector('#qc-scanner'), page.querySelector('#qc-scan [name="barcode"]')));
   page.querySelectorAll('[data-qc]').forEach((button) => button.addEventListener('click', () => stockQcModal(queue.find((item) => item.id === button.dataset.qc))));
   page.querySelectorAll('[data-repair]').forEach((button) => button.addEventListener('click', async () => { const { error } = await supabase.rpc('update_stock_repair', { _repair_id: button.dataset.repair, _status: button.dataset.status, _resolution: '' }); if (error) toast(error.message, true); else { toast('Status repair tersinkron.'); await showPage('quality'); } }));
+  page.querySelectorAll('[data-external-part]').forEach((button) => button.addEventListener('click', () => externalRepairPartModal(button.dataset.externalPart)));
+  bindExternalPartPayments(page);
   page.querySelectorAll('[data-parts]').forEach((button) => button.addEventListener('click', () => repairPartModal(button.dataset.parts)));
   page.querySelectorAll('[data-finish-repair]').forEach((button) => button.addEventListener('click', () => openModal('Kirim ke QC akhir', 'Modal sparepart tercatat dari stok. Masukkan ongkos jasa atau biaya repair luar toko bila ada.', '<div class="form-grid"><div class="field full"><label>Hasil perbaikan</label><textarea name="resolution" rows="4" required placeholder="Contoh: ganti keyboard, uji fungsi normal"></textarea></div><div class="field full"><label>Ongkos jasa / repair luar (opsional)</label><input name="labor_cost" type="number" min="0" step="1000" value="0" /></div></div>', async (form) => { const { error } = await supabase.rpc('finish_stock_repair', { _repair_id: button.dataset.finishRepair, _resolution: String(form.get('resolution')).trim(), _labor_cost: Number(form.get('labor_cost')||0) }); if (error) throw error; toast('Biaya repair tersimpan. Unit masuk antrean QC akhir.'); await showPage('quality'); }, 'Kirim ke QC akhir')));
+}
+
+function bindExternalPartPayments(page) {
+  page.querySelectorAll('[data-pay-external]').forEach((button) => button.addEventListener('click', () => {
+    openModal('Catat pembayaran sparepart?', 'Konfirmasi hanya jika pembayaran sudah dilakukan.', '', async () => {
+      checkError(await supabase.rpc('record_external_repair_part', {
+        _id: button.dataset.payExternal, _repair: button.dataset.payRepair, _name: null, _quantity: null,
+        _unit_cost: null, _supplier: null, _date: null, _invoice: null, _paid: true
+      }));
+      await showPage('quality');
+    });
+  }));
 }
 
 function stockQcModal(item) {
   if (!item) return;
   const finalQc = item.qc_stage === 'final';
   openModal(finalQc ? 'Pemeriksaan QC akhir' : 'Pemeriksaan laptop masuk', finalQc ? 'Luluskan unit ke stok jual, kembalikan untuk perbaikan, atau tandai sebagai scrap/retur.' : 'Pilih hasil sortir. Menunggu RAM/SSD masuk antrean tunggu part; laptop mati bisa dipisahkan sebagai kandidat scrap.', `<div class="notice">${esc(item.barcode)} · ${esc(item.products?.name || 'Laptop')} · modal beli ${money(item.acquisition_cost)}</div><div class="form-grid"><div class="field"><label>Barcode pemasok</label><input name="supplier_barcode" value="${esc(item.supplier_barcode || '')}" placeholder="Barcode bawaan supplier" /></div><div class="field"><label>Nomor seri laptop</label><input name="serial_number" value="${esc(item.serial_number || '')}" placeholder="SN / serial unit" /></div><div class="field full"><label>Hasil pemeriksaan</label><select name="decision"><option value="available">Lolos QC · siap dijual</option>${finalQc ? '' : '<option value="waiting_parts">Butuh RAM / HDD / SSD · tunggu part</option>'}<option value="repair_needed">Perlu repair teknisi</option><option value="not_sellable">Karantina / retur supplier</option><option value="scrap">Scrap / kanibal part · tidak dijual</option></select></div><div class="field full"><label>Catatan kondisi / kerusakan</label><textarea name="notes" rows="4" required placeholder="Contoh: hidup normal, tanpa RAM dan SSD; atau mati, casing retak berat"></textarea></div></div>`, async (form) => { const { error } = await supabase.rpc('decide_stock_qc', { _stock_item_id: item.id, _decision: form.get('decision'), _notes: String(form.get('notes')).trim(), _serial_number: String(form.get('serial_number')).trim(), _supplier_barcode: String(form.get('supplier_barcode')).trim() }); if (error) throw error; toast(form.get('decision') === 'available' ? 'Unit lolos QC dan masuk stok tersedia.' : 'Hasil sortir tersimpan pada unit ini.'); await showPage('quality'); }, 'Simpan hasil QC');
+}
+
+async function externalRepairPartModal(repairId) {
+  const id = crypto.randomUUID();
+  openModal('Catat sparepart dari luar', 'Biaya masuk ke modal repair. Centang pembayaran hanya jika sudah dibayar.', `<div class="form-grid">
+    <div class="field full"><label>Nama dan spesifikasi part</label><input name="name" required maxlength="200" /></div>
+    <div class="field"><label>Jumlah</label><input name="quantity" type="number" min="1" max="500" value="1" required /></div>
+    <div class="field"><label>Harga beli per unit</label><input name="cost" type="number" min="1" required /></div>
+    <div class="field"><label>Toko / supplier</label><input name="supplier" required maxlength="160" /></div>
+    <div class="field"><label>Tanggal beli</label><input name="date" type="date" value="${new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jakarta'}).format(new Date())}" required /></div>
+    <div class="field"><label>Nomor nota (opsional)</label><input name="invoice" maxlength="100" /></div>
+    <label><input name="paid" type="checkbox" /> Sudah dibayar</label>
+  </div>`, async (form) => {
+    checkError(await supabase.rpc('record_external_repair_part', {
+      _id: id, _repair: repairId, _name: form.get('name'), _quantity: Number(form.get('quantity')),
+      _unit_cost: Number(form.get('cost')), _supplier: form.get('supplier'), _date: form.get('date'),
+      _invoice: form.get('invoice'), _paid: form.has('paid')
+    }));
+    await showPage('quality');
+    toast('Sparepart luar tercatat.');
+  });
 }
 
 async function repairPartModal(repairId) {
@@ -1325,7 +1376,7 @@ async function reportsPage(page) {
   const otherIncomeCategory = 'Pemasukan lain';
   const excludedPurchasePayments = new Set(['Pembayaran pembelian','Pembayaran hutang supplier']);
   const cashRows = cash.map((entry) => {
-    const purchasePayment = entry.direction === 'expense' && excludedPurchasePayments.has(entry.category);
+    const purchasePayment = entry.direction === 'expense' && (excludedPurchasePayments.has(entry.category) || ['stock_repair_external_part','stock_repair'].includes(entry.source_type));
     const otherIncome = entry.direction === 'income' && entry.category === otherIncomeCategory;
     const operatingExpense = entry.direction === 'expense' && !purchasePayment;
     return { id:entry.id, branch_id:entry.branch_id, branch:entry.branches?.name, date:entry.created_at, kind:entry.category, label:entry.description || entry.category, value:Number(entry.amount), cost:0, profitImpact:otherIncome ? Number(entry.amount) : operatingExpense ? -Number(entry.amount) : 0, direction:entry.direction, purchasePayment };
