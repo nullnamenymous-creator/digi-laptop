@@ -115,7 +115,24 @@ function showShell() {
   document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', async () => { state.page = button.dataset.page; await showPage(state.page); }));
   document.querySelector('#logout').addEventListener('click', async () => { if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel); state.realtimeChannel = null; await supabase.auth.signOut(); state.profile = null; state.user = null; authScreen(); });
   document.querySelector('#mobile-menu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
-  document.querySelector('#branch-select').addEventListener('change', async (event) => { const selected=event.target.value;const allowed=state.profile.role==='owner'?state.branches.some((branch)=>branch.id===selected):selected===state.profile.branch_id;if(!allowed){event.target.value=state.branchId;toast('Cabang ini tidak tersedia untuk akun lo.',true);return}state.branchId=selected;document.querySelector('.app')?.setAttribute('data-branch-theme',selectedBranchTheme());if(state.profile.role==='owner')localStorage.setItem(`digi-selected-branch:${state.organization.id}`,selected);subscribeOperationalUpdates();await showPage(state.page); });
+  document.querySelector('#branch-select').addEventListener('change', async (event) => {
+    const selected = event.target.value;
+    const allowed = canManage()
+      ? state.branches.some((branch) => branch.id === selected)
+      : selected === state.profile.branch_id;
+    if (!allowed) {
+      event.target.value = state.branchId;
+      toast('Cabang ini tidak tersedia untuk akun lo.', true);
+      return;
+    }
+    state.branchId = selected;
+    if (canManage()) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, selected);
+    const allowedPages = rolePages();
+    if (!allowedPages.includes(state.page)) state.page = allowedPages[0];
+    showShell();
+    subscribeOperationalUpdates();
+    await showPage(state.page);
+  });
   window.addEventListener('online',()=>{updateConnection();syncPendingOfflineSales()}); window.addEventListener('offline',updateConnection); updateConnection();
 }
 
