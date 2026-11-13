@@ -654,3 +654,13 @@ tbody tr:hover td { background: #f7faef; }
 }
 
 .dashboard-finder .finder-controls { display: block; border-bottom: 0; }
+
+.laptop-unit-summary .unit-summary-button { width: 100%; text-align: left; color: inherit; cursor: pointer; }
+.unit-summary-button .card-label,
+.unit-summary-button .card-value,
+.unit-summary-button .card-sub { display: block; }
+.unit-summary-button .card-label > span { float: right; }
+.unit-summary-button:hover,
+.unit-summary-button[aria-pressed="true"] { background: var(--paper); }
+.unit-summary-button:focus-visible { outline: 2px solid var(--green-800); outline-offset: 2px; }
+.stock-unit-panel { scroll-margin-top: 68px; }
