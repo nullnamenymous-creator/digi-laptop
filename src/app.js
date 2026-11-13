@@ -415,7 +415,7 @@ async function receivingPage(page) {
   const [products, batches, queue, suppliers] = await Promise.all([
     fetchAllRows(supabase.from('products').select('id,name,sku,category,cost_price,image_path').order('name')),
     supabase.from('intake_batches').select('id,product_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,unit_count,created_at,products(name,sku,category),suppliers(name,initials),stock_items(status)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20),
-    fetchAllRows(supabase.from('stock_items').select('id,barcode,product_id,intake_batch_id,created_at,products(name)').eq('branch_id', state.branchId).eq('status', 'pending_qc').order('created_at', { ascending: false })),
+    fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,supplier_barcode,product_id,intake_batch_id,created_at,products(name)').eq('branch_id', state.branchId).eq('status', 'pending_qc').order('created_at', { ascending: false })),
     fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone').order('name')),
   ]);
   if (batches.error) throw batches.error;
@@ -424,7 +424,7 @@ async function receivingPage(page) {
   page.innerHTML = `${header('Penerimaan & barcode', 'Catat supplier, jumlah, modal, dan pembayaran barang yang baru datang.', `<button class="btn primary" id="new-intake">＋ Buat penerimaan</button>`)}
     <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">Pindai & cek</div><div class="card-sub">Teknisi mengerjakan halaman QC & repair</div></article></div>
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
-    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th></th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button></td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
+    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button>${canManage() ? ` <button type="button" class="small-btn" data-edit-intake-unit="${item.id}">Edit</button> <button type="button" class="small-btn" data-delete-intake-unit="${item.id}">Hapus</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
   page.querySelector('#new-intake').addEventListener('click', () => intakeBatchModal(products, suppliers));
   page.querySelectorAll('[data-edit-intake]').forEach((button) => button.addEventListener('click', () => {
     const batch = batches.data.find((item) => item.id === button.dataset.editIntake);
@@ -446,6 +446,21 @@ async function receivingPage(page) {
     const printWindow = window.open('', '_blank', 'width=760,height=720');
     if (!printWindow) return toast('Izinkan pop-up untuk mencetak label.', true);
     try { const { data, error } = await supabase.from('stock_items').select('barcode,supplier,quantity,suppliers(initials),products(name,sku,category)').eq('intake_batch_id', button.dataset.printBatch).order('created_at'); if (error) throw error; const labels=data||[];printBarcodeLabels(labels[0]?.products?.category==='Laptop'?labels:labels.slice(0,1), printWindow); } catch (error) { printWindow.close(); toast(error.message, true); }
+  }));
+  page.querySelectorAll('[data-edit-intake-unit], [data-delete-intake-unit]').forEach((button) => button.addEventListener('click', () => {
+    const remove = Boolean(button.dataset.deleteIntakeUnit);
+    const item = pending.find((row) => row.id === (button.dataset.editIntakeUnit || button.dataset.deleteIntakeUnit));
+    if (!item) return;
+    const fields = `<div class="form-grid"><div class="field"><label for="intake-unit-serial">Nomor seri</label><input id="intake-unit-serial" name="serial" maxlength="160" value="${esc(item.serial_number || '')}" /></div><div class="field"><label for="intake-unit-supplier-barcode">Barcode supplier</label><input id="intake-unit-supplier-barcode" name="supplier_barcode" maxlength="160" value="${esc(item.supplier_barcode || '')}" /></div></div>`;
+    openModal(remove ? 'Hapus unit penerimaan?' : 'Edit unit penerimaan',
+      remove ? `Unit ${esc(item.barcode)} akan dikeluarkan dari antrean QC dan jumlah penerimaan.` : `Barcode internal ${esc(item.barcode)}`,
+      remove ? '' : fields, async (form) => {
+        checkError(await supabase.rpc('manage_pending_intake_unit', {
+          _id: item.id, _remove: remove, _serial: form.get('serial'), _supplier_barcode: form.get('supplier_barcode')
+        }));
+        await showPage('receiving');
+        toast(remove ? 'Unit penerimaan dihapus.' : 'Unit penerimaan diperbarui.');
+      }, remove ? 'Hapus unit' : 'Simpan unit');
   }));
   page.querySelectorAll('[data-print-one]').forEach((button) => button.addEventListener('click', async () => {
     const printWindow = window.open('', '_blank', 'width=500,height=400');
