@@ -300,6 +300,7 @@ async function dashboardPage(page) {
     if (!button) return;
     const product = finderProducts.find((item) => item.id === button.dataset.finderProduct);
     state.inventorySearchQuery = product?.sku || finderSearch.value.trim();
+    state.inventoryFilters = null;
     showPage('inventory');
   });
   page.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => showPage(button.dataset.go)));
@@ -495,7 +496,9 @@ async function inventoryPage(page) {
   const totals = new Map(); stock.forEach((item) => totals.set(item.product_id, (totals.get(item.product_id) || 0) + (item.status === 'available' ? Number(item.quantity) : 0)));
   const branchProductIds = new Set(stock.map((item) => item.product_id));
   const branchProducts = products.filter((product) => branchProductIds.has(product.id));
-  const productBrands = [...new Set(products.map((product) => String(product.brand || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  const normalizeBrand = (brand) => String(brand || '').trim().toLocaleLowerCase('id');
+  const brandsByKey = new Map(products.filter((product) => normalizeBrand(product.brand)).map((product) => [normalizeBrand(product.brand), product.brand.trim()]));
+  const productBrands = [...brandsByKey.values()].sort((a,b) => a.localeCompare(b, 'id'));
   const renderProductCards = (items) => items.map((product) => `
     <article class="inventory-product-card">
       <div class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum ada</span>'}</div>
@@ -528,7 +531,7 @@ async function inventoryPage(page) {
     const badge = item.status === 'available' ? '' : ['pending_qc','repair_needed','repairing','waiting_parts'].includes(item.status) ? 'warn' : 'gray';
     return `<tr><td class="product-name">${esc(product?.name || 'Barang')}<div class="field-hint">${esc(product?.sku || '')} · ${esc(item.barcode)}</div></td><td>${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || '—')}</td><td><b>${Number(item.quantity || 0)}</b> unit</td><td><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td>${money(item.acquisition_cost)}</td><td><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode lot</button></td></tr>`;
   }).join('');
-  const catalogSection = `<section class="panel inventory-catalog-panel" style="margin-top:13px"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Stok produk & harga jual per cabang</div><div class="panel-sub">${products.length} model di katalog · ${branchProducts.length} model memiliki catatan stok di ${esc(branchName(state.branchId))} · stok siap jual mengikuti cabang yang dipilih.</div></div><div class="inventory-controls"><select id="inventory-category" aria-label="Filter kategori"><option value="all">Semua kategori</option><option value="Laptop">Laptop</option><option value="Sparepart">Sparepart</option><option value="Aksesori">Aksesori</option><option value="Lainnya">Lainnya</option></select><select id="inventory-brand" aria-label="Filter merek"><option value="all">Semua merek</option>${productBrands.map((brand) => `<option value="${esc(brand)}">${esc(brand)}</option>`).join('')}</select><select id="inventory-stock" aria-label="Filter status stok"><option value="all" selected>Semua katalog produk</option><option value="branch">Data di cabang ini</option><option value="available">Ada stok siap jual</option><option value="empty">Stok kosong</option><option value="pending_qc">Menunggu QC</option><option value="repair">Dalam repair</option><option value="sold">Pernah terjual</option></select><input class="price-filter" id="inventory-min-price" type="number" min="0" placeholder="Harga min" aria-label="Harga minimum" /><input class="price-filter" id="inventory-max-price" type="number" min="0" placeholder="Harga max" aria-label="Harga maksimum" /><select id="inventory-sort" aria-label="Urutkan harga"><option value="default">Urutkan harga</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select><input class="search" id="inventory-search" value="${esc(state.inventorySearchQuery || '')}" placeholder="Cari nama, merek, model, SKU" /></div></div><div class="inventory-product-grid" id="inventory-rows"></div><nav id="inventory-pagination" class="inventory-pagination" aria-label="Halaman katalog" hidden><button type="button" class="btn" id="inventory-previous">Sebelumnya</button><span id="inventory-page-status" aria-live="polite"></span><button type="button" class="btn" id="inventory-next">Berikutnya</button></nav></section>`;
+  const catalogSection = `<section class="panel inventory-catalog-panel" style="margin-top:13px"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Stok produk & harga jual per cabang</div><div class="panel-sub"><strong id="inventory-match-count" aria-live="polite"></strong> · ${products.length} model di katalog · ${branchProducts.length} model memiliki catatan stok di ${esc(branchName(state.branchId))} · stok siap jual mengikuti cabang yang dipilih.</div></div><div class="inventory-controls"><select id="inventory-category" aria-label="Filter kategori"><option value="all">Semua kategori</option><option value="Laptop">Laptop</option><option value="Sparepart">Sparepart</option><option value="Aksesori">Aksesori</option><option value="Lainnya">Lainnya</option></select><select id="inventory-brand" aria-label="Filter merek"><option value="all">Semua merek</option>${productBrands.map((brand) => `<option value="${esc(brand)}">${esc(brand)}</option>`).join('')}</select><select id="inventory-stock" aria-label="Filter status stok"><option value="all" selected>Semua katalog produk</option><option value="branch">Data di cabang ini</option><option value="available">Ada stok siap jual</option><option value="empty">Stok kosong</option><option value="pending_qc">Menunggu QC</option><option value="repair">Dalam repair</option><option value="sold">Pernah terjual</option></select><input class="price-filter" id="inventory-min-price" type="number" min="0" placeholder="Harga min" aria-label="Harga minimum" /><input class="price-filter" id="inventory-max-price" type="number" min="0" placeholder="Harga max" aria-label="Harga maksimum" /><select id="inventory-sort" aria-label="Urutkan harga"><option value="default">Urutkan harga</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select><input class="search" id="inventory-search" value="${esc(state.inventorySearchQuery || '')}" placeholder="Cari nama, merek, model, SKU" /></div></div><div class="inventory-product-grid" id="inventory-rows"></div><nav id="inventory-pagination" class="inventory-pagination" aria-label="Halaman katalog" hidden><button type="button" class="btn" id="inventory-previous">Sebelumnya</button><span id="inventory-page-status" aria-live="polite"></span><button type="button" class="btn" id="inventory-next">Berikutnya</button></nav></section>`;
   page.innerHTML = `${header('Produk & stok', 'Pantau unit laptop per barcode dan stok sparepart per lot. Stok siap jual mencakup stok awal dan unit yang sudah tersedia setelah QC.', action)}
     <section class="cards laptop-unit-summary">
       <button type="button" class="card unit-summary-button" aria-controls="laptop-unit-rows" aria-pressed="false" data-unit-filter="pending_qc"><span class="card-label">Laptop menunggu QC<span aria-hidden="true">↗</span></span><span class="card-value">${unitCountFor('pending_qc')} <small>unit</small></span><span class="card-sub">Belum masuk stok jual</span></button>
@@ -582,16 +585,17 @@ async function inventoryPage(page) {
   const nextPage = page.querySelector('#inventory-next');
   const pageStatus = page.querySelector('#inventory-page-status');
   const applyProductFilters = () => {
-    const category = page.querySelector('#inventory-category').value; const brand = page.querySelector('#inventory-brand').value; const stockFilter = page.querySelector('#inventory-stock').value; const sort = page.querySelector('#inventory-sort').value; const query = page.querySelector('#inventory-search').value.toLowerCase(); const minPrice = Number(page.querySelector('#inventory-min-price').value || 0); const maxPrice = Number(page.querySelector('#inventory-max-price').value || 0);
+    const category = page.querySelector('#inventory-category').value; const brand = page.querySelector('#inventory-brand').value; const stockFilter = page.querySelector('#inventory-stock').value; const sort = page.querySelector('#inventory-sort').value; const query = page.querySelector('#inventory-search').value.trim().toLowerCase(); const minPrice = Number(page.querySelector('#inventory-min-price').value || 0); const maxInput = page.querySelector('#inventory-max-price').value; const maxPrice = maxInput === '' ? Infinity : Number(maxInput);
     let filtered = products.filter((product) => {
       const items = stock.filter((item) => item.product_id === product.id);
       const availableCount = items.filter((item) => item.status === 'available').reduce((sum, item) => sum + Number(item.quantity || 0), 0);
       const hasStatus = (status) => items.some((item) => item.status === status);
       const statusMatch = (stockFilter === 'branch' && items.length > 0) || stockFilter === 'all' || (stockFilter === 'available' && availableCount > 0) || (stockFilter === 'empty' && availableCount === 0) || (stockFilter === 'pending_qc' && hasStatus('pending_qc')) || (stockFilter === 'repair' && items.some((item) => repairStatuses.has(item.status))) || (stockFilter === 'sold' && hasStatus('sold'));
       const price = Number(product.retail_price || 0);
-      return (category === 'all' || product.category === category) && (brand === 'all' || product.brand === brand) && statusMatch && (!minPrice || price >= minPrice) && (!maxPrice || price <= maxPrice) && `${product.name} ${product.brand} ${product.model} ${product.sku}`.toLowerCase().includes(query);
+      return (category === 'all' || product.category === category) && (brand === 'all' || normalizeBrand(product.brand) === normalizeBrand(brand)) && statusMatch && (!minPrice || price >= minPrice) && price <= maxPrice && `${product.name} ${product.brand} ${product.model} ${product.sku}`.toLowerCase().includes(query);
     });
     if (sort !== 'default') filtered = filtered.sort((a,b) => (Number(a.retail_price)-Number(b.retail_price)) * (sort === 'asc' ? 1 : -1));
+    page.querySelector('#inventory-match-count').textContent = filtered.length + ' hasil';
     const pageCount = Math.max(1, Math.ceil(filtered.length / productsPerPage));
     productPage = Math.min(productPage, pageCount);
     const start = (productPage - 1) * productsPerPage;
@@ -604,6 +608,7 @@ async function inventoryPage(page) {
   ['#inventory-search','#inventory-category','#inventory-brand','#inventory-stock','#inventory-min-price','#inventory-max-price','#inventory-sort'].forEach((selector) => {
     page.querySelector(selector).addEventListener(selector === '#inventory-search' || selector.includes('price') ? 'input' : 'change', () => {
       productPage = 1;
+      state.inventoryFilters = Object.fromEntries([...page.querySelectorAll('.inventory-catalog-panel .inventory-controls select, .inventory-catalog-panel .inventory-controls input')].map((field) => [field.id, field.value]));
       applyProductFilters();
     });
   });
@@ -614,6 +619,10 @@ async function inventoryPage(page) {
       pagination.closest('.inventory-catalog-panel').scrollIntoView({ block: 'start' });
     });
   });
+  for (const [id, value] of Object.entries(state.inventoryFilters || {})) {
+    const field = page.querySelector('#' + id);
+    if (field && (field.tagName !== 'SELECT' || [...field.options].some((option) => option.value === value))) field.value = value;
+  }
   applyProductFilters();
   page.querySelector('#inventory-rows').addEventListener('click', (event) => {
     const detailButton = event.target.closest('[data-view-product]');
