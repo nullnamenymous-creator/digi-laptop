@@ -664,3 +664,11 @@ tbody tr:hover td { background: #f7faef; }
 .unit-summary-button[aria-pressed="true"] { background: var(--paper); }
 .unit-summary-button:focus-visible { outline: 2px solid var(--green-800); outline-offset: 2px; }
 .stock-unit-panel { scroll-margin-top: 68px; }
+
+.dashboard-summary-button { width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.dashboard-summary-button .card-value,
+.dashboard-summary-button .card-sub { display: block; }
+.dashboard-summary-button:hover { background: var(--paper); }
+.dashboard-summary-button:focus-visible { outline: 2px solid var(--green-800); outline-offset: 2px; }
+.owner-branch-sales { scroll-margin-top: 68px; }
+.dashboard-detail-list { margin: 0; padding-left: 24px; line-height: 1.8; }

@@ -232,9 +232,9 @@ async function showPage(name) {
 async function dashboardPage(page) {
   let stockQuery = supabase.from('stock_items').select('quantity').eq('branch_id', state.branchId).eq('status', 'available');
   let laptopStockQuery = supabase.from('stock_items').select('quantity,products!inner(brand,category)').eq('branch_id', state.branchId).eq('status', 'available').eq('products.category', 'Laptop');
-  let serviceQuery = supabase.from('service_tickets').select('id,status').eq('branch_id', state.branchId).not('status', 'in', '(handed_over,cancelled)');
+  let serviceQuery = supabase.from('service_tickets').select('id,status,ticket_number,device_name').eq('branch_id', state.branchId).not('status', 'in', '(handed_over,cancelled)');
   const ownerView = state.profile.role === 'owner';
-  let salesQuery = supabase.from('sales').select('total,branch_id,branches(name)').gte('created_at', dayStart());
+  let salesQuery = supabase.from('sales').select('total,branch_id,receipt_number,branches(name)').gte('created_at', dayStart());
   if (!ownerView) salesQuery = salesQuery.eq('branch_id', state.branchId);
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
   let bestSellingQuery = supabase.from('sale_items').select('product_name,quantity,line_total,products(category),sales!inner(branch_id,created_at)').gte('sales.created_at', monthStart.toISOString());
@@ -277,10 +277,37 @@ async function dashboardPage(page) {
   const ownerBranchSales = ownerView ? `<section class="panel table-panel owner-branch-sales"><div class="panel-head"><div><div class="panel-title">Penjualan hari ini per cabang</div><div class="panel-sub">Omzet dan jumlah transaksi semua cabang · ${new Date().toLocaleDateString('id-ID')}</div></div><span class="insight-tag">${state.branches.length} CABANG</span></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>TRANSAKSI</th><th>PENJUALAN HARI INI</th></tr></thead><tbody>${state.branches.map((branch) => { const item = branchSales.get(branch.id) || { total: 0, count: 0 }; return `<tr><td class="product-name">${esc(branch.name)}</td><td>${item.count}</td><td><b>${money(item.total)}</b></td></tr>`; }).join('')}<tr class="owner-sales-total"><td class="product-name">TOTAL SEMUA CABANG</td><td>${sales.length}</td><td><b>${money(salesTotal)}</b></td></tr></tbody></table></div></section>` : '';
   page.innerHTML = `<div class="page-head dashboard-slogan"><div><div class="eyebrow">DIGITAL LAPTOP JOMBANG</div><h1>Laptop pilihan untuk <em>kerja, belajar,</em><br class="slogan-break" /> dan berkarya setiap hari.</h1></div>${state.profile.role === 'operator' ? '<button class="btn primary" data-go="cashier">＋ Transaksi baru</button>' : ''}</div>
     <section class="panel dashboard-finder"><div class="finder-controls"><input id="finder-search" type="search" placeholder="Cari produk, merek, SKU, barcode, atau nomor seri…" aria-label="Cari produk, merek, SKU, barcode, atau nomor seri" /></div><div id="finder-results" aria-live="polite"></div></section>
-        <div class="cards"><article class="card"><div class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></div><div class="card-value">${money(salesTotal)}</div><div class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</div></article><article class="card"><div class="card-label">Total unit siap jual<span class="card-icon">▤</span></div><div class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></div><div class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Servis berjalan<span class="card-icon">⌁</span></div><div class="card-value">${activeServices}</div><div class="card-sub">${readyCount} siap diserahkan</div></article><article class="card"><div class="card-label">Jumlah cabang<span class="card-icon">⌂</span></div><div class="card-value">${state.branches.length}</div><div class="card-sub">Terhubung ke database pusat</div></article></div>
+        <div class="cards"><button type="button" class="card dashboard-summary-button" data-dashboard-card="sales"><span class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></span><span class="card-value">${money(salesTotal)}</span><span class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="stock"><span class="card-label">Total unit siap jual<span class="card-icon">▤</span></span><span class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></span><span class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="service"><span class="card-label">Servis berjalan<span class="card-icon">⌁</span></span><span class="card-value">${activeServices}</span><span class="card-sub">${readyCount} siap diserahkan</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="branches"><span class="card-label">Jumlah cabang<span class="card-icon">⌂</span></span><span class="card-value">${state.branches.length}</span><span class="card-sub">Terhubung ke database pusat</span></button></div>
     ${ownerBranchSales}
     <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
+  page.querySelector('[data-dashboard-card="sales"]').addEventListener('click', () => {
+    if (ownerView) {
+      page.querySelector('.owner-branch-sales').scrollIntoView({ block: 'start' });
+      return;
+    }
+    openDashboardDetails('Penjualan hari ini', sales, (row) => `${esc(row.receipt_number)} · ${money(row.total)}`);
+  });
+  page.querySelector('[data-dashboard-card="stock"]').addEventListener('click', () => {
+    state.inventorySearchQuery = '';
+    state.inventoryFilters = { 'inventory-stock': 'available' };
+    showPage('inventory');
+  });
+  page.querySelector('[data-dashboard-card="service"]').addEventListener('click', () =>
+    openDashboardDetails('Servis berjalan', services, (row) =>
+      `${esc(row.ticket_number)} · ${esc(row.device_name)} · ${esc(statusText[row.status] || row.status)}`));
+  page.querySelector('[data-dashboard-card="branches"]').addEventListener('click', () => {
+    if (ownerView) return showPage('branches');
+    openDashboardDetails('Cabang yang dapat diakses', state.branches, (branch) => esc(branch.name));
+  });
+
+  function openDashboardDetails(title, rows, label) {
+    const body = rows.length
+      ? `<ul class="dashboard-detail-list">${rows.map((row) => `<li>${label(row)}</li>`).join('')}</ul>`
+      : '<div class="empty">Belum ada data.</div>';
+    const host = openModal(title, esc(branchName(state.branchId)), body, async () => {}, 'Tutup');
+    host.querySelector('.modal-actions [data-close-modal]').remove();
+  }
   const finderSearch = page.querySelector('#finder-search');
   const finderResults = page.querySelector('#finder-results');
   finderSearch.addEventListener('input', () => {
