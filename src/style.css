@@ -612,3 +612,16 @@ tbody tr:hover td { background: #f7faef; }
 @media (max-height: 510px) {
   .sidebar .side-note { display: none; }
 }
+
+.inventory-catalog-panel { scroll-margin-top: 66px; }
+.inventory-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--line);
+}
+.inventory-pagination[hidden] { display: none; }
+.inventory-pagination .btn:disabled { opacity: .45; cursor: default; }
