@@ -592,3 +592,23 @@ tbody tr:hover td { background: #f7faef; }
   .inventory-product-grid { gap: 8px; padding: 8px; }
   .inventory-product-body { padding: 8px; }
 }
+
+/* Keep the account controls visible when the sidebar is taller than the viewport. */
+.sidebar { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+.sidebar > .brand,
+.sidebar > .nav-label,
+.sidebar > .side-bottom { flex-shrink: 0; }
+.sidebar > .nav { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+.side-spacer { flex: 0 0 12px; height: auto; }
+.footer { flex-wrap: wrap; }
+.dashboard-insights { margin-top: 13px; }
+
+@media (max-height: 700px) {
+  .sidebar { padding-top: 14px; }
+  .sidebar > .brand { padding-bottom: 15px; }
+  .sidebar .nav-button { min-height: 34px; }
+  .sidebar .side-note { padding: 8px 10px; margin-bottom: 8px; }
+}
+@media (max-height: 510px) {
+  .sidebar .side-note { display: none; }
+}
