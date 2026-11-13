@@ -1312,8 +1312,12 @@ async function branchesPage(page) {
     const query = branch
       ? table.update(values).eq('id', branch.id).eq('organization_id', state.organization.id).eq('is_active', true)
       : table.insert({ ...values, organization_id: state.organization.id });
-    checkError(await query.select('id').single());
-    await afterAuth();
+    const result = await query.select('*').single();
+    if (result.error?.code === '23505') throw new Error('Nama cabang sudah dipakai.');
+    const saved = checkError(result);
+    state.branches = [...state.branches.filter((item) => item.id !== saved.id), saved].sort((first, second) => first.name.localeCompare(second.name, 'id'));
+    showShell();
+    await showPage('branches');
     toast('Cabang disimpan.');
   }, 'Simpan cabang');
   page.querySelector('#new-branch')?.addEventListener('click', () => editBranch());
@@ -1322,14 +1326,8 @@ async function branchesPage(page) {
   }));
   page.querySelectorAll('[data-delete-branch]').forEach((button) => button.addEventListener('click', () => {
     const branch = state.branches.find((item) => item.id === button.dataset.deleteBranch);
-    openModal('Hapus cabang dari daftar aktif?', `${esc(branch.name)} akan dinonaktifkan. Riwayat stok dan transaksi tetap tersimpan.`, '', async () => {
-      const active = await fetchAllRows(supabase.from('branches').select('id').eq('organization_id', state.organization.id).eq('is_active', true));
-      if (active.length <= 1) throw new Error('Toko harus memiliki minimal satu cabang aktif.');
-      const { users: currentUsers = [] } = await teamAdminRequest({ action: 'list' });
-      if (currentUsers.some((user) => user.role !== 'owner' && user.branch_id === branch.id)) {
-        throw new Error('Pindahkan akun Operator dan QC ke cabang aktif lain terlebih dahulu.');
-      }
-      checkError(await supabase.from('branches').update({ is_active: false }).eq('id', branch.id).eq('organization_id', state.organization.id).eq('is_active', true).select('id').single());
+    openModal('Hapus cabang dari daftar aktif?', `${esc(branch.name)} akan dinonaktifkan. Riwayat stok dan transaksi tetap tersimpan.`, '<div class="field"><label for="branch-access-code">Kode akses tambahan</label><input id="branch-access-code" name="access_code" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" required /></div>', async (form) => {
+      checkError(await supabase.rpc('deactivate_branch', { _branch_id: branch.id, _code: form.get('access_code') }));
       await afterAuth();
       toast('Cabang dinonaktifkan.');
     }, 'Hapus cabang');
