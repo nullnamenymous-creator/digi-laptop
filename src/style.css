@@ -694,3 +694,8 @@ body { font-size: 14px; line-height: 1.5; }
 }
 
 .nav-button.qc-subnav { padding-left: 34px; font-weight: 500; }
+
+.inventory-branch-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.inventory-branch-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.stock-unit-panel .table-wrap { overscroll-behavior-x: contain; }
+.stock-unit-panel td:first-child { min-width: 150px; overflow-wrap: anywhere; }
