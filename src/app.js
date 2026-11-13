@@ -14,7 +14,7 @@ const branchName = (id) => state.branches.find((branch) => branch.id === id)?.na
 const resolveOwnerBranch = (organizationId, branches, current = '') => {
   const valid = (id) => branches.some((branch) => branch.id === id);
   const saved = localStorage.getItem(`digi-selected-branch:${organizationId}`) || '';
-  return valid(current) ? current : valid(saved) ? saved : branches[0]?.id || '';
+  return valid(current) ? current : valid(saved) ? saved : branches.find((branch) => branch.is_central)?.id || branches[0]?.id || '';
 };
 const canManage = () => state.profile?.role === 'owner';
 const centralBranch = () => state.branches.find((branch) => branch.is_central);
@@ -64,7 +64,9 @@ function authScreen(message = '') {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       state.user = data.user;
-      await afterAuth();
+      state.branchId = '';
+      state.page = 'dashboard';
+      await afterAuth({ preferCentral: true });
     } catch (error) { authScreen(error.message || 'Tidak bisa masuk. Periksa email dan password.'); }
   });
 }
@@ -82,7 +84,7 @@ function ownerSetupScreen(message = '') {
   });
 }
 
-async function afterAuth() {
+async function afterAuth({ preferCentral = false } = {}) {
   loading();
   const sessionCacheKey=`digi-offline-session:${state.user.id}`;
   const {data:profile,error}=await supabase.from('profiles').select('*, organizations(*)').eq('id',state.user.id).maybeSingle();
@@ -99,7 +101,9 @@ async function afterAuth() {
   }
   state.branches=branches||[];
 
-  state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;
+  const initialBranch = preferCentral ? state.branches.find((branch) => branch.is_central)?.id : state.branchId;
+  state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,initialBranch):profile.branch_id;
+  if (preferCentral && profile.role === 'owner' && state.branchId) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, state.branchId);
   if(!state.branchId){authScreen('Akun ini belum terhubung ke cabang. Minta pemilik toko mengatur cabangnya di Pengaturan Aplikasi.');return;}
   localStorage.setItem(sessionCacheKey,JSON.stringify({profile,branches:state.branches,cachedAt:new Date().toISOString()}));
   if (!rolePages().includes(state.page)) state.page = rolePages()[0];
