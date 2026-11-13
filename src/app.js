@@ -118,7 +118,7 @@ function showShell() {
   const navHtml = permittedPages.map(([key, [, icon]]) => `<button class="nav-button${state.page === key ? ' active' : ''}" data-page="${key}"><span class="nav-icon">${icon}</span>${pageLabel(key)}</button>${key === 'quality' && !canManage() ? `<button type="button" class="nav-button qc-subnav" data-qc-view="repair">Papan repair</button><button type="button" class="nav-button qc-subnav" data-qc-view="results">Hasil pemeriksaan QC</button>` : ''}`).join('');
   const branchOptions = state.profile.role === 'owner' ? state.branches.map((branch) => `<option value="${branch.id}"${state.branchId === branch.id ? ' selected' : ''}>${esc(branch.name)}</option>`).join('') : `<option value="${state.profile.branch_id}">${esc(branchName(state.profile.branch_id))}</option>`;
   const roleLabel = state.profile.role === 'owner' ? 'Pemilik toko' : state.profile.role === 'investor' ? 'Investor · baca saja' : state.profile.role === 'technician' ? 'Teknisi' : 'Operator · kasir + servis';
-  root.innerHTML = `<div class="app" data-branch-theme="${selectedBranchTheme()}"><aside class="sidebar" id="sidebar"><a class="brand" href="#dashboard"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b>DIGITAL LAPTOP</b><small>DIGITAL LAPTOP JOMBANG</small></span></a><div class="nav-label">MENU UTAMA</div><nav class="nav">${navHtml}</nav><div class="side-spacer"></div><div class="side-bottom"><div class="profile"><span class="avatar">${esc(initials(state.profile.full_name))}</span><span class="profile-meta"><b>${esc(state.profile.full_name || 'Pengguna')}</b><span>${roleLabel}</span></span><button class="logout" id="logout">Keluar</button></div></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu">☰</button><div class="crumb">${esc(state.organization.name)} <span style="color:#c4cbc4;padding:0 7px">/</span> <b id="crumb-label">${pageLabel(state.page)}</b></div><div class="top-tools"><span class="online-label"><i></i><span id="connect-label">Online</span></span><select class="branch-select" id="branch-select" aria-label="Pilih cabang">${branchOptions}</select></div></header><section class="page" id="page"></section><footer class="footer"><span>© ${new Date().getFullYear()} Digital Laptop</span><span>Operasional DIGITAL LAPTOP JOMBANG</span></footer></main><div id="modal-root"></div></div>`;
+  root.innerHTML = `<div class="app" data-branch-theme="${selectedBranchTheme()}"><aside class="sidebar" id="sidebar"><a class="brand" href="#dashboard"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b>DIGITAL LAPTOP</b><small>DIGITAL LAPTOP JOMBANG</small></span></a><div class="nav-label">MENU UTAMA</div><nav class="nav">${navHtml}</nav><div class="side-spacer"></div><div class="side-bottom"><div class="profile"><span class="avatar">${esc(initials(state.profile.full_name))}</span><span class="profile-meta"><b>${esc(state.profile.full_name || 'Pengguna')}</b><span>${roleLabel}</span></span><button class="logout" type="button" data-logout>Keluar</button></div></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu">☰</button><div class="crumb">${esc(state.organization.name)} <span style="color:#c4cbc4;padding:0 7px">/</span> <b id="crumb-label">${pageLabel(state.page)}</b></div><div class="top-tools"><span class="online-label"><i></i><span id="connect-label">Online</span></span><select class="branch-select" id="branch-select" aria-label="Pilih cabang">${branchOptions}</select><button class="logout top-logout" type="button" data-logout>Keluar</button></div></header><section class="page" id="page"></section><footer class="footer"><span>© ${new Date().getFullYear()} Digital Laptop</span><span>Operasional DIGITAL LAPTOP JOMBANG</span></footer></main><div id="modal-root"></div></div>`;
   const nav = document.querySelector('.nav');
   nav.addEventListener('click', (event) => {
     const tab = event.target.closest('[data-qc-view]');
@@ -128,7 +128,25 @@ function showShell() {
     window.scrollTo(0, 0);
   });
   document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', async () => { state.page = button.dataset.page; if (state.page === 'quality') { state.qcView = 'queue'; window.scrollTo(0, 0); } await showPage(state.page); }));
-  document.querySelector('#logout').addEventListener('click', async () => { if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel); state.realtimeChannel = null; await supabase.auth.signOut(); state.profile = null; state.user = null; authScreen(); });
+  const logoutButtons = root.querySelectorAll('[data-logout]');
+  const logout = async () => {
+    logoutButtons.forEach((button) => { button.disabled = true; });
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      logoutButtons.forEach((button) => { button.disabled = false; });
+      toast(error.message || 'Gagal keluar. Coba lagi.', true);
+      return;
+    }
+    clearTimeout(state.refreshTimer);
+    const channel = state.realtimeChannel;
+    state.realtimeChannel = null;
+    state.profile = null;
+    state.user = null;
+    state.page = 'dashboard';
+    authScreen();
+    if (channel) await supabase.removeChannel(channel);
+  };
+  logoutButtons.forEach((button) => button.addEventListener('click', logout));
   document.querySelector('#mobile-menu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
   document.querySelector('#branch-select').addEventListener('change', async (event) => {
     const selected = event.target.value;
@@ -782,7 +800,7 @@ async function inventoryPage(page) {
         <div class="inventory-product-actions">
           <button class="small-btn" data-view-product="${product.id}">Detail</button>
           ${(canManage() || (state.profile.role === 'operator' && branchProductIds.has(product.id))) ? `<button class="small-btn" data-product-photo="${product.id}">${product.image_path ? 'Ganti foto' : '＋ Foto'}</button>` : ''}
-          ${canManage() ? `<button class="small-btn" data-edit-product="${product.id}">Edit produk</button>` : ''}
+          ${canManage() ? `<button class="small-btn" data-edit-product="${product.id}">Edit produk</button><button class="small-btn" data-delete-product="${product.id}">Hapus</button>` : ''}
         </div>
       </div>
     </article>`).join('');
@@ -905,6 +923,22 @@ async function inventoryPage(page) {
     if (detailButton) return productDetailModal(products.find((item) => item.id === detailButton.dataset.viewProduct), totals.get(detailButton.dataset.viewProduct) || 0);
     const editButton = event.target.closest('[data-edit-product]');
     if (editButton) return productModal(products.find((item) => item.id === editButton.dataset.editProduct), totals.get(editButton.dataset.editProduct) || 0);
+    const deleteButton = event.target.closest('[data-delete-product]');
+    if (deleteButton && canManage()) {
+      const product = products.find((item) => item.id === deleteButton.dataset.deleteProduct);
+      if (!product) return;
+      const organizationId = state.organization.id;
+      return openModal('Hapus produk?', 'Produk akan dihapus dari katalog toko di semua cabang.', `<div class="notice"><strong>${esc(product.name)}</strong><br />Produk hanya bisa dihapus jika belum terhubung dengan stok atau riwayat transaksi.</div>`, async () => {
+        if (!canManage() || state.organization?.id !== organizationId) throw new Error('Hanya pemilik toko yang dapat menghapus produk.');
+        const { data, error } = await supabase.from('products').delete()
+          .eq('id', product.id).eq('organization_id', organizationId).select('id');
+        if (error?.code === '23503') throw new Error('Produk masih terhubung dengan stok atau riwayat transaksi di toko.');
+        if (error) throw error;
+        if (!data?.length) throw new Error('Produk tidak ditemukan atau akses hapus ditolak.');
+        toast('Produk berhasil dihapus.');
+        if (state.page === 'inventory') await showPage('inventory');
+      }, 'Hapus produk');
+    }
     const photoButton = event.target.closest('[data-product-photo]');
     if (photoButton) productPhotoModal(products.find((item) => item.id === photoButton.dataset.productPhoto));
   });

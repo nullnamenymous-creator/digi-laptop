@@ -63,6 +63,14 @@ a { color: inherit; }
 .profile-meta span { color: #98aa9d; font-size: 12px; }
 .logout { padding: 6px 3px; border: 0; background: none; color: #b3beb4; font-size: 12px; }
 .logout:hover { color: #fff; text-decoration: underline; }
+.top-logout {
+  flex: none;
+  min-height: 36px;
+  padding: 5px 9px;
+  border: 1px solid currentColor;
+  color: #fff;
+  font-weight: 600;
+}
 
 /* Workspace frame */
 .main { min-height: 100vh; display: flex; flex-direction: column; margin-left: 248px; }
