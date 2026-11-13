@@ -728,3 +728,14 @@ body { font-size: 14px; line-height: 1.5; }
     font-weight: 600;
   }
 }
+
+.cashier-catalog { margin-bottom: 14px; }
+.cashier-catalog .inventory-product-grid { max-height: 470px; overflow-y: auto; }
+.cashier-product-card { min-width: 0; padding: 0; text-align: left; background: var(--surface); color: inherit; border: 1px solid var(--line); cursor: pointer; }
+.cashier-product-card:hover, .cashier-product-card[aria-pressed="true"] { border-color: var(--green-800); }
+.cashier-product-card:disabled { cursor: default; opacity: .72; }
+.cashier-product-card .inventory-product-image { height: clamp(74px, 11vw, 142px); aspect-ratio: auto; }
+.cashier-product-info { display: grid; gap: 4px; padding: 10px; overflow-wrap: anywhere; }
+.cashier-product-info small { color: var(--muted); }
+.cashier-product-info b { color: var(--green-800); }
+.cashier-cart table { white-space: normal; overflow-wrap: anywhere; }
