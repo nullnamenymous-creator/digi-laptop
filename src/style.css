@@ -583,12 +583,25 @@ tbody tr:hover td { background: #f7faef; }
 .inventory-product-body h3 { margin: 0; font-size: .92rem; line-height: 1.35; }
 .inventory-product-price { margin-top: 4px; font-size: 1.05rem; }
 .inventory-product-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; padding-top: 6px; }
+.inventory-catalog-panel .inventory-product-grid { gap: 10px; padding: 12px; align-items: start; }
+.inventory-catalog-panel .inventory-product-image {
+  height: clamp(88px, 11vw, 124px);
+  aspect-ratio: auto;
+  padding: 6px;
+  overflow: hidden;
+}
+.inventory-catalog-panel .inventory-product-image img { min-height: 0; min-width: 0; }
+.inventory-catalog-panel .inventory-product-body { gap: 4px; padding: 10px; }
+.inventory-catalog-panel .inventory-product-price { margin-top: 2px; }
+.inventory-catalog-panel .inventory-product-actions { padding-top: 4px; }
 @media (max-width: 960px) {
   .inventory-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) {
   .inventory-product-grid { gap: 8px; padding: 8px; }
   .inventory-product-body { padding: 8px; }
+  .inventory-catalog-panel .inventory-product-grid { gap: 8px; padding: 8px; }
+  .inventory-catalog-panel .inventory-product-body { padding: 8px; }
 }
 
 /* Keep the account controls visible when the sidebar is taller than the viewport. */
