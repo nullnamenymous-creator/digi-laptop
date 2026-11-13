@@ -692,3 +692,5 @@ body { font-size: 14px; line-height: 1.5; }
   .page-head .actions, .inventory-controls { width: 100%; }
   .inventory-controls > * { flex: 1 1 125px; min-width: 0; }
 }
+
+.nav-button.qc-subnav { padding-left: 34px; font-weight: 500; }
