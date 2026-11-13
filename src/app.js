@@ -25,8 +25,8 @@ const rolePages = () => {
   const role = state.profile?.role;
   if (role === 'investor') return ['reports'];
   if (role === 'technician') return canStockQc() ? ['quality','service'] : ['service'];
-  if (role === 'owner') return ['dashboard','inventory','transfers','cashier','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
-  return ['dashboard','inventory','transfers','cashier','service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
+  if (role === 'owner') return ['dashboard','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
+  return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['cashier'] : []), 'service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
@@ -89,14 +89,14 @@ async function afterAuth({ preferCentral = false } = {}) {
   const sessionCacheKey=`digi-offline-session:${state.user.id}`;
   const {data:profile,error}=await supabase.from('profiles').select('*, organizations(*)').eq('id',state.user.id).maybeSingle();
   if(error){
-    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=state.profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(['owner','operator'].includes(state.profile.role)&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
+    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=state.profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(error.message);return;
   }
   if(!profile){ownerSetupScreen();return;}
   state.profile=profile;state.organization=profile.organizations;
   const {data:branches,error:branchError}=await supabase.from('branches').select('*').eq('is_active',true).order('name');
   if(branchError){
-    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(['owner','operator'].includes(profile.role)&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
+    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(branchError.message);return;
   }
   state.branches=branches||[];
@@ -1159,13 +1159,13 @@ function printSaleReceipt(sale) {
 }
 
 async function syncPendingOfflineSales() {
-  if(!navigator.onLine||!state.profile||!state.organization)return;
+  if(!navigator.onLine||state.profile?.role!=='operator'||!state.organization)return;
   const prefix=`digi-sale-outbox:${state.organization.id}:`;let changed=false,anyChanged=false,submitted=0;
   for(let i=0;i<localStorage.length;i++){
     const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;
     let rows;try{rows=JSON.parse(localStorage.getItem(key)||'[]')}catch{continue}
     for(const row of rows){
-      if(row.status!=='queued'||row.organization_id!==state.organization.id)continue;
+      if(row.status!=='queued'||row.organization_id!==state.organization.id||row.branch_id!==state.profile?.branch_id)continue;
       try{
         const {data,error}=await supabase.rpc('create_sale_with_request',{_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date});
         if(error)throw error;
@@ -1188,42 +1188,108 @@ async function cashierPage(page) {
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
   const availableProducts=products.filter(product=>(available.get(product.id)||0)>0);
-  const productOptions=availableProducts.map(product=>`<option value="${product.id}">${esc(product.name)} · stok ${available.get(product.id)}</option>`).join('');
   const queueKey=`digi-sale-outbox:${state.organization.id}:${branchId}`,readQueue=()=>JSON.parse(localStorage.getItem(queueKey)||'[]'),saveQueue=(q)=>localStorage.setItem(queueKey,JSON.stringify(q));
   let cart=[];
-  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Katalog siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk memilihnya. Cari nama, SKU, barcode, atau serial di bawah.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="inventory-product-grid" id="cashier-catalog-items"></div></section><div class="grid cashier-grid"><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Pilih pelanggan, masukkan barang ke keranjang, lalu simpan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div><div class="field"><label>Cari produk / barcode / serial</label><input id="sale-product-search" placeholder="Ketik nama, SKU, barcode, atau serial…" autocomplete="off" /></div><div class="field"><label>Produk tersedia</label><select name="product_id" ${''}>${productOptions||'<option value="">Tidak ada stok tersedia</option>'}</select></div><div class="sale-photo-preview full" id="sale-photo-preview"><span>Pilih produk untuk melihat fotonya.</span></div><div class="field"><label>Jumlah</label><input name="quantity" type="number" min="1" value="1" required /></div><div class="field"><label>Harga satuan</label><input id="sale-price" readonly /></div><div class="field full"><button class="btn" type="button" id="add-cart-line" ${productOptions?'':'disabled'}>＋ Tambahkan ke keranjang</button></div></div><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>HARGA</th><th>QTY</th><th>SUBTOTAL</th><th></th></tr></thead><tbody id="cart-lines"><tr><td colspan="5"><div class="empty">Pilih produk lalu tambahkan ke keranjang.</div></td></tr></tbody></table></div></section><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Cetak</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
-  const form=page.querySelector('#sale-form'),productSelect=form.product_id,productSearch=page.querySelector('#sale-product-search'),priceFor=product=>Number(form.customer_type.value==='reseller'?product.reseller_price:product.retail_price),updateSelected=()=>{const product=products.find(p=>p.id===productSelect.value),inCart=cart.filter(line=>line.product.id===product?.id).reduce((sum,line)=>sum+line.quantity,0),remaining=product?Math.max(0,(available.get(product.id)||0)-inCart):0;page.querySelector('#sale-price').value=product?(priceFor(product)>0?money(priceFor(product)):'Harga belum diatur'):money(0);page.querySelector('#sale-photo-preview').innerHTML=product?.image_path?`<img src="${productImageUrl(product.image_path)}" alt="${esc(product.name)}"/><span>${esc(product.name)}</span>`:product?`<span>${esc(product.name)} · stok tersisa ${remaining} unit</span>`:'<span>Pilih produk untuk melihat fotonya.</span>';form.quantity.max=String(Math.max(1,remaining));if(Number(form.quantity.value)>remaining)form.quantity.value=String(Math.max(1,remaining));page.querySelector('#add-cart-line').disabled=!product||remaining<1||!(priceFor(product)>0);renderCatalog();};
+  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Cetak</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
+  const form = page.querySelector('#sale-form');
+  const productSearch = page.querySelector('#sale-product-search');
+  const priceFor = product => Number(form.customer_type.value === 'reseller' ? product.reseller_price : product.retail_price);
+  let saving = false;
   const catalog = page.querySelector('#cashier-catalog-items');
   const catalogCount = page.querySelector('#cashier-catalog-count');
   const remainingFor = (product) => Math.max(0, (available.get(product.id) || 0) -
     cart.reduce((total, line) => total + (line.product.id === product.id ? line.quantity : 0), 0));
   const matchesCatalog = (product, query) =>
     [product.name, product.sku, product.brand, product.model].join(' ').toLocaleLowerCase('id').includes(query) ||
-    stock.some((row) => row.product_id === product.id && [row.barcode, row.serial_number].join(' ').toLocaleLowerCase('id').includes(query));
+    stock.some((row) => row.quantity > 0 && row.product_id === product.id && [row.barcode, row.serial_number].join(' ').toLocaleLowerCase('id').includes(query));
   const renderCatalog = () => {
     const query = productSearch.value.trim().toLocaleLowerCase('id');
-    const matches = availableProducts.filter((product) => remainingFor(product) > 0 && matchesCatalog(product, query));
+    const matches = availableProducts.filter((product) => available.get(product.id) > 0 && matchesCatalog(product, query));
     catalogCount.textContent = matches.length + ' produk';
     catalog.innerHTML = matches.map((product) => {
       const price = priceFor(product);
-      return `<button type="button" class="cashier-product-card" data-cashier-product="${esc(product.id)}" aria-pressed="${productSelect.value === product.id}" ${price > 0 ? '' : 'disabled'}>
-        <span class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : 'Foto belum tersedia'}</span>
+      return `<button type="button" class="cashier-product-card" data-cashier-product="${esc(product.id)}" ${price > 0 && remainingFor(product) > 0 && !saving ? '' : 'disabled'}>
+        <span class="cashier-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : 'Foto belum tersedia'}</span>
         <span class="cashier-product-info"><strong>${esc(product.name)}</strong><small>${esc(product.sku)} · ${remainingFor(product)} unit tersisa</small><b>${price > 0 ? money(price) : 'Harga belum diatur'}</b></span>
       </button>`;
     }).join('') || '<div class="empty">Tidak ada produk siap jual yang cocok.</div>';
   };
-  catalog.addEventListener('click', (event) => {
+  const cartLines = page.querySelector('#cart-lines');
+  const renderCart = () => {
+    const total = cart.reduce((sum, item) => sum + priceFor(item.product) * item.quantity, 0);
+    const units = cart.reduce((sum, item) => sum + item.quantity, 0);
+    page.querySelector('#cart-count').textContent = units ? units + ' unit' : 'Belum ada barang';
+    page.querySelector('#cart-total').textContent = money(total);
+    page.querySelector('#checkout-total').textContent = money(total);
+    form.querySelector('[type="submit"]').disabled = saving || !units || cart.some(item => !(priceFor(item.product) > 0));
+    form.paid_amount.max = String(total);
+    if (Number(form.paid_amount.value) > total) form.paid_amount.value = String(total);
+    cartLines.innerHTML = cart.map(({product, quantity}, index) => `
+      <li class="cashier-cart-line">
+        <div><strong>${esc(product.name)}</strong><small>${priceFor(product) > 0 ? money(priceFor(product)) + ' / unit' : 'Harga belum diatur'}</small></div>
+        <b>${money(priceFor(product) * quantity)}</b>
+        <div class="cashier-quantity" data-index="${index}">
+          <button class="small-btn" type="button" data-action="minus" aria-label="Kurangi ${esc(product.name)}" ${saving ? 'disabled' : ''}>−</button>
+          <span>${quantity}</span>
+          <button class="small-btn" type="button" data-action="plus" aria-label="Tambah ${esc(product.name)}" ${saving || !remainingFor(product) || !(priceFor(product) > 0) ? 'disabled' : ''}>+</button>
+          <button class="small-btn" type="button" data-action="remove" ${saving ? 'disabled' : ''}>Hapus</button>
+        </div>
+      </li>`).join('') || '<li class="empty">Klik produk untuk menambahkannya ke keranjang.</li>';
+    renderCatalog();
+  };
+  const addProduct = (product) => {
+    if (saving || !product || !remainingFor(product) || !(priceFor(product) > 0)) return;
+    const line = cart.find(item => item.product.id === product.id);
+    if (line) line.quantity += 1;
+    else cart.push({ product, quantity: 1 });
+    renderCart();
+  };
+  catalog.addEventListener('click', event => {
     const card = event.target.closest('[data-cashier-product]');
-    if (!card) return;
-    productSelect.value = card.dataset.cashierProduct;
-    updateSelected();
-    form.quantity.focus();
+    if (!card || card.disabled) return;
+    addProduct(availableProducts.find(product => product.id === card.dataset.cashierProduct));
+    const updated = catalog.querySelector(`[data-cashier-product="${CSS.escape(card.dataset.cashierProduct)}"]:enabled`);
+    (updated || productSearch).focus({preventScroll: true});
   });
-  const renderCart=()=>{const total=cart.reduce((sum,item)=>sum+priceFor(item.product)*item.quantity,0);page.querySelector('#cart-count').textContent=cart.length?`${cart.length} jenis produk · ${cart.reduce((sum,item)=>sum+item.quantity,0)} unit`:'Belum ada barang';page.querySelector('#cart-total').textContent=money(total);page.querySelector('#checkout-total').textContent=money(total);form.querySelector('[type="submit"]').disabled=!cart.length;form.paid_amount.max=String(total);if(Number(form.paid_amount.value)>total)form.paid_amount.value=String(total);page.querySelector('#cart-lines').innerHTML=cart.length?cart.map((item,i)=>`<tr><td class="product-name">${esc(item.product.name)}<div class="field-hint">${esc(item.product.sku)}</div></td><td>${money(priceFor(item.product))}</td><td>${item.quantity}</td><td>${money(priceFor(item.product)*item.quantity)}</td><td><button class="small-btn" type="button" data-remove-line="${i}">Hapus</button></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty">Pilih produk lalu tambahkan ke keranjang.</div></td></tr>';page.querySelectorAll('[data-remove-line]').forEach(btn=>btn.addEventListener('click',()=>{cart.splice(Number(btn.dataset.removeLine),1);renderCart();updateSelected()}));};
-  form.customer_id.addEventListener('change',()=>{const customer=customers.find(item=>item.id===form.customer_id.value);if(customer){form.customer_name.value=customer.name;form.customer_name.readOnly=true;form.customer_type.value=customer.customer_type==='reseller'?'reseller':'end_user';page.querySelector('#customer-price-hint').textContent=`Harga awal mengikuti data pelanggan (${customer.customer_type==='reseller'?'reseller':'end user'}). Harga mengikuti tipe pelanggan terdaftar.`}else{form.customer_name.value='';form.customer_name.readOnly=false;form.customer_type.value='end_user';page.querySelector('#customer-price-hint').textContent='Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.'}form.customer_type.disabled=Boolean(customer);updateSelected();renderCart()});productSelect.addEventListener('change',updateSelected);form.customer_type.addEventListener('change',()=>{page.querySelector('#customer-price-hint').textContent='Harga '+(form.customer_type.value==='reseller'?'reseller':'end user')+' dipakai pada transaksi ini saja; tipe pelanggan tersimpan tidak berubah.';updateSelected();renderCart()});form.payment_mode.addEventListener('change',()=>{form.querySelector('.credit-fields').hidden=form.payment_mode.value!=='credit';form.paid_amount.required=form.payment_mode.value==='credit';form.due_date.required=form.payment_mode.value==='credit';form.paid_amount.max=String(cart.reduce((sum,line)=>sum+priceFor(line.product)*line.quantity,0))});productSearch.addEventListener('input',()=>{productSearch.value=productSearch.value.slice(0,160);const query=productSearch.value.trim().toLocaleLowerCase('id');const matches=availableProducts.filter(product => matchesCatalog(product, query));const selected=productSelect.value;productSelect.innerHTML=`<option value="">${matches.length?'Pilih produk tersedia':'Produk tidak ditemukan'}</option>${matches.map(product=>`<option value="${product.id}">${esc(product.name)} · stok ${available.get(product.id)}</option>`).join('')}`;if(matches.some(product=>product.id===selected))productSelect.value=selected;updateSelected()});productSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();if(productSelect.options.length>1){productSelect.selectedIndex=1;updateSelected()}}});page.querySelectorAll('[data-print-sale]').forEach(button=>button.addEventListener('click',()=>{const sale=sales.find(row=>row.id===button.dataset.printSale);if(sale)printSaleReceipt(sale)}));updateSelected();renderCart();
-  page.querySelector('#add-cart-line').addEventListener('click',()=>{const product=products.find(p=>p.id===productSelect.value),quantity=Number(form.quantity.value);if(!product||!Number.isInteger(quantity)||quantity<1)return toast('Pilih produk dan jumlah yang benar.',true);if(!(priceFor(product)>0))return toast('Atur harga jual produk terlebih dahulu.',true);const already=cart.filter(x=>x.product.id===product.id).reduce((n,x)=>n+x.quantity,0);if(already+quantity>(available.get(product.id)||0))return toast(`Stok ${product.name} tidak cukup. Tersedia ${Math.max(0,(available.get(product.id)||0)-already)} unit lagi.`,true);const line=cart.find(x=>x.product.id===product.id);if(line)line.quantity+=quantity;else cart.push({product,quantity});form.quantity.value='1';renderCart();updateSelected()});
+  cartLines.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button || button.disabled || saving) return;
+    const index = Number(button.closest('[data-index]').dataset.index);
+    const line = cart[index];
+    if (button.dataset.action === 'plus') addProduct(line.product);
+    else {
+      if (button.dataset.action === 'remove' || line.quantity === 1) cart.splice(index, 1);
+      else line.quantity -= 1;
+      renderCart();
+    }
+    const row = cartLines.querySelector(`[data-index="${index}"]`);
+    (row?.querySelector(`[data-action="${button.dataset.action}"]:enabled`) || row?.querySelector('button:enabled') || productSearch).focus({preventScroll: true});
+  });
+  productSearch.addEventListener('input', renderCatalog);
+  form.customer_id.addEventListener('change', () => {
+    const customer = customers.find(item => item.id === form.customer_id.value);
+    form.customer_name.value = customer?.name || '';
+    form.customer_name.readOnly = Boolean(customer);
+    form.customer_type.value = customer?.customer_type === 'reseller' ? 'reseller' : 'end_user';
+    form.customer_type.disabled = Boolean(customer);
+    page.querySelector('#customer-price-hint').textContent = customer ? 'Harga mengikuti tipe pelanggan terdaftar.' : 'Pilih tipe harga untuk pembeli umum.';
+    renderCart();
+  });
+  form.customer_type.addEventListener('change', renderCart);
+  form.payment_mode.addEventListener('change', () => {
+    const credit = form.payment_mode.value === 'credit';
+    form.querySelector('.credit-fields').hidden = !credit;
+    form.paid_amount.required = credit;
+    form.due_date.required = credit;
+  });
+  page.querySelectorAll('[data-print-sale]').forEach(button => button.addEventListener('click', () => {
+    const sale = sales.find(row => row.id === button.dataset.printSale);
+    if (sale) printSaleReceipt(sale);
+  }));
+  renderCart();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (saving) return;
     if (state.branchId !== branchId) return toast('Cabang telah berubah. Buka ulang kasir.', true);
     if (!cart.length) return toast('Keranjang masih kosong.', true);
     if (cart.some((item) => !(priceFor(item.product) > 0))) return toast('Ada produk yang belum memiliki harga untuk tipe pelanggan ini.', true);
@@ -1240,10 +1306,11 @@ async function cashierPage(page) {
       paid_amount: paid, due_date: paid < total ? form.due_date.value : null,
       created_at: new Date().toISOString(), status: 'queued'
     };
-    const button = form.querySelector('[type="submit"]'); button.disabled = true;
+    saving = true;
+    renderCart();
     try {
       if (!navigator.onLine) {
-        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; renderCart(); updateSelected();
+        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; renderCart();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
       const {data,error}=await supabase.rpc('create_sale_with_request',{
@@ -1254,7 +1321,9 @@ async function cashierPage(page) {
       if(error) throw error;
       const sale=checkError(await supabase.from('sales').select('receipt_number,total,paid_amount,customer_name,customer_type,payment_method,created_at,sale_items(product_name,quantity,unit_price,line_total)').eq('id',data).single());
       toast(`Transaksi tersimpan. ${money(paid)} masuk ke kas.`);
-      if (state.branchId === branchId && state.page === 'cashier') await showPage('cashier');
+      if (state.branchId !== branchId || state.page !== 'cashier') return;
+      await showPage('cashier');
+      if (state.branchId !== branchId || state.page !== 'cashier') return;
       const receipt=page.querySelector('#sale-receipt');
       if(receipt){
         receipt.innerHTML=`<div class="receipt cashier-receipt"><div><b>Transaksi tersimpan</b><span>${esc(sale.receipt_number)}</span></div><span>Total ${money(sale.total)} · Dibayar ${money(sale.paid_amount)}${sale.paid_amount<sale.total?` · Piutang ${money(sale.total-sale.paid_amount)}`:''}</span><button class="btn" id="print-receipt" type="button">Cetak struk</button></div>`;
@@ -1262,13 +1331,17 @@ async function cashierPage(page) {
       }
     } catch(error) {
       if(!navigator.onLine||/fetch|network|failed to connect|connection/i.test(error.message||'')){
-        const q=readQueue();q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[];renderCart();updateSelected();
+        const q=readQueue();q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[];renderCart();
         toast('Jaringan terputus. Transaksi masuk antrean untuk dikirim ulang.',true);renderOfflineQueue();
       } else toast(error.message||'Transaksi gagal.',true);
-    } finally { button.disabled=false; }
+    } finally {
+      saving = false;
+      if (form.isConnected) renderCart();
+    }
   });
   function renderOfflineQueue() {
-    const q=readQueue().filter(x=>x.status!=='cancelled'),host=page.querySelector('#offline-queue');
+    const q=readQueue().filter(x=>x.status!=='cancelled'),host=form.parentElement?.querySelector('#offline-queue');
+    if (!host || !form.isConnected) return;
     if(!q.length){host.innerHTML='';return;}
     host.innerHTML=`<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Antrean perangkat</div><div class="panel-sub">${q.filter(x=>x.status==='queued').length} menunggu sinkron · ${q.filter(x=>x.status==='attention').length} perlu diperiksa</div></div>${navigator.onLine?'<button class="small-btn" id="sync-queue">Sinkronkan sekarang</button>':''}</div><div class="table-wrap"><table><thead><tr><th>WAKTU</th><th>ITEM</th><th>TOTAL PERKIRAAN</th><th>STATUS</th><th></th></tr></thead><tbody>${q.slice().reverse().map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('id-ID')}</td><td>${x.lines.length} produk · ${x.lines.reduce((n,l)=>n+l.quantity,0)} unit</td><td>${money(x.lines.reduce((sum,line)=>sum+Number(line.expected_price)*line.quantity,0))}</td><td><span class="pill ${x.status==='attention'?'warn':x.status==='synced'?'':'gray'}">${x.status==='synced'?`Tersinkron · ${esc(x.receipt_number||'')}`:x.status==='attention'?`Perlu ditinjau · ${esc(x.error||'')}`:'Menunggu jaringan'}</span></td><td>${x.status==='attention'?`<button class="small-btn" data-retry-offline="${x.request_id}">Coba lagi</button>`:''}${x.status!=='synced'?` <button class="small-btn" data-discard-offline="${x.request_id}">Batalkan antrean</button>`:''}</td></tr>`).join('')}</tbody></table></div></section>`;
     host.querySelector('#sync-queue')?.addEventListener('click',syncPendingOfflineSales);
