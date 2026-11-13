@@ -153,7 +153,28 @@ function openModal(title, subtitle, body, onSubmit, submitLabel = 'Simpan') {
   host.innerHTML = `<div class="modal-backdrop"><form class="modal" id="active-modal"><div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="modal-close" type="button" data-close-modal>×</button></div>${body}<div class="modal-actions"><button class="btn" type="button" data-close-modal>Batal</button><button class="btn primary" type="submit">${submitLabel}</button></div></form></div>`;
   host.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', () => { host.innerHTML = ''; }));
   host.querySelector('.modal-backdrop').addEventListener('click', (event) => { if (event.target.classList.contains('modal-backdrop')) host.innerHTML = ''; });
-  host.querySelector('#active-modal').addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('[type="submit"]'); button.disabled = true; try { await onSubmit(new FormData(event.currentTarget)); host.innerHTML = ''; } catch (error) { button.disabled = false; let notice = host.querySelector('.notice'); if (!notice) { notice = document.createElement('div'); notice.className = 'notice error'; event.currentTarget.insertBefore(notice, event.currentTarget.querySelector('.modal-actions')); } else notice.classList.add('error'); notice.textContent = error.message || 'Tidak bisa menyimpan data.'; } });
+  const modalForm = host.querySelector('#active-modal');
+  modalForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = modalForm.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      await onSubmit(new FormData(modalForm));
+      if (host.contains(modalForm)) host.innerHTML = '';
+    } catch (error) {
+      if (!host.contains(modalForm)) return;
+      button.disabled = false;
+      let notice = modalForm.querySelector('[data-modal-error]');
+      if (!notice) {
+        notice = document.createElement('div');
+        notice.className = 'notice error';
+        notice.setAttribute('data-modal-error', '');
+        notice.setAttribute('role', 'alert');
+        modalForm.insertBefore(notice, modalForm.querySelector('.modal-actions'));
+      }
+      notice.textContent = error.message || 'Tidak bisa menyimpan data.';
+    }
+  });
   return host;
 }
 function branchField(name = 'branch_id', value = state.branchId) {
