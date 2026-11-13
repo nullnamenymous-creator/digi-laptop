@@ -626,4 +626,29 @@ tbody tr:hover td { background: #f7faef; }
 .inventory-pagination[hidden] { display: none; }
 .inventory-pagination .btn:disabled { opacity: .45; cursor: default; }
 
-.dashboard-slogan h1 { max-width: 44ch; font-size: clamp(1.25rem, 2.35vw, 2rem); line-height: 1.2; text-wrap: balance; }
+.dashboard-slogan {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(20px, 4vw, 42px);
+  border: 1px solid #38694e;
+  border-left: 5px solid #dfb95f;
+  background: radial-gradient(ellipse at 95% 0%, #357a53 0%, transparent 60%), linear-gradient(115deg, #062d21, #104a36);
+  color: #f5f8f1;
+}
+.dashboard-slogan::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: repeating-linear-gradient(127deg, transparent 0 27px, #e5c36c20 28px 29px, transparent 30px 55px);
+  mask-image: linear-gradient(90deg, transparent 38%, #000);
+}
+.dashboard-slogan .eyebrow { color: #efd080; }
+.dashboard-slogan h1 { color: inherit; font-size: clamp(1.35rem, 3vw, 2.65rem); line-height: 1.14; }
+.dashboard-slogan h1 em { color: #f3cf77; font-style: normal; }
+.dashboard-finder { scroll-margin-top: 66px; }
+.dashboard-finder .panel-head { padding: 14px; }
+@media (max-width: 600px) {
+  .slogan-break { display: none; }
+}
