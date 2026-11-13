@@ -652,3 +652,5 @@ tbody tr:hover td { background: #f7faef; }
 @media (max-width: 600px) {
   .slogan-break { display: none; }
 }
+
+.dashboard-finder .finder-controls { display: block; border-bottom: 0; }

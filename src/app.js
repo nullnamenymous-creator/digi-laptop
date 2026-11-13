@@ -262,8 +262,6 @@ async function dashboardPage(page) {
   const laptopUnitCount = [...laptopBrandCounts.values()].reduce((sum,value) => sum+value,0);
   const finderStock = new Map();
   inventoryData.stock.forEach((item) => { const rows = finderStock.get(item.product_id) || []; rows.push(item); finderStock.set(item.product_id, rows); });
-  const finderBrands = [...new Set(inventoryData.products.map((item) => String(item.brand || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'id'));
-  const finderCategories = [...new Set(inventoryData.products.map((item) => item.category).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'id'));
   const finderProducts = inventoryData.products.map((product) => {
     const rows = finderStock.get(product.id) || [];
     const available = rows.filter((item) => item.status === 'available').reduce((sum,item) => sum + Number(item.quantity || 0), 0);
@@ -278,56 +276,32 @@ async function dashboardPage(page) {
   ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
   const ownerBranchSales = ownerView ? `<section class="panel table-panel owner-branch-sales"><div class="panel-head"><div><div class="panel-title">Penjualan hari ini per cabang</div><div class="panel-sub">Omzet dan jumlah transaksi semua cabang · ${new Date().toLocaleDateString('id-ID')}</div></div><span class="insight-tag">${state.branches.length} CABANG</span></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>TRANSAKSI</th><th>PENJUALAN HARI INI</th></tr></thead><tbody>${state.branches.map((branch) => { const item = branchSales.get(branch.id) || { total: 0, count: 0 }; return `<tr><td class="product-name">${esc(branch.name)}</td><td>${item.count}</td><td><b>${money(item.total)}</b></td></tr>`; }).join('')}<tr class="owner-sales-total"><td class="product-name">TOTAL SEMUA CABANG</td><td>${sales.length}</td><td><b>${money(salesTotal)}</b></td></tr></tbody></table></div></section>` : '';
   page.innerHTML = `<div class="page-head dashboard-slogan"><div><div class="eyebrow">DIGITAL LAPTOP JOMBANG</div><h1>Laptop pilihan untuk <em>kerja, belajar,</em><br class="slogan-break" /> dan berkarya setiap hari.</h1></div>${state.profile.role === 'operator' ? '<button class="btn primary" data-go="cashier">＋ Transaksi baru</button>' : ''}</div>
-    <section class="panel dashboard-finder"><div class="panel-head"><div><div class="panel-title">Katalog produk</div><div class="panel-sub">Semua produk · stok dan barcode di ${esc(branchName(state.branchId))}.</div></div><span class="insight-tag" id="finder-count">${finderProducts.length} PRODUK</span></div><div class="finder-controls"><input id="finder-search" type="search" placeholder="Contoh: Dell 5310, DL-0001, barcode atau serial…" aria-label="Cari produk, SKU, barcode, atau serial" /><select id="finder-brand" aria-label="Filter merek"><option value="all">Semua merek</option>${finderBrands.map((brand) => `<option value="${esc(brand)}">${esc(brand)}</option>`).join('')}</select><select id="finder-category" aria-label="Filter kategori"><option value="all">Semua kategori</option>${finderCategories.map((category) => `<option value="${esc(category)}">${esc(category)}</option>`).join('')}</select><select id="finder-stock" aria-label="Filter ketersediaan"><option value="all">Semua stok</option><option value="available">Stok tersedia</option><option value="empty">Stok kosong</option></select><select id="finder-sort" aria-label="Urutkan harga"><option value="relevance">Urutan nama</option><option value="low">Harga terendah</option><option value="high">Harga tertinggi</option></select></div><div class="inventory-product-grid" id="finder-results"></div><nav class="inventory-pagination" aria-label="Halaman katalog Dashboard" id="finder-pager" hidden><button class="btn" type="button" id="finder-prev">Sebelumnya</button><span id="finder-page" aria-live="polite"></span><button class="btn" type="button" id="finder-next">Berikutnya</button></nav><div class="finder-footer"><button class="link-button" data-go="inventory">Buka semua data produk & stok →</button></div></section>
+    <section class="panel dashboard-finder"><div class="finder-controls"><input id="finder-search" type="search" placeholder="Cari produk, merek, SKU, barcode, atau nomor seri…" aria-label="Cari produk, merek, SKU, barcode, atau nomor seri" /></div><div id="finder-results" aria-live="polite"></div></section>
         <div class="cards"><article class="card"><div class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></div><div class="card-value">${money(salesTotal)}</div><div class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</div></article><article class="card"><div class="card-label">Stok tersedia<span class="card-icon">▤</span></div><div class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></div><div class="card-sub">Semua produk di cabang ini</div></article><article class="card"><div class="card-label">Servis berjalan<span class="card-icon">⌁</span></div><div class="card-value">${activeServices}</div><div class="card-sub">${readyCount} siap diserahkan</div></article><article class="card"><div class="card-label">Jumlah cabang<span class="card-icon">⌂</span></div><div class="card-value">${state.branches.length}</div><div class="card-sub">Terhubung ke database pusat</div></article></div>
     ${ownerBranchSales}
     <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
-  let finderPage = 1;
-  const finderPageSize = 8;
-  const renderFinder = () => {
-    const query = page.querySelector('#finder-search').value.trim().toLocaleLowerCase('id');
-    const brand = page.querySelector('#finder-brand').value;
-    const category = page.querySelector('#finder-category').value;
-    const availability = page.querySelector('#finder-stock').value;
-    const sort = page.querySelector('#finder-sort').value;
-    let matches = finderProducts.filter((product) => {
-      const text = `${product.name} ${product.brand || ''} ${product.model || ''} ${product.sku || ''} ${product.searchableCodes}`.toLocaleLowerCase('id');
-      return (!query || text.includes(query)) && (brand === 'all' || product.brand === brand) && (category === 'all' || product.category === category) && (availability === 'all' || (availability === 'available' ? product.available > 0 : product.available <= 0));
-    });
-    if (sort === 'low') matches.sort((a,b) => Number(a.retail_price || 0) - Number(b.retail_price || 0));
-    else if (sort === 'high') matches.sort((a,b) => Number(b.retail_price || 0) - Number(a.retail_price || 0));
-    else matches.sort((a,b) => a.name.localeCompare(b.name, 'id'));
-    page.querySelector('#finder-count').textContent = `${matches.length} PRODUK`;
-    const pages = Math.max(1, Math.ceil(matches.length / finderPageSize));
-    finderPage = Math.min(finderPage, pages);
-    const start = (finderPage - 1) * finderPageSize;
-    page.querySelector('#finder-pager').hidden = pages === 1;
-    page.querySelector('#finder-prev').disabled = finderPage === 1;
-    page.querySelector('#finder-next').disabled = finderPage === pages;
-    page.querySelector('#finder-page').textContent = `Halaman ${finderPage} / ${pages}`;
-    page.querySelector('#finder-results').innerHTML = matches.slice(start, start + finderPageSize).map((product) => `
-      <article class="inventory-product-card">
-        <div class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum ada</span>'}</div>
-        <div class="inventory-product-body">
-          <div class="field-hint">${esc(product.category)} · ${esc(product.sku)}</div>
-          <h3>${esc(product.name)}</h3>
-          <strong class="inventory-product-price">${money(product.retail_price)}</strong>
-          <div class="field-hint">${product.available.toLocaleString('id-ID')} unit siap jual</div>
-          <div class="inventory-product-actions"><button class="small-btn" type="button" data-finder-product="${esc(product.id)}">Lihat produk →</button></div>
-        </div>
-      </article>`).join('') || '<div class="empty"><b>Produk tidak ditemukan</b>Coba ubah pencarian atau filter.</div>';
-    page.querySelectorAll('[data-finder-product]').forEach((button) => button.addEventListener('click', () => { const product = finderProducts.find((item) => item.id === button.dataset.finderProduct); state.inventorySearchQuery = product?.name || ''; showPage('inventory'); }));
-  };
-  ['#finder-search','#finder-brand','#finder-category','#finder-stock','#finder-sort'].forEach((selector) => page.querySelector(selector)?.addEventListener(selector === '#finder-search' ? 'input' : 'change', () => { finderPage = 1; renderFinder(); }));
-  [['#finder-prev', -1], ['#finder-next', 1]].forEach(([selector, direction]) => {
-    page.querySelector(selector).addEventListener('click', () => {
-      finderPage += direction;
-      renderFinder();
-      page.querySelector('.dashboard-finder').scrollIntoView({ block: 'start' });
-    });
+  const finderSearch = page.querySelector('#finder-search');
+  const finderResults = page.querySelector('#finder-results');
+  finderSearch.addEventListener('input', () => {
+    const query = finderSearch.value.trim().toLocaleLowerCase('id');
+    if (!query) {
+      finderResults.replaceChildren();
+      return;
+    }
+    const matches = finderProducts.filter((product) =>
+      [product.name, product.brand, product.model, product.sku, product.searchableCodes].join(' ').toLocaleLowerCase('id').includes(query)
+    );
+    finderResults.innerHTML = matches.slice(0, 5).map((product) => `<button class="finder-result" type="button" data-finder-product="${esc(product.id)}"><span class="finder-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : 'DL'}</span><span class="finder-product"><b>${esc(product.name)}</b><small>${esc(product.sku)}</small></span><span class="finder-availability"><b>${product.available}</b><small>unit tersedia</small></span><span class="finder-price">${money(product.retail_price)}</span><span class="finder-open">Buka →</span></button>`).join('') || '<div class="empty">Produk tidak ditemukan.</div>';
+    if (matches.length > 5) finderResults.insertAdjacentHTML('beforeend', '<div class="finder-footer"><button class="link-button" type="button" data-finder-all>Lihat semua hasil →</button></div>');
   });
-  renderFinder();
+  finderResults.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-finder-product], [data-finder-all]');
+    if (!button) return;
+    const product = finderProducts.find((item) => item.id === button.dataset.finderProduct);
+    state.inventorySearchQuery = product?.sku || finderSearch.value.trim();
+    showPage('inventory');
+  });
   page.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => showPage(button.dataset.go)));
 }
 
