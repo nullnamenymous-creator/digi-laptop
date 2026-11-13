@@ -401,7 +401,7 @@ async function receivingPage(page) {
     });
   }));
   page.querySelectorAll('[data-delete-intake]').forEach((button) => button.addEventListener('click', () => {
-    openModal('Hapus penerimaan?', 'Unit dan barcode dari penerimaan ini akan ikut dihapus jika belum diproses dan belum dibayar.', '', async () => {
+    openModal('Hapus penerimaan?', 'Unit dan barcode ikut dihapus. Penerimaan harus belum dibayar dan unitnya belum dipakai, dijual, atau dimutasi.', '', async () => {
       checkError(await supabase.rpc('manage_intake', { _id: button.dataset.deleteIntake, _delete: true, _invoice: null, _due: null }));
       toast('Penerimaan dihapus.');
       await showPage('receiving');
