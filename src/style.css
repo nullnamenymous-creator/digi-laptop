@@ -625,3 +625,5 @@ tbody tr:hover td { background: #f7faef; }
 }
 .inventory-pagination[hidden] { display: none; }
 .inventory-pagination .btn:disabled { opacity: .45; cursor: default; }
+
+.dashboard-slogan h1 { max-width: 44ch; font-size: clamp(1.25rem, 2.35vw, 2rem); line-height: 1.2; text-wrap: balance; }
