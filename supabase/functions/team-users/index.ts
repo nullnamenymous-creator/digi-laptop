@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
       if (!branch) return reply({ error: "Pilih cabang toko yang valid." }, 400);
     }
 
-    const allowedRole = (role: unknown) => role === "operator" || role === "technician";
+    const allowedRole = (role: unknown) => role === "operator" || role === "technician" || role === "investor";
     const fullName = String(body?.full_name || "").trim();
     const email = String(body?.email || "").trim().toLowerCase();
     const password = typeof body?.password === "string" ? body.password : "";
@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
       if (fullName.length < 2 || fullName.length > 120) return reply({ error: "Nama harus 2–120 karakter." }, 400);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
       if (password.length < 8 || password.length > 128) return reply({ error: "Password harus 8–128 karakter." }, 400);
-      if (!allowedRole(body?.role)) return reply({ error: "Pilih role operator atau QC." }, 400);
+      if (!allowedRole(body?.role)) return reply({ error: "Pilih role Operator, Teknisi, atau Investor." }, 400);
 
       // Remove an old invite first so its auth trigger cannot create a duplicate profile.
       const { error: inviteCleanupError } = await admin.from("team_invites").delete()
@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
     if (action === "update") {
       if (fullName.length < 2 || fullName.length > 120) return reply({ error: "Nama harus 2–120 karakter." }, 400);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
-      if (!allowedRole(body?.role)) return reply({ error: "Pilih role operator atau QC." }, 400);
+      if (!allowedRole(body?.role)) return reply({ error: "Pilih role Operator, Teknisi, atau Investor." }, 400);
       if (password && (password.length < 8 || password.length > 128)) return reply({ error: "Password baru harus 8–128 karakter." }, 400);
 
       const authUpdates: { email?: string; password?: string; email_confirm?: boolean; user_metadata?: Record<string, unknown> } = {
