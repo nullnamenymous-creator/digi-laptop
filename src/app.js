@@ -52,7 +52,7 @@ function configurationScreen() {
 }
 
 function authScreen(message = '') {
-  root.innerHTML = `<main class="login-page"><section class="login-art"><img class="login-hero-photo" src="/login-laptops.webp" alt="Tiga laptop bisnis untuk DIGITAL LAPTOP JOMBANG" /><div class="login-art-inner"><div class="login-brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><form class="login-box" id="auth-form"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div>${message ? `<div class="notice error">${esc(message)}</div>` : ''}<div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required /></div><div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" minlength="8" required /></div><button class="btn primary" type="submit">Masuk</button><div class="login-switch">Belum punya akun? Hubungi admin toko untuk dibuatkan.</div></form></section></main>`;
+  root.innerHTML = `<main class="login-page"><section class="login-art"><img class="login-hero-photo" src="/login-laptops.webp" alt="Tiga laptop bisnis untuk DIGITAL LAPTOP JOMBANG" /><div class="login-art-inner"><div class="login-brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><form class="login-box" id="auth-form"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div>${message ? `<div class="notice error">${esc(message)}</div>` : ''}<div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required /></div><div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" minlength="8" required /></div><button class="btn primary" type="submit">Masuk</button><div class="login-switch"><a href="/catalog">Katalog produk</a> · <a href="/lacak-servis">Lacak servis</a></div></form></section></main>`;
   document.querySelector('#auth-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -942,7 +942,7 @@ async function transfersPage(page) {
       const transferItems = itemsByTransfer.get(transfer.id) || [];
       const canReceive = transfer.status === 'in_transit' && (canManage() || state.profile.branch_id === transfer.destination_branch_id);
       const status = transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
-      return `<tr><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}</td><td>${canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Konfirmasi diterima</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}</td></tr>`;
+      return `<tr><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}</td><td>${canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Serah terima barang</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}</td></tr>`;
     }).join('') || '<tr><td colspan="6"><div class="empty"><b>Belum ada mutasi stok</b>Buat mutasi untuk memindahkan barang antar cabang.</div></td></tr>'}</tbody></table></div></section>`;
   page.querySelector('#new-stock-transfer')?.addEventListener('click', transferModal);
   page.querySelectorAll('[data-receive-transfer]').forEach((button) => button.addEventListener('click', () => {
@@ -1026,12 +1026,12 @@ async function transferModal() {
 function receiveStockTransferModal(transfer, items) {
   if (!transfer) return;
   const detail = items.map((item) => `<div class="notice">${esc(item.products?.name || 'Barang')} · ${Number(item.quantity)} unit<br/>Barcode asal: ${esc(item.source_barcode)}${item.split_lot ? ' · lot sebagian, barcode baru dibuat saat diterima' : ''}</div>`).join('');
-  openModal(`Terima mutasi ${transfer.transfer_number}`, `${branchName(transfer.source_branch_id)} → ${branchName(transfer.destination_branch_id)}. Hitung barang dan cocokkan barcode fisik sebelum konfirmasi.`, `${detail}<div class="field"><label><input type="checkbox" name="confirm_received" required /> Jumlah dan barang fisik sudah saya periksa.</label></div>`, async () => {
+  openModal(`Serah terima mutasi ${esc(transfer.transfer_number)}`, `${branchName(transfer.source_branch_id)} → ${branchName(transfer.destination_branch_id)}. Hitung barang dan cocokkan barcode fisik sebelum konfirmasi.`, `${detail}<div class="field"><label><input type="checkbox" name="confirm_received" required /> Jumlah dan barang fisik sudah saya periksa.</label></div>`, async () => {
     const result = checkError(await supabase.rpc('receive_stock_transfer', { _transfer_id: transfer.id }));
     const newLotBarcodes = (result.items || []).filter((item) => item.source_barcode !== item.target_barcode).map((item) => item.target_barcode);
     toast(newLotBarcodes.length ? `Mutasi diterima. Barcode lot baru: ${newLotBarcodes.join(', ')}. Stok tersedia di cabang ini.` : 'Mutasi diterima. Stok sekarang tersedia di cabang ini.');
     await showPage('transfers');
-  }, 'Konfirmasi penerimaan');
+  }, 'Konfirmasi serah terima');
 }
 
 function openingStockModal(products) {
@@ -1119,12 +1119,12 @@ function productDetailModal(product, available = 0) {
 
 function productModal(product = null, available = 0) {
   const v=(key,fallback='')=>esc(product?.[key]??fallback);
-  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice"><strong>Stok siap jual di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><div class="field-hint">Catat unit fisik yang sudah siap dijual melalui Stok awal.</div><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Nama produk</label><input name="name" value="${v('name')}" required /></div><div class="field"><label>SKU internal</label><input name="sku" value="${v('sku')}" placeholder="Otomatis jika kosong" required /></div><div class="field"><label>Brand</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Model</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category">${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',12)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" type="number" min="0" value="${v('reseller_price',0)}" required /></div></div><div class="form-grid" style="margin-top:12px">${productPhotoPicker(product?.image_path||'')}</div>`, async (form) => {
+  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice"><strong>Stok siap jual di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><div class="field-hint">Catat unit fisik yang sudah siap dijual melalui Stok awal.</div><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Nama produk</label><input name="name" value="${v('name')}" required /></div><div class="field"><label>SKU internal</label><input name="sku" value="${v('sku')}" placeholder="Otomatis jika kosong" required /></div><div class="field"><label>Brand</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Model</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category">${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',12)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="field full"><span><input type="checkbox" name="is_public" ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</span></label></div><div class="form-grid" style="margin-top:12px">${productPhotoPicker(product?.image_path||'')}</div>`, async (form) => {
     if (!canManage()) throw new Error('Hanya pemilik yang dapat mengubah produk.');
     const name=String(form.get('name')).trim(),sku=String(form.get('sku')).trim()||`DL-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
     const file=selectedProductPhoto(form);if(!product&&!file)throw new Error('Foto produk wajib dipilih.');
     const imagePath=file?await uploadProductPhoto(file,product?.id||crypto.randomUUID()):product?.image_path||'';
-    const values={name,sku,brand:String(form.get('brand')).trim(),model:String(form.get('model')).trim(),category:form.get('category'),cost_price:Number(form.get('cost_price')),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price')),warranty_months:Number(form.get('warranty_months')),image_path:imagePath};
+    const values={name,sku,brand:String(form.get('brand')).trim(),model:String(form.get('model')).trim(),category:form.get('category'),cost_price:Number(form.get('cost_price')),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price')),warranty_months:Number(form.get('warranty_months')),image_path:imagePath,is_public:form.has('is_public')};
     if(Object.values(values).some(value=>typeof value==='number'&&(!Number.isFinite(value)||value<0)))throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
     if(product)checkError(await supabase.from('products').update(values).eq('id',product.id));else checkError(await supabase.from('products').insert({id:crypto.randomUUID(),organization_id:state.organization.id,...values}));
     toast(product?'Detail produk diperbarui.':'Produk tersimpan.');await showPage('inventory');
@@ -1271,12 +1271,18 @@ async function servicePage(page) {
     const photoButtons = `${ticket.intake_photo_path ? `<button class="small-btn" data-photo="${esc(ticket.intake_photo_path)}">Foto awal</button>` : ''}${ticket.handover_photo_path ? `<button class="small-btn" data-photo="${esc(ticket.handover_photo_path)}">Foto serah terima</button>` : ''}`;
     const actions = isTechnician
       ? `${!['handed_over','cancelled'].includes(ticket.status) ? `<button class="small-btn" data-work-ticket="${ticket.id}">Perbarui progres</button>` : ''}${ticket.status === 'repairing' ? `<button class="small-btn" data-parts="${ticket.id}">＋ Sparepart</button>` : ''}${photoButtons}`
-      : `${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
+      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
     return `<tr><td class="product-name">${esc(ticket.ticket_number)}<div class="field-hint">${new Date(ticket.created_at).toLocaleDateString('id-ID')}</div></td><td>${esc(ticket.customer_name)}<div class="field-hint">${esc(ticket.device_name)} · ${esc(ticket.serial_number || 'tanpa serial')}<br/>Teknisi: ${esc(techName)}</div></td><td>${esc(ticket.complaint)}${ticket.technician_note ? `<div class="field-hint"><b>Catatan teknisi:</b> ${esc(ticket.technician_note)}</div>` : ''}</td><td><span class="pill ${ticket.status === 'ready' ? 'blue' : ticket.status === 'handed_over' ? '' : 'warn'}">${esc(statusText[ticket.status] || ticket.status)}</span></td><td>${money(ticket.final_cost || ticket.estimated_cost)}<div class="field-hint">Dibayar ${money(ticket.paid_amount || 0)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
   }).join('') || `<tr><td colspan="6"><div class="empty"><b>${isTechnician ? 'Belum ada tiket di antrean teknisi' : 'Belum ada tiket servis'}</b>${isTechnician ? 'Tiket baru dari operator cabang ini akan muncul di sini.' : 'Buat tiket saat laptop diterima di toko.'}</div></td></tr>`}</tbody></table></div></section>`;
   page.querySelector('#new-service')?.addEventListener('click', () => serviceIntakeModal());
   page.querySelectorAll('[data-work-ticket]').forEach((button) => button.addEventListener('click', () => technicianServiceModal(tickets.find((ticket) => ticket.id === button.dataset.workTicket))));
   page.querySelectorAll('[data-handover]').forEach((button) => button.addEventListener('click', () => { const form = document.createElement('input'); form.type = 'file'; form.accept = 'image/*'; form.capture = 'environment'; form.addEventListener('change', () => finishService(button.dataset.handover, form.files?.[0])); form.click(); }));
+  page.querySelectorAll('[data-service-receipt]').forEach((button) => button.addEventListener('click', async () => {
+    try {
+      const ticket = checkError(await supabase.from('service_tickets').select('ticket_number,tracking_code').eq('id', button.dataset.serviceReceipt).single());
+      await showServiceReceipt(ticket);
+    } catch (error) { toast(error.message, true); }
+  }));
   page.querySelectorAll('[data-cancel-ticket]').forEach((button) => button.addEventListener('click', async () => { if (!confirm('Batalkan tiket servis ini?')) return; try { checkError(await supabase.rpc('update_customer_service', { _ticket_id: button.dataset.cancelTicket, _status: 'cancelled', _technician_note: '', _estimated_cost: 0 })); toast('Tiket servis dibatalkan.'); await showPage('service'); } catch (error) { toast(error.message, true); } }));
   page.querySelectorAll('[data-photo]').forEach((button) => button.addEventListener('click', async () => { const { data, error } = await supabase.storage.from('service-evidence').createSignedUrl(button.dataset.photo, 300); if (error) return toast(error.message, true); window.open(data.signedUrl, '_blank', 'noopener'); }));
   page.querySelectorAll('[data-parts]').forEach((button) => button.addEventListener('click', () => partsModal(button.dataset.parts)));
@@ -1711,8 +1717,62 @@ async function financePage(page) {
   page.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => partyPaymentModal('intake_batch', payables.find((batch) => batch.id === button.dataset.pay), payables.find((batch) => batch.id === button.dataset.pay).remaining)));
 }
 
+function customerPortal(tracking) {
+  root.innerHTML = `<main class="catalog-page"><header class="panel-head"><h1>Digital Laptop Jombang</h1><nav class="actions-cell"><a class="btn" href="/catalog">Katalog produk</a><a class="btn" href="/lacak-servis">Lacak servis</a><a class="btn" href="/">Masuk staf</a></nav></header><section class="panel" id="customer-content"></section></main>`;
+  const panel = root.querySelector('#customer-content');
+  if (tracking) {
+    panel.innerHTML = '<h2>Lacak servis</h2><form class="form-grid"><div class="field"><label for="tracking-code">Kode pelacakan</label><input id="tracking-code" name="code" required /></div><div><button class="btn primary">Lacak</button></div></form><div id="tracking-result" aria-live="polite"></div>';
+    const form = panel.querySelector('form');
+    form.code.value = new URLSearchParams(location.hash.slice(1)).get('kode') || '';
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const result = panel.querySelector('#tracking-result');
+      const code = form.code.value.trim();
+      if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(code)) {
+        result.textContent = 'Masukkan kode lengkap dari bukti penerimaan servis.';
+        return;
+      }
+      result.textContent = 'Memeriksa status…';
+      const {data, error} = await supabase.rpc('customer_service_status', { _code: code });
+      if (form.code.value.trim() !== code) return;
+      const ticket = data?.[0];
+      result.innerHTML = error ? '<p>Status belum bisa dimuat. Coba lagi.</p>' : ticket
+        ? `<div class="notice"><b>${esc(ticket.ticket_number)}</b> · ${esc(statusText[ticket.status] || ticket.status)}<br>${esc(ticket.branch)} · ${new Date(ticket.updated_at).toLocaleString('id-ID')}</div>`
+        : '<p>Kode pelacakan tidak ditemukan.</p>';
+    });
+    if (form.code.value) form.requestSubmit();
+    return;
+  }
+  panel.innerHTML = '<h2>Katalog produk</h2><p>Memuat produk…</p>';
+  supabase.rpc('customer_catalog').then(({data, error}) => {
+    panel.innerHTML = '<h2>Katalog produk</h2>' + (error ? '<p>Katalog belum bisa dimuat. Coba lagi.</p>' : data?.length
+      ? `<div class="inventory-product-grid">${data.map((product) => {
+        const digits = String(product.phone || '').replace(/\D/g, '');
+        const phone = digits.startsWith('0') ? '62' + digits.slice(1) : digits;
+        const message = encodeURIComponent('Halo, saya mau pesan ' + product.name + '. Apakah masih tersedia?');
+        return `<article class="inventory-product-card"><div class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : 'Foto belum tersedia'}</div><div class="inventory-product-body"><h3>${esc(product.name)}</h3><strong>${money(product.retail_price)}</strong>${phone ? `<a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Pesan via WhatsApp</a>` : ''}</div></article>`;
+      }).join('')}</div>` : '<p>Belum ada produk tersedia di katalog publik.</p>');
+  });
+}
+
+async function showServiceReceipt(ticket) {
+  const link = new URL('/lacak-servis', location.origin);
+  link.hash = new URLSearchParams({ kode: ticket.tracking_code });
+  const qr = await QRCode.toDataURL(link.href);
+  const host = openModal('Bukti penerimaan servis', esc(ticket.ticket_number), `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /><div class="field-hint">Kode pelacakan: ${esc(ticket.tracking_code)}</div></div><img width="150" height="150" src="${qr}" alt="QR pelacakan servis" /><button type="button" class="btn" id="copy-service-link">Salin link</button>`, async () => {}, 'Tutup');
+  host.querySelector('#copy-service-link').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(link.href); toast('Link pelacakan disalin.'); }
+    catch { host.querySelector('#service-tracking-link').select(); }
+  });
+}
+
 async function start() {
-  if (['/catalog','/catalog/','/warranty','/warranty/'].includes(location.pathname)) { location.replace('/'); return; }
+  const route = location.pathname.replace(/\/$/, '');
+  if (route === '/catalog' || route === '/lacak-servis') {
+    if (!hasBackendConfig) return configurationScreen();
+    return customerPortal(route === '/lacak-servis');
+  }
+  if (route === '/warranty') { location.replace('/'); return; }
   if (!hasBackendConfig) { configurationScreen(); return; }
   const { data, error } = await supabase.auth.getSession();
   if (error) { authScreen(error.message); return; }
