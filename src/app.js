@@ -19,13 +19,14 @@ const resolveOwnerBranch = (organizationId, branches, current = '') => {
 const canManage = () => state.profile?.role === 'owner';
 const centralBranch = () => state.branches.find((branch) => branch.is_central);
 const atCentral = () => centralBranch()?.id === state.branchId;
-const canIntake = () => atCentral() && ['owner','operator'].includes(state.profile?.role);
+const canIntake = () => atCentral() && canManage();
 const canStockQc = () => atCentral() && ['owner','technician'].includes(state.profile?.role);
 const rolePages = () => {
   const role = state.profile?.role;
   if (role === 'investor') return ['reports'];
   if (role === 'technician') return canStockQc() ? ['quality','service'] : ['service'];
   if (role === 'owner') return ['dashboard','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
+  if (role === 'operator' && atCentral()) return ['dashboard','inventory','cashier','service','warranty','reports'];
   return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['cashier'] : []), 'service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
