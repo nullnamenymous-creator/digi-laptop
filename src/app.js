@@ -154,13 +154,28 @@ function selectedBranchTheme() {
   return 'green';
 }
 function updateConnection() { const label=document.querySelector('#connect-label');if(label)label.textContent=navigator.onLine?'Online':'Offline · antrean kasir tersimpan di perangkat'; }
+function refreshOwnerOverview() {
+  if (state.profile?.role !== 'owner' || !['dashboard', 'service', 'reports', 'finance'].includes(state.page)) return;
+  if (!navigator.onLine || document.hidden || !document.querySelector('#page')) return;
+  if (document.querySelector('.modal-backdrop, .report-detail-panel') ||
+      document.activeElement?.closest('#page input, #page select, #page textarea')) return;
+  if (state.ownerRefreshInProgress) return;
+  state.ownerRefreshInProgress = true;
+  showPage(state.page).finally(() => { state.ownerRefreshInProgress = false; });
+}
+
+document.addEventListener('visibilitychange', refreshOwnerOverview);
+window.addEventListener('online', refreshOwnerOverview);
+setInterval(refreshOwnerOverview, 45000);
+
 async function subscribeOperationalUpdates() {
   if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel);
   if (!state.branchId || !state.profile) return;
   const refresh = () => {
     clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(() => {
-      if (document.querySelector('#page') && !document.querySelector('.modal-backdrop')) showPage(state.page);
+      if (canManage() && ['dashboard', 'service', 'reports', 'finance'].includes(state.page)) refreshOwnerOverview();
+      else if (document.querySelector('#page') && !document.querySelector('.modal-backdrop')) showPage(state.page);
     }, 350);
   };
   const channel = supabase.channel(`digi-branch-${state.branchId}`);
@@ -1398,7 +1413,8 @@ async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8
 async function reportsPage(page) {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const range = state.profile.role === 'operator' ? 'daily' : params.get('range') || 'daily';
-  state.reportBranch = params.get('branch') || state.reportBranch || 'all';
+  const requestedBranch = params.get('branch') || state.reportBranch;
+  state.reportBranch = canManage() && state.branches.some((branch) => branch.id === requestedBranch) ? requestedBranch : 'all';
   const start = new Date();
   if (range === 'daily') { start.setDate(start.getDate() - 6); start.setHours(0,0,0,0); }
   else if (range === 'weekly') { start.setDate(start.getDate() - 55); start.setHours(0,0,0,0); }
