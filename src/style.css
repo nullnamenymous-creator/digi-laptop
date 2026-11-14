@@ -602,6 +602,28 @@ tbody tr:hover td { background: #f7faef; }
 .inventory-catalog-panel .inventory-product-body { gap: 4px; padding: 10px; }
 .inventory-catalog-panel .inventory-product-price { margin-top: 2px; }
 .inventory-catalog-panel .inventory-product-actions { padding-top: 4px; }
+.inventory-catalog-panel .inventory-product-grid { align-items: stretch; }
+.inventory-catalog-panel .inventory-panel-head { align-items: flex-start; }
+.inventory-catalog-panel .inventory-controls { justify-content: flex-start; }
+.inventory-catalog-panel .inventory-controls > * { border-radius: 5px; max-width: 100%; }
+.inventory-catalog-panel .inventory-product-image { margin: 5px 5px 0; border-radius: 5px; }
+.inventory-price-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; justify-content: space-between; }
+.inventory-price-row .pill { white-space: nowrap; }
+.inventory-catalog-panel .inventory-product-actions {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.inventory-catalog-panel [data-delete-product] { color: #a03030; }
+.app [data-unit-filter="pending_qc"] { --stock-tint: #fff4d9; --stock-accent: #876000; }
+.app [data-unit-filter="available"] { --stock-tint: #e9f5ea; --stock-accent: #236843; }
+.app [data-unit-filter="repair"] { --stock-tint: #fceee5; --stock-accent: #994d24; }
+.app [data-unit-filter="sold"] { --stock-tint: #eef3fc; --stock-accent: #345c94; }
+.app .unit-summary-button[data-unit-filter] { background: var(--stock-tint); border-top-color: var(--stock-accent); }
+.app .unit-summary-button[data-unit-filter] .card-value { color: var(--stock-accent); }
+.app .unit-summary-button[data-unit-filter]:hover,
+.app .unit-summary-button[data-unit-filter][aria-pressed="true"] {
+  background: color-mix(in srgb, var(--stock-tint) 89%, var(--stock-accent));
+}
 @media (max-width: 960px) {
   .inventory-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -766,7 +788,7 @@ body { font-size: 14px; line-height: 1.5; }
 }
 .cashier-products {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 14px;
   max-height: 65vh;
@@ -782,6 +804,8 @@ body { font-size: 14px; line-height: 1.5; }
   background: var(--surface);
   color: inherit;
   border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
   cursor: pointer;
 }
 .cashier-product-card:hover:not(:disabled), .cashier-product-card:focus-visible { border-color: var(--green-800); }
@@ -790,7 +814,7 @@ body { font-size: 14px; line-height: 1.5; }
   display: grid;
   place-items: center;
   width: 100%;
-  height: 94px;
+  height: clamp(96px, 9vw, 130px);
   padding: 6px;
   background: #f3f7f4;
   text-align: center;
@@ -801,6 +825,15 @@ body { font-size: 14px; line-height: 1.5; }
 .cashier-product-info { display: grid; gap: 4px; padding: 10px; overflow-wrap: anywhere; }
 .cashier-product-info small, .cashier-cart-line small { color: var(--muted); }
 .cashier-product-info b { color: var(--green-800); }
+.cashier-product-info small { order: 1; }
+.cashier-search input { border-radius: 6px; }
+.cashier-pos .panel-title { font-size: 15px; }
+.cashier-checkout .cashier-submit { flex-direction: column; align-items: stretch; }
+.cashier-checkout .cashier-submit > span { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cashier-checkout .cashier-submit .btn { min-width: 0; }
+.cashier-cart-product { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cashier-cart-product img { flex: none; width: 46px; height: 38px; object-fit: contain; border-radius: 4px; background: #f3f7f4; }
+.cashier-line-total { color: var(--green-800); }
 .cashier-cart { margin: 0 0 14px; }
 .cashier-cart-lines { list-style: none; padding: 0; margin: 0; }
 .cashier-cart-line {
@@ -823,6 +856,7 @@ body { font-size: 14px; line-height: 1.5; }
 }
 @media (max-width: 500px) {
   .cashier-search input { font-size: 16px; }
+  .cashier-products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cashier-quantity .small-btn { min-width: 44px; }
 }
 .app { font-size: 13px; }
@@ -850,8 +884,34 @@ body { font-size: 14px; line-height: 1.5; }
 .app .panel-sub, .app .card-sub, .app .field-hint { font-size: 11px; }
 .app .card-value { font-size: 20px; }
 .app .inventory-product-body h3 { font-size: 13px; }
+.dashboard-summary-button[data-dashboard-card="sales"] { --summary-accent: #18724a; --summary-tint: #edf8f0; }
+.dashboard-summary-button[data-dashboard-card="stock"] { --summary-accent: #245a92; --summary-tint: #eef5fd; }
+.dashboard-summary-button[data-dashboard-card="service"] { --summary-accent: #955908; --summary-tint: #fff6e6; }
+.dashboard-summary-button[data-dashboard-card="branches"] { --summary-accent: #68439b; --summary-tint: #f5effc; }
+.app .dashboard-summary-button[data-dashboard-card] {
+  background: var(--summary-tint);
+  border-top-color: var(--summary-accent);
+}
+.app .dashboard-summary-button[data-dashboard-card]:hover {
+  background: color-mix(in srgb, var(--summary-tint) 94%, var(--summary-accent));
+}
+.app .dashboard-summary-button[data-dashboard-card]:focus-visible { outline-color: var(--summary-accent); }
+.app .dashboard-summary-button[data-dashboard-card] .card-icon,
+.app .dashboard-summary-button[data-dashboard-card] .card-value { color: var(--summary-accent); }
+.app .dashboard-summary-button[data-dashboard-card] .card-icon {
+  background: color-mix(in srgb, var(--summary-tint) 88%, var(--summary-accent));
+  border-color: color-mix(in srgb, var(--summary-tint) 78%, var(--summary-accent));
+}
 @media (max-width: 740px) {
   .app .nav-button { min-height: 44px; }
   .app .mobile-menu { min-width: 34px; min-height: 44px; }
   .app .top-tools { gap: 5px; }
 }
+.service-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.service-summary .card, .report-summary .card { background: #edf6ed; border-top-color: #377449; }
+.service-summary .card:nth-child(2), .report-summary .card:nth-child(3), .cash-summary .card:nth-child(2) { background: #fff3dd; border-top-color: #a46b20; }
+.service-summary .card:nth-child(3), .report-summary:not(.cash-summary) .card:nth-child(2), .cash-summary .card:nth-child(1), .cash-summary .card:nth-child(3) { background: #edf4fc; border-top-color: #456e9c; }
+.service-summary .card:nth-child(4) { background: #f2eefa; border-top-color: #7456a2; }
+.service-table tr[data-service-status="ready"] td { background: #edf8ec; }
+.service-table [data-handover] { color: #fff; background: #125132; border-color: #125132; }
+.report-summary .card-value { overflow-wrap: anywhere; }
