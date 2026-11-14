@@ -2057,6 +2057,41 @@ async function financePage(page) {
   page.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => partyPaymentModal('intake_batch', payables.find((batch) => batch.id === button.dataset.pay), payables.find((batch) => batch.id === button.dataset.pay).remaining)));
 }
 
+function startStorefrontSlides(hero) {
+  const slides = [
+    ['Temukan laptop pilihanmu.', 'Untuk kerja, kuliah, dan kebutuhan sehari-hari.', '#produk', 'Jelajahi produk'],
+    ['Cari laptop sesuai budget.', 'Bandingkan harga dan merek, lalu tanyakan pilihanmu langsung ke toko.', '#produk', 'Lihat katalog'],
+    ['Pantau servis laptopmu.', 'Cek progres dengan kode pelacakan dari bukti penerimaan.', '/lacak-servis', 'Lacak servis'],
+  ];
+  const content = hero.querySelector('[data-slide-content]');
+  const position = hero.querySelector('[data-slide-position]');
+  const toggle = hero.querySelector('[data-slide-toggle]');
+  let index = 0;
+  let paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let timer;
+  const show = (next) => {
+    index = (next + slides.length) % slides.length;
+    const [title, description, href, label] = slides[index];
+    content.innerHTML = `<div class="storefront-slide-copy"><p>Digital Laptop Jombang</p><h1>${title}</h1><p>${description}</p><a href="${href}">${label}</a></div>`;
+    position.textContent = `${index + 1} / ${slides.length}`;
+  };
+  const schedule = () => {
+    clearInterval(timer);
+    toggle.textContent = paused ? 'Putar' : 'Jeda';
+    if (paused) return;
+    timer = setInterval(() => {
+      if (!hero.isConnected) return clearInterval(timer);
+      if (!document.hidden && !hero.matches(':hover, :focus-within')) show(index + 1);
+    }, 6500);
+  };
+  for (const [selector, step] of [['[data-slide-prev]', -1], ['[data-slide-next]', 1]]) {
+    hero.querySelector(selector).addEventListener('click', () => { show(index + step); schedule(); });
+  }
+  toggle.addEventListener('click', () => { paused = !paused; schedule(); });
+  show(0);
+  schedule();
+}
+
 function customerPortal(tracking) {
   root.innerHTML = `<main class="catalog-page storefront">
     <header class="storefront-header">
@@ -2067,8 +2102,16 @@ function customerPortal(tracking) {
         <a class="storefront-staff" href="/petugas">Masuk petugas</a>
       </nav>
     </header>
-    ${tracking ? '' : `<section class="storefront-hero">
-      <div><p>Digital Laptop Jombang</p><h1>Temukan laptop<br />pilihanmu.</h1><p>Untuk kerja, kuliah, dan kebutuhan sehari-hari. Cek produk yang tersedia dan tanyakan langsung ke toko.</p><a href="#produk">Jelajahi produk <span aria-hidden="true">↓</span></a></div>
+    ${tracking ? '' : `<section class="storefront-hero" aria-label="Promosi Digital Laptop">
+      <div class="storefront-slide">
+        <div data-slide-content></div>
+        <div class="storefront-slide-controls">
+          <button type="button" data-slide-prev aria-label="Slide sebelumnya">←</button>
+          <span data-slide-position></span>
+          <button type="button" data-slide-next aria-label="Slide berikutnya">→</button>
+          <button type="button" data-slide-toggle>Jeda</button>
+        </div>
+      </div>
       <img src="/login-laptops.webp" alt="Pilihan laptop bisnis Digital Laptop Jombang" fetchpriority="high" />
     </section>`}
     <section class="storefront-content" id="customer-content"></section>
@@ -2097,6 +2140,7 @@ function customerPortal(tracking) {
     if (form.code.value) form.requestSubmit();
     return;
   }
+  startStorefrontSlides(root.querySelector('.storefront-hero'));
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
   supabase.rpc('customer_catalog').then(({data, error}) => {
