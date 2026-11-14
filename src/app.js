@@ -187,7 +187,7 @@ function refreshOwnerOverview() {
       document.activeElement?.closest('#page input, #page select, #page textarea')) return;
   if (state.ownerRefreshInProgress) return;
   state.ownerRefreshInProgress = true;
-  showPage(state.page).finally(() => { state.ownerRefreshInProgress = false; });
+  showPage(state.page, { background: true }).finally(() => { state.ownerRefreshInProgress = false; });
 }
 
 document.addEventListener('visibilitychange', refreshOwnerOverview);
@@ -201,7 +201,7 @@ async function subscribeOperationalUpdates() {
     clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(() => {
       if (canManage() && ['dashboard', 'service', 'reports', 'finance'].includes(state.page)) refreshOwnerOverview();
-      else if (document.querySelector('#page') && !document.querySelector('.modal-backdrop')) showPage(state.page);
+      else if (state.page !== 'cashier' && document.querySelector('#page') && !document.querySelector('.modal-backdrop') && !document.activeElement?.closest('#page input, #page select, #page textarea')) showPage(state.page, { background: true });
     }, 350);
   };
   const channel = supabase.channel(`digi-branch-${state.branchId}`);
@@ -289,14 +289,14 @@ function productPhotoModal(product) {
   bindProductPhotoPicker(host.querySelector('#active-modal'));
 }
 
-async function showPage(name) {
+async function showPage(name, { background = false } = {}) {
   if (!rolePages().includes(name)) name = rolePages()[0];
   state.page = name;
   if (name !== 'quality') document.querySelectorAll('[data-qc-view]').forEach((tab) => { tab.classList.remove('active'); tab.removeAttribute('aria-current'); });
   if (!root.querySelector('.app')) showShell();
   document.querySelectorAll('.nav-button[data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === name));
   document.querySelector('#crumb-label').textContent = pageLabel(name);
-  document.querySelector('#sidebar').classList.remove('open');
+  if (!background) document.querySelector('#sidebar').classList.remove('open');
   const page = document.querySelector('#page'); page.innerHTML = '<div class="empty">Memuat data…</div>';
   try {
     if (name === 'dashboard') await dashboardPage(page);
@@ -311,7 +311,7 @@ async function showPage(name) {
     else if (name === 'finance') await financePage(page);
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
-  } catch (error) { page.innerHTML = `<div class="notice error">${esc(error.message || 'Gagal memuat data.')}</div>`; }
+  } catch (error) { if (!background) page.innerHTML = `<div class="notice error">${esc(error.message || 'Gagal memuat data.')}</div>`; }
 }
 
 async function dashboardPage(page) {
