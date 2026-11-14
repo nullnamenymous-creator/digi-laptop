@@ -114,9 +114,17 @@ const pageLabel = (key) => key === 'quality' && canManage() ? 'Laporan QC Teknis
 function showShell() {
   const permittedPages = Object.entries(pages).filter(([key]) => rolePages().includes(key));
   const navHtml = permittedPages.map(([key, [, icon]]) => `<button class="nav-button${state.page === key ? ' active' : ''}" data-page="${key}"><span class="nav-icon">${icon}</span>${pageLabel(key)}</button>${key === 'quality' && !canManage() ? `<button type="button" class="nav-button qc-subnav" data-qc-view="repair">Papan repair</button><button type="button" class="nav-button qc-subnav" data-qc-view="results">Hasil pemeriksaan QC</button>` : ''}`).join('');
+  const mobilePages = {
+    operator: [['dashboard', 'Beranda'], ['cashier', 'Kasir'], ['inventory', 'Stok'], ['service', 'Servis']],
+    technician: [['quality', 'QC'], ['service', 'Servis']],
+  }[state.profile.role] || [];
+  const mobileNav = mobilePages.length ? `<nav class="staff-bottom-nav" aria-label="Navigasi cepat petugas">
+    ${mobilePages.filter(([key]) => rolePages().includes(key)).map(([key, label]) => `<button type="button" data-page="${key}" ${state.page === key ? 'aria-current="page"' : ''}><span aria-hidden="true">${pages[key][1]}</span>${label}</button>`).join('')}
+    <button type="button" id="staff-more" aria-controls="sidebar"><span aria-hidden="true">☰</span>Menu</button>
+  </nav>` : '';
   const branchOptions = state.profile.role === 'owner' ? state.branches.map((branch) => `<option value="${branch.id}"${state.branchId === branch.id ? ' selected' : ''}>${esc(branch.name)}</option>`).join('') : `<option value="${state.profile.branch_id}">${esc(branchName(state.profile.branch_id))}</option>`;
   const roleLabel = state.profile.role === 'owner' ? 'Pemilik toko' : state.profile.role === 'investor' ? 'Investor · baca saja' : state.profile.role === 'technician' ? 'Teknisi' : 'Operator · kasir + servis';
-  root.innerHTML = `<div class="app" data-branch-theme="${selectedBranchTheme()}"><aside class="sidebar" id="sidebar"><a class="brand" href="#dashboard"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b>Digital Laptop</b><small>Jombang</small></span></a><nav class="nav">${navHtml}</nav><div class="side-spacer"></div><div class="side-bottom"><div class="profile"><span class="avatar">${esc(initials(state.profile.full_name))}</span><span class="profile-meta"><b>${esc(state.profile.full_name || 'Pengguna')}</b><span>${roleLabel}</span></span><button class="logout" type="button" data-logout>Keluar</button></div></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu">☰</button><div class="crumb"><b id="crumb-label">${pageLabel(state.page)}</b></div><div class="top-tools"><span class="online-label"><i></i><span id="connect-label">Online</span></span><select class="branch-select" id="branch-select" aria-label="Pilih cabang">${branchOptions}</select><button class="logout top-logout" type="button" id="print-settings">Printer</button></div></header><section class="page" id="page"></section><footer class="footer"><span>© ${new Date().getFullYear()} Digital Laptop</span><span>Operasional DIGITAL LAPTOP JOMBANG</span></footer></main><div id="modal-root"></div></div>`;
+  root.innerHTML = `<div class="app${mobileNav ? ' staff-mobile-tabs' : ''}" data-branch-theme="${selectedBranchTheme()}"><aside class="sidebar" id="sidebar"><a class="brand" href="#dashboard"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b>Digital Laptop</b><small>Jombang</small></span></a><nav class="nav">${navHtml}</nav><div class="side-spacer"></div><div class="side-bottom"><div class="profile"><span class="avatar">${esc(initials(state.profile.full_name))}</span><span class="profile-meta"><b>${esc(state.profile.full_name || 'Pengguna')}</b><span>${roleLabel}</span></span><button class="logout" type="button" data-logout>Keluar</button></div></div></aside><main class="main"><header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu">☰</button><div class="crumb"><b id="crumb-label">${pageLabel(state.page)}</b></div><div class="top-tools"><span class="online-label"><i></i><span id="connect-label">Online</span></span><select class="branch-select" id="branch-select" aria-label="Pilih cabang">${branchOptions}</select><button class="logout top-logout" type="button" id="print-settings">Printer</button></div></header><section class="page" id="page"></section><footer class="footer"><span>© ${new Date().getFullYear()} Digital Laptop</span><span>Operasional DIGITAL LAPTOP JOMBANG</span></footer></main>${mobileNav}<div id="modal-root"></div></div>`;
   const nav = document.querySelector('.nav');
   nav.addEventListener('click', (event) => {
     const tab = event.target.closest('[data-qc-view]');
@@ -125,7 +133,8 @@ function showShell() {
     showPage('quality');
     window.scrollTo(0, 0);
   });
-  document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', async () => { state.page = button.dataset.page; if (state.page === 'quality') { state.qcView = 'queue'; window.scrollTo(0, 0); } await showPage(state.page); }));
+  document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', async () => { state.page = button.dataset.page; if (button.closest('.staff-bottom-nav')) window.scrollTo(0, 0); if (state.page === 'quality') { state.qcView = 'queue'; window.scrollTo(0, 0); } await showPage(state.page); }));
+  root.querySelector('#staff-more')?.addEventListener('click', () => root.querySelector('#mobile-menu').click());
   root.querySelector('#print-settings').addEventListener('click', printerSettings);
   const logoutButtons = root.querySelectorAll('[data-logout]');
   const logout = async () => {
@@ -293,6 +302,10 @@ async function showPage(name, { background = false } = {}) {
   if (name !== 'quality') document.querySelectorAll('[data-qc-view]').forEach((tab) => { tab.classList.remove('active'); tab.removeAttribute('aria-current'); });
   if (!root.querySelector('.app')) showShell();
   document.querySelectorAll('.nav-button[data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === name));
+  root.querySelectorAll('.staff-bottom-nav [data-page]').forEach(button => {
+    if (button.dataset.page === name) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
   document.querySelector('#crumb-label').textContent = pageLabel(name);
   if (!background) document.querySelector('#sidebar').classList.remove('open');
   let page = document.querySelector('#page');
