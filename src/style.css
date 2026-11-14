@@ -925,7 +925,12 @@ body { font-size: 14px; line-height: 1.5; }
   font: 400 clamp(31px, 4vw, 48px)/1.05 Playball, "Segoe Script", "Brush Script MT", cursive;
   text-decoration: none;
 }
-.storefront-brand img { flex: none; filter: drop-shadow(0 3px 5px #17433429); }
+.storefront-brand img {
+  flex: none;
+  width: clamp(52px, 5vw, 64px);
+  height: auto;
+  filter: drop-shadow(0 3px 5px #17433429);
+}
 .storefront-brand small {
   display: block;
   margin-top: 4px;

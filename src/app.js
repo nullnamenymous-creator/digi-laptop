@@ -2211,8 +2211,8 @@ function startStorefrontSlides(hero) {
 
 function customerPortal(tracking) {
   root.innerHTML = `<main class="catalog-page storefront">
-    <header class="storefront-header">
-      <a class="storefront-brand" href="/"><img src="/store-logo-transparent.png" alt="" width="42" height="42" /><span>Digital Laptop <small>Jombang</small></span></a>
+    <header class="storefront-header" id="storefront-top">
+      <a class="storefront-brand" href="${tracking ? '/' : '#storefront-top'}"><img src="/store-logo-transparent.png" alt="" width="64" height="64" /><span>Digital Laptop <small>Jombang</small></span></a>
       <nav aria-label="Navigasi toko">
         <a href="/" ${tracking ? '' : 'aria-current="page"'}>Katalog</a>
         <a href="/lacak-servis" ${tracking ? 'aria-current="page"' : ''}>Lacak servis</a>
