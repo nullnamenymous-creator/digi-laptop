@@ -2151,28 +2151,59 @@ function startStorefrontSlides(hero) {
   const content = hero.querySelector('[data-slide-content]');
   const position = hero.querySelector('[data-slide-position]');
   const toggle = hero.querySelector('[data-slide-toggle]');
+  const video = hero.querySelector('video');
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let index = 0;
-  let paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let paused = motion.matches;
   let timer;
+  const syncVideo = () => {
+    if (paused || motion.matches || document.hidden || !hero.isConnected) {
+      video.pause();
+      return;
+    }
+    const source = `/showroom-${index}.mp4`;
+    if (video.getAttribute('src') !== source) {
+      video.classList.remove('is-playing');
+      video.src = source;
+    }
+    video.play().catch(() => {});
+  };
+  video.addEventListener('playing', () => video.classList.add('is-playing'));
+  video.addEventListener('error', () => video.classList.remove('is-playing'));
   const show = (next) => {
     index = (next + slides.length) % slides.length;
     const [title, description, href, label] = slides[index];
     content.innerHTML = `<div class="storefront-slide-copy"><p>Digital Laptop Jombang</p><h1>${title}</h1><p>${description}</p><a href="${href}">${label}</a></div>`;
     position.textContent = `${index + 1} / ${slides.length}`;
+    video.classList.remove('is-playing');
+    syncVideo();
   };
   const schedule = () => {
     clearInterval(timer);
     toggle.textContent = paused ? 'Putar' : 'Jeda';
-    if (paused) return;
+    toggle.disabled = motion.matches;
+    syncVideo();
+    if (paused || motion.matches) return;
     timer = setInterval(() => {
-      if (!hero.isConnected) return clearInterval(timer);
       if (!document.hidden && !hero.matches(':hover, :focus-within')) show(index + 1);
-    }, 6500);
+    }, 8000);
   };
   for (const [selector, step] of [['[data-slide-prev]', -1], ['[data-slide-next]', 1]]) {
     hero.querySelector(selector).addEventListener('click', () => { show(index + step); schedule(); });
   }
   toggle.addEventListener('click', () => { paused = !paused; schedule(); });
+  const onMotionChange = () => { paused = motion.matches; schedule(); };
+  motion.addEventListener('change', onMotionChange);
+  document.addEventListener('visibilitychange', syncVideo);
+  const cleanup = new MutationObserver(() => {
+    if (hero.isConnected) return;
+    clearInterval(timer);
+    video.pause();
+    document.removeEventListener('visibilitychange', syncVideo);
+    motion.removeEventListener('change', onMotionChange);
+    cleanup.disconnect();
+  });
+  cleanup.observe(root, { childList: true });
   show(0);
   schedule();
 }
@@ -2197,7 +2228,10 @@ function customerPortal(tracking) {
           <button type="button" data-slide-toggle>Jeda</button>
         </div>
       </div>
-      <img src="/login-laptops.webp" alt="Pilihan laptop bisnis Digital Laptop Jombang" fetchpriority="high" />
+      <div class="storefront-media" aria-hidden="true">
+        <img src="/login-laptops.webp" alt="" fetchpriority="high" />
+        <video muted playsinline loop preload="none"></video>
+      </div>
     </section>`}
     <section class="storefront-content" id="customer-content"></section>
   </main>`;

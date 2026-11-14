@@ -17,6 +17,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+  if (/^\/showroom-[0-2]\.mp4$/.test(requestUrl.pathname)) return;
   if (requestUrl.pathname.startsWith('/rest/') || requestUrl.pathname.startsWith('/auth/') || requestUrl.pathname.startsWith('/storage/')) return;
   if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/@vite/') || requestUrl.pathname.startsWith('/node_modules/') || requestUrl.pathname.startsWith('/@id/') || requestUrl.pathname.startsWith('/@fs/')) return;
   event.respondWith(
