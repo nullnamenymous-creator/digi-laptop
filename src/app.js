@@ -1,5 +1,3 @@
-import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
 import { hasBackendConfig, supabase } from './supabase.js';
 import './style.css';
 
@@ -297,7 +295,17 @@ async function showPage(name, { background = false } = {}) {
   document.querySelectorAll('.nav-button[data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === name));
   document.querySelector('#crumb-label').textContent = pageLabel(name);
   if (!background) document.querySelector('#sidebar').classList.remove('open');
-  const page = document.querySelector('#page'); page.innerHTML = '<div class="empty">Memuat data…</div>';
+  let page = document.querySelector('#page');
+  if (background) {
+    if (page.dataset.refreshing) return;
+    page.dataset.refreshing = 'true';
+  } else {
+    const nextPage = page.cloneNode(false);
+    delete nextPage.dataset.refreshing;
+    nextPage.innerHTML = '<div class="empty">Memuat data.</div>';
+    page.replaceWith(nextPage);
+    page = nextPage;
+  }
   try {
     if (name === 'dashboard') await dashboardPage(page);
     else if (name === 'receiving') await receivingPage(page);
@@ -312,6 +320,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
   } catch (error) { if (!background) page.innerHTML = `<div class="notice error">${esc(error.message || 'Gagal memuat data.')}</div>`; }
+  finally { if (background) delete page.dataset.refreshing; }
 }
 
 async function dashboardPage(page) {
@@ -728,9 +737,12 @@ function intakeBatchModal(products, suppliers) {
   syncProductFields(); syncSupplierFields(); syncTotal(); syncDebtFields();
 }
 
-function printBarcodeLabels(items, printable = null) {
+async function printBarcodeLabels(items, printable = null) {
   if (!printable) printable = window.open('', '_blank', 'width=980,height=820');
   if (!printable) return toast('Izinkan pop-up untuk membuka pratinjau barcode.', true);
+  let JsBarcode;
+  try { ({ default: JsBarcode } = await import('jsbarcode')); }
+  catch { printable.close(); return toast('Modul cetak barcode gagal dimuat. Coba lagi.', true); }
   const labels = items.map((item) => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     JsBarcode(svg, item.barcode, { format: 'CODE128', displayValue: false, font: 'Arial', fontSize: 9, height: 48, margin: 1, lineColor: '#17201b' });
@@ -1659,6 +1671,7 @@ async function printWarrantyQr(item) {
   const printable = window.open('', '_blank', 'width=540,height=650');
   if (!printable) return toast('Izinkan pop-up untuk mencetak QR garansi.', true);
   try {
+    const { default: QRCode } = await import('qrcode');
     const svg = await QRCode.toString(item.warranty_code, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, width: 220 });
     const sold = item.sale_items?.[0]?.sales;
     printable.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>QR Garansi ${esc(item.warranty_code)}</title><style>*{box-sizing:border-box}body{margin:0;padding:24px;font:14px Arial;color:#17271e}.card{width:340px;margin:0 auto;padding:22px;border:1px solid #b8c9b9;text-align:center}.card h1{margin:0 0 5px;font-size:18px}.card p{margin:5px 0;color:#53665a}.qr{width:190px;height:190px;margin:14px auto}.qr svg{width:100%;height:100%}.code{margin:10px 0;font:bold 18px monospace;letter-spacing:1px}.note{font-size:11px;color:#68786c}button{border:1px solid #175b39;border-radius:0;padding:10px 16px;background:#0d5a37;color:white;font-weight:bold;cursor:pointer}@media print{body{padding:0}.card{border:0}button{display:none}}</style></head><body><article class="card"><h1>DIGITAL LAPTOP JOMBANG</h1><p>Kartu garansi internal toko</p><div class="qr">${svg}</div><div class="code">${esc(item.warranty_code)}</div><p><b>${esc(item.products?.name || 'Laptop')}</b></p><p>${esc([item.products?.brand,item.products?.model].filter(Boolean).join(' · '))}</p><p>Serial: ${esc(item.serial_number || '—')}</p><p>Garansi sampai: ${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : '—'}</p>${sold ? `<p>No. nota: ${esc(sold.receipt_number || '—')}</p>` : ''}<p class="note">QR hanya untuk dipindai staf melalui menu Garansi Digi-Laptop.</p><button onclick="window.print()">Cetak QR garansi</button></article></body></html>`);
@@ -1793,7 +1806,9 @@ async function reportsPage(page) {
     const branch = canManage() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canManage() ? state.reportBranch : state.profile.branch_id);
     const tables = [...page.querySelectorAll('.table-panel table')].map((table) => {
       const copy = table.cloneNode(true);
-      for (const row of copy.rows) row.deleteCell(-1);
+      if (table.querySelector('[data-report-detail]')) {
+        for (const row of copy.rows) row.deleteCell(-1);
+      }
       return copy.outerHTML;
     }).join('');
     printDocument('Laporan laba & arus kas', `<h1>${esc(state.organization.name)}</h1><h2>Laporan laba & arus kas</h2><p>${esc(branch)} · ${esc(rangeLabel)}</p><p>Kas masuk: ${money(sum('cashIn'))} · Kas keluar: ${money(sum('cashOut'))} · Laba operasional: ${money(netProfit)}</p>${tables}`, 'report');
@@ -2083,6 +2098,7 @@ function customerPortal(tracking) {
 async function showServiceReceipt(ticket) {
   const link = new URL('/lacak-servis', location.origin);
   link.hash = new URLSearchParams({ kode: ticket.tracking_code });
+  const { default: QRCode } = await import('qrcode');
   const qr = await QRCode.toDataURL(link.href);
   const host = openModal('Bukti penerimaan servis', esc(ticket.ticket_number), `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /><div class="field-hint">Kode pelacakan: ${esc(ticket.tracking_code)}</div></div><img width="150" height="150" src="${qr}" alt="QR pelacakan servis" /><button type="button" class="btn" id="copy-service-link">Salin link</button> <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, async () => {}, 'Tutup');
   host.querySelector('#print-service-receipt').addEventListener('click', () => {
