@@ -50,6 +50,72 @@ function configurationScreen() {
   root.innerHTML = `<main class="login-page"><section class="login-art"><div class="login-art-inner"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><div class="login-box"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b>DIGI<span>-</span>LAPTOP</b><small>DIGITAL LAPTOP JOMBANG</small></span></div><h2>Hubungkan database toko</h2><p>Project Supabase belum terpasang di konfigurasi lokal.</p><div class="notice">Salin .env.example menjadi .env.local lalu isi URL dan publishable key project Digi-Laptop. Setelah itu jalankan kembali aplikasi.</div><p class="field-hint">Kunci publishable boleh dipakai di aplikasi web. Jangan masukkan secret key atau service_role ke sini.</p></div></section></main>`;
 }
 
+let installPrompt;
+let installDismissed = false;
+const installStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function showMobileInstall() {
+  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const androidChrome = /Android.*Chrome\//.test(navigator.userAgent);
+  if ((!apple && !androidChrome) || installStandalone() || installDismissed || document.querySelector('#mobile-install')) return;
+  const banner = document.createElement('aside');
+  banner.id = 'mobile-install';
+  banner.className = 'mobile-install';
+  banner.setAttribute('aria-label', 'Instal Digi-Laptop');
+  banner.innerHTML = `<img src="/icon-192.png" width="40" height="40" alt="" />
+    <div><strong>Instal Digi-Laptop</strong><p>Buka langsung dari layar utama.</p>
+    <button type="button" class="btn primary" data-install>Instal aplikasi</button>
+    <p data-install-help hidden>${apple ? 'Ketuk Bagikan → Tambahkan ke Layar Utama → Tambah. Jika pilihan belum muncul, buka halaman ini di Safari.' : 'Buka menu Chrome ⋮ → Instal aplikasi atau Tambahkan ke layar utama.'}</p></div>
+    <button type="button" class="small-btn" data-install-close aria-label="Tutup ajakan instal">×</button>`;
+  const install = banner.querySelector('[data-install]');
+  const help = banner.querySelector('[data-install-help]');
+  install.addEventListener('click', async () => {
+    if (!installPrompt) { help.hidden = false; return; }
+    const prompt = installPrompt;
+    installPrompt = null;
+    install.disabled = true;
+    try {
+      await prompt.prompt();
+      if ((await prompt.userChoice).outcome === 'accepted') banner.remove();
+    } catch { help.hidden = false; }
+    finally { install.disabled = false; }
+  });
+  banner.querySelector('[data-install-close]').addEventListener('click', () => {
+    installDismissed = true;
+    banner.remove();
+  });
+  document.body.append(banner);
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  if (!/Android.*Chrome\//.test(navigator.userAgent)) return;
+  event.preventDefault();
+  installPrompt = event;
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  installDismissed = true;
+  document.querySelector('#mobile-install')?.remove();
+});
+
+function showLoginError(error) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'login-error-dialog';
+  dialog.setAttribute('aria-labelledby', 'login-error-title');
+  dialog.setAttribute('aria-describedby', 'login-error-message');
+  dialog.innerHTML = '<h2 id="login-error-title">Gagal masuk</h2><p id="login-error-message"></p><form method="dialog"><button class="btn primary" autofocus>Coba lagi</button></form>';
+  dialog.querySelector('p').textContent = error.code === 'invalid_credentials' || error.message === 'Invalid login credentials'
+    ? 'Email atau password salah. Periksa kembali lalu coba lagi.'
+    : 'Login belum berhasil. Periksa koneksi atau coba lagi nanti.';
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    root.querySelector('#auth-form [name="password"]')?.focus();
+  }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function authScreen(message = '') {
   root.innerHTML = `<main class="login-page"><section class="login-art"><img class="login-hero-photo" src="/login-laptops.webp" alt="Tiga laptop bisnis untuk DIGITAL LAPTOP JOMBANG" /><div class="login-art-inner"><div class="login-brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div><h1>MANAJEMEN STOK &amp; OPERASIONAL TOKO<br />DIGITAL LAPTOP</h1><p class="login-contact">Jl. Raya Ceweng (timur SPBU Ceweng), Ceweng, Diwek, Jombang, Jawa Timur<br /><span>Tlp/WA: 082226666166</span></p></div></section><section class="login-box-wrap"><form class="login-box" id="auth-form"><div class="brand"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><span class="brand-text"><b class="login-brand-name">DIGITAL LAPTOP JOMBANG</b></span></div>${message ? `<div class="notice error">${esc(message)}</div>` : ''}<div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required /></div><div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" minlength="8" required /></div><button class="btn primary" type="submit">Masuk</button><div class="login-switch"><a href="/catalog">Katalog produk</a> · <a href="/lacak-servis">Lacak servis</a></div></form></section></main>`;
   document.querySelector('#auth-form').addEventListener('submit', async (event) => {
@@ -66,7 +132,12 @@ function authScreen(message = '') {
       state.branchId = '';
       state.page = 'dashboard';
       await afterAuth({ preferCentral: true });
-    } catch (error) { authScreen(error.message || 'Tidak bisa masuk. Periksa email dan password.'); }
+    } catch (error) {
+      if (button.isConnected) {
+        button.closest('form').querySelector('[name=password]').value = '';
+      } else authScreen();
+      showLoginError(error);
+    } finally { button.disabled = false; }
   });
 }
 
@@ -2243,3 +2314,4 @@ async function start() {
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch((error) => console.warn('PWA offline cache could not start', error)));
 start();
+window.setTimeout(showMobileInstall, 1800);

@@ -1023,3 +1023,12 @@ body { font-size: 14px; line-height: 1.5; }
   .staff-bottom-nav button span { font-size: 19px; line-height: 1; }
   .staff-bottom-nav button[aria-current="page"] { color: #ffe3a3; background: #21513e; }
 }
+.login-error-dialog { width: min(390px, calc(100% - 28px)); border: 1px solid #e3bcb2; border-radius: 14px; padding: 20px; color: #253a30; }
+.login-error-dialog::backdrop { background: #122c22a8; }
+.login-error-dialog h2 { margin: 0; color: #922e24; }
+.login-error-dialog form { display: flex; justify-content: flex-end; }
+.mobile-install { position: fixed; z-index: 10; inset: auto 12px calc(72px + env(safe-area-inset-bottom)) auto; width: min(360px, calc(100% - 24px)); display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 12px; color: #153c2c; background: #fbfcf7; border: 1px solid #b4cdbb; border-radius: 14px; box-shadow: 0 8px 28px #123b2840; animation: install-enter .35s ease-out both; }
+.mobile-install p { margin: 4px 0 8px; }
+.mobile-install button { min-height: 40px; }
+@keyframes install-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .mobile-install { animation: none; } }
