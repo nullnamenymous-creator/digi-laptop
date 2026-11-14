@@ -1444,7 +1444,7 @@ async function servicePage(page) {
 
 function technicianServiceModal(ticket) {
   if (!ticket) return;
-  const nextStatuses = ['diagnosing','waiting_approval','waiting_parts','repairing','ready'];
+  const nextStatuses = ['diagnosing', 'waiting_approval', 'waiting_parts', 'repairing', 'ready'];
   openModal('Perbarui pekerjaan servis', `${ticket.ticket_number} · ${ticket.customer_name} · ${ticket.device_name}`, `<div class="notice">Keluhan: ${esc(ticket.complaint)}</div><div class="form-grid"><div class="field"><label>Status pekerjaan</label><select name="status" required>${nextStatuses.map((status) => `<option value="${status}" ${ticket.status === status ? 'selected' : ''}>${statusText[status]}</option>`).join('')}</select></div><div class="field"><label>Estimasi biaya servis</label><input name="estimated_cost" type="number" min="0" step="1000" value="${Number(ticket.estimated_cost || 0)}" required /></div><div class="field full"><label>Catatan pemeriksaan / progres</label><textarea name="technician_note" rows="4" required>${esc(ticket.technician_note || '')}</textarea></div></div>`, async (form) => {
     checkError(await supabase.rpc('update_customer_service', { _ticket_id: ticket.id, _status: String(form.get('status')), _technician_note: String(form.get('technician_note')).trim(), _estimated_cost: Number(form.get('estimated_cost')) }));
     toast(form.get('status') === 'ready' ? 'Tiket siap diambil dan masuk antrean serah terima operator.' : 'Progres teknisi tersimpan dan terlihat oleh operator.'); await showPage('service');
