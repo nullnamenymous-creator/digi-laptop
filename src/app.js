@@ -1305,7 +1305,7 @@ function printPreferences() {
 function printDocument(title, body, kind, documentStyles = '') {
   const size = printPreferences()[kind];
   const thermal = size === '58' || size === '80';
-  const paper = thermal ? 'auto' : size;
+  const paper = thermal ? 'auto' : kind === 'report' ? `${size} landscape` : size;
   const width = thermal ? `${Number(size) - 8}mm` : '100%';
   const win = window.open('', '_blank', 'width=760,height=650');
   if (!win) return toast('Izinkan pop-up untuk membuka pratinjau cetak.', true);
@@ -1890,14 +1890,60 @@ async function reportsPage(page) {
   page.querySelector('.head-actions').append(printReport);
   printReport.addEventListener('click', () => {
     const branch = canManage() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canManage() ? state.reportBranch : state.profile.branch_id);
-    const tables = [...page.querySelectorAll('.table-panel table')].map((table) => {
-      const copy = table.cloneNode(true);
-      if (table.querySelector('[data-report-detail]')) {
-        for (const row of copy.rows) row.deleteCell(-1);
+    const amounts = [salesTotal, serviceTotal, hppTotal, expenseTotal, netProfit];
+    const tables = [...page.querySelectorAll('.table-panel')].map((panel, index) => {
+      const copy = panel.querySelector('table').cloneNode(true);
+      if (index === 0) {
+        for (const row of copy.rows) {
+          if (row.cells.length === 1) row.cells[0].colSpan = 7;
+          else row.deleteCell(-1);
+        }
+        copy.classList.add('print-recap');
+        if (buckets.size) {
+          copy.createTFoot().innerHTML = `<tr><th scope="row">Total</th><td>${sum('count')}</td>${amounts.map(amount => `<td>${money(amount)}</td>`).join('')}</tr>`;
+        }
+      } else {
+        copy.classList.add('print-detail');
       }
-      return copy.outerHTML;
+      return `<section><h3>${esc(panel.querySelector('.panel-title').textContent)}</h3>${copy.outerHTML}</section>`;
     }).join('');
-    printDocument('Laporan laba & arus kas', `<h1>${esc(state.organization.name)}</h1><h2>Laporan laba & arus kas</h2><p>${esc(branch)} · ${esc(rangeLabel)}</p><p>Kas masuk: ${money(sum('cashIn'))} · Kas keluar: ${money(sum('cashOut'))} · Laba operasional: ${money(netProfit)}</p>${tables}`, 'report');
+    const summary = [
+      ['Kas masuk', sum('cashIn')],
+      ['Kas keluar', sum('cashOut')],
+      ['Saldo kas bersih', sum('cashIn') - sum('cashOut')],
+      ['Laba operasional (estimasi)', netProfit],
+    ];
+    const costNote = estimatedCostLines || missingCostLines
+      ? `<p class="print-note">${estimatedCostLines} baris memakai perkiraan modal katalog. ${missingCostLines} baris terjual belum memiliki data modal sehingga laba dapat terlihat lebih tinggi.</p>`
+      : '';
+    printDocument('Laporan laba & arus kas', `<main class="print-report">
+      <header><img src="${esc(new URL('/store-logo-transparent.png', location.origin).href)}" width="48" height="48" alt="" />
+        <div><strong>${esc(state.organization.name)}</strong><h1>Laporan laba &amp; arus kas</h1>
+        <p>${esc(branch)} · ${esc(rangeLabel)} · Dicetak ${esc(new Date().toLocaleDateString('id-ID'))}</p></div>
+      </header>
+      <dl>${summary.map(([label, amount]) => `<div><dt>${label}</dt><dd>${money(amount)}</dd></div>`).join('')}</dl>
+      ${tables}${costNote}
+    </main>`, 'report', `
+      .print-report{max-width:1100px;margin:14px auto}
+      .print-report header{display:flex;align-items:center;gap:12px;border-bottom:2px solid #214e3a;padding:0 0 9px}
+      .print-report header img{flex:none;object-fit:contain}
+      .print-report h1{font-size:20px;margin:0}
+      .print-report header p,.print-note{margin:3px 0;color:#39463f}
+      .print-report dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:12px 0}
+      .print-report dl div{border:1px solid #aebdb2;padding:6px 8px;overflow-wrap:anywhere}
+      .print-report dl div+div{border-left:0}
+      .print-report dd{margin:2px 0 0;font-weight:700;font-variant-numeric:tabular-nums}
+      .print-report h3{margin:12px 0 4px;font-size:13px;break-after:avoid}
+      .print-report th,.print-report td{border:1px solid #aebdb2;padding:5px 6px}
+      .print-report thead th{background:#e0ebe3;color:#183a2b;font-size:10px}
+      .print-report tbody tr:nth-child(even){background:#f1f5f2}
+      .print-recap :is(th,td):nth-child(n+2),.print-detail :is(th,td):nth-child(n+5){text-align:right;font-variant-numeric:tabular-nums}
+      .print-recap tfoot{display:table-row-group;background:#e0ebe3;font-weight:700}
+      .print-recap td[colspan]{text-align:center;padding:14px}
+      .print-report header,.print-report dl{break-inside:avoid}
+      .print-note{margin-top:8px;font-size:10px}
+      @media print{.print-report{margin:0;max-width:none;font-size:10px;print-color-adjust:exact}.print-report th,.print-report td{padding:4px}}
+    `);
   });
   if (state.profile.role === 'operator') page.querySelector('#report-range').disabled = true;
   page.querySelector('#report-range').addEventListener('change',event=>{location.hash=`reports?range=${event.target.value}&branch=${state.reportBranch||'all'}`;showPage('reports')});
