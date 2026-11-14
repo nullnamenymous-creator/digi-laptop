@@ -1032,3 +1032,30 @@ body { font-size: 14px; line-height: 1.5; }
 .mobile-install button { min-height: 40px; }
 @keyframes install-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .mobile-install { animation: none; } }
+.intake-layout { display: grid; gap: 14px; }
+.intake-layout > .form-grid { align-content: start; align-items: start; min-width: 0; }
+@media (min-width: 900px) {
+  .modal.intake-modal { width: min(1100px, 100%); }
+  .intake-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .intake-layout > .form-grid + .form-grid { border-left: 1px solid var(--line); padding-left: 20px; }
+}
+/* Let longer operational dialogs use the desktop viewport. */
+@media (min-width: 900px) {
+  .modal:has([name="warranty_months"], .opening-new-product-fields, .transfer-lines, [name="intake_photo"], .contact-detail-ledger, [name="customer_type"], [name="role"]) {
+    width: min(980px, 100%);
+  }
+  .modal:not(.intake-modal):has([name="warranty_months"], .opening-new-product-fields, [name="intake_photo"]) .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+  .modal:has(.contact-detail-ledger) .contact-detail-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .modal:has(.contact-detail-ledger) .contact-detail-grid > .full { grid-column: auto; }
+}
+@media (max-width: 740px) {
+  .modal-backdrop { padding: 10px; }
+  .modal { width: 100%; max-height: calc(100dvh - 20px); padding: 14px; }
+  .modal .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .modal .field input, .modal .field select, .modal .field textarea { width: 100%; min-width: 0; }
+}
