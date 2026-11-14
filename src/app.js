@@ -1402,28 +1402,34 @@ async function cashierPage(page) {
 
 async function servicePage(page) {
   const isTechnician = canTechnician();
+  const branchId = state.branchId;
   let query = supabase.from('service_tickets').select('*,customers(id,name,phone)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(100);
-  if (isTechnician) query = query.or(`assigned_technician_id.is.null,assigned_technician_id.eq.${state.user.id}`);
+  if (isTechnician) query = query.not('status', 'in', '(ready,handed_over,cancelled)').or(`assigned_technician_id.is.null,assigned_technician_id.eq.${state.user.id}`);
   const [result, teamResult] = await Promise.all([
     query,
     supabase.from('profiles').select('id,full_name').eq('organization_id', state.organization.id).eq('branch_id', state.branchId).eq('role', 'technician'),
   ]);
   if (result.error) throw result.error;
   if (teamResult.error) throw teamResult.error;
+  if (state.page !== 'service' || state.branchId !== branchId) return;
   const tickets = result.data || [];
+  if (!isTechnician) tickets.sort((a, b) => Number(b.status === 'ready') - Number(a.status === 'ready'));
   const technicians = new Map((teamResult.data || []).map((person) => [person.id, person.full_name]));
   const headerActions = !isTechnician ? '<button class="btn primary" id="new-service">＋ Terima laptop</button>' : '';
   page.innerHTML = `${header(isTechnician ? 'Servis pelanggan' : 'Servis laptop', isTechnician ? `Antrean pelanggan untuk ${branchName(state.branchId)}. Catatan dan progres tersinkron ke operator.` : `Terima laptop pelanggan, pantau progres teknisi, lalu lakukan serah terima di ${branchName(state.branchId)}.`, headerActions)}${!isTechnician && !technicians.size ? `<div class="notice">Belum ada akun teknisi di ${esc(branchName(state.branchId))}. Tiket bisa dicatat, tetapi perlu teknisi cabang agar dapat dikerjakan. Tambahkan akun teknisi dari Pengaturan Aplikasi.</div>` : ''}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">${isTechnician ? 'Antrean teknisi' : 'Tiket servis'}</div><div class="panel-sub">${tickets.length} tiket · ${branchName(state.branchId)}${isTechnician ? ' · ditugaskan ke lo atau belum ditugaskan' : ''}</div></div><input class="search" id="service-search" placeholder="Cari tiket, nama, nomor seri" /></div><div class="table-wrap"><table><thead><tr><th>NO. TIKET</th><th>PELANGGAN / UNIT</th><th>KELUHAN / CATATAN TEKNISI</th><th>STATUS</th><th>BIAYA / TERBAYAR</th><th>AKSI</th></tr></thead><tbody id="service-rows">${tickets.map((ticket) => {
     const techName = ticket.assigned_technician_id ? technicians.get(ticket.assigned_technician_id) || ticket.technician_name : 'Belum ditugaskan';
     const photoButtons = `${ticket.intake_photo_path ? `<button class="small-btn" data-photo="${esc(ticket.intake_photo_path)}">Foto awal</button>` : ''}${ticket.handover_photo_path ? `<button class="small-btn" data-photo="${esc(ticket.handover_photo_path)}">Foto serah terima</button>` : ''}`;
+    const whatsapp = !isTechnician && ticket.status === 'ready' ? serviceReadyWhatsApp(ticket) : '';
     const actions = isTechnician
       ? `${!['handed_over','cancelled'].includes(ticket.status) ? `<button class="small-btn" data-work-ticket="${ticket.id}">Perbarui progres</button>` : ''}${ticket.status === 'repairing' ? `<button class="small-btn" data-parts="${ticket.id}">＋ Sparepart</button>` : ''}${photoButtons}`
-      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
+      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>${whatsapp ? `<a class="small-btn" href="${esc(whatsapp)}" target="_blank" rel="noopener noreferrer">Kabari via WhatsApp</a>` : ''}` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
     return `<tr><td class="product-name">${esc(ticket.ticket_number)}<div class="field-hint">${new Date(ticket.created_at).toLocaleDateString('id-ID')}</div></td><td>${esc(ticket.customer_name)}<div class="field-hint">${esc(ticket.device_name)} · ${esc(ticket.serial_number || 'tanpa serial')}<br/>Teknisi: ${esc(techName)}</div></td><td>${esc(ticket.complaint)}${ticket.technician_note ? `<div class="field-hint"><b>Catatan teknisi:</b> ${esc(ticket.technician_note)}</div>` : ''}</td><td><span class="pill ${ticket.status === 'ready' ? 'blue' : ticket.status === 'handed_over' ? '' : 'warn'}">${esc(statusText[ticket.status] || ticket.status)}</span></td><td>${money(ticket.final_cost || ticket.estimated_cost)}<div class="field-hint">Dibayar ${money(ticket.paid_amount || 0)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
   }).join('') || `<tr><td colspan="6"><div class="empty"><b>${isTechnician ? 'Belum ada tiket di antrean teknisi' : 'Belum ada tiket servis'}</b>${isTechnician ? 'Tiket baru dari operator cabang ini akan muncul di sini.' : 'Buat tiket saat laptop diterima di toko.'}</div></td></tr>`}</tbody></table></div></section>`;
   page.querySelector('#new-service')?.addEventListener('click', () => serviceIntakeModal());
   page.querySelectorAll('[data-work-ticket]').forEach((button) => button.addEventListener('click', () => technicianServiceModal(tickets.find((ticket) => ticket.id === button.dataset.workTicket))));
-  page.querySelectorAll('[data-handover]').forEach((button) => button.addEventListener('click', () => { const form = document.createElement('input'); form.type = 'file'; form.accept = 'image/*'; form.capture = 'environment'; form.addEventListener('change', () => finishService(button.dataset.handover, form.files?.[0])); form.click(); }));
+  page.querySelectorAll('[data-handover]').forEach((button) => button.addEventListener('click', () => {
+    finishService(tickets.find((ticket) => ticket.id === button.dataset.handover));
+  }));
   page.querySelectorAll('[data-service-receipt]').forEach((button) => button.addEventListener('click', async () => {
     try {
       const ticket = checkError(await supabase.from('service_tickets').select('ticket_number,tracking_code').eq('id', button.dataset.serviceReceipt).single());
@@ -1441,7 +1447,7 @@ function technicianServiceModal(ticket) {
   const nextStatuses = ['diagnosing','waiting_approval','waiting_parts','repairing','ready'];
   openModal('Perbarui pekerjaan servis', `${ticket.ticket_number} · ${ticket.customer_name} · ${ticket.device_name}`, `<div class="notice">Keluhan: ${esc(ticket.complaint)}</div><div class="form-grid"><div class="field"><label>Status pekerjaan</label><select name="status" required>${nextStatuses.map((status) => `<option value="${status}" ${ticket.status === status ? 'selected' : ''}>${statusText[status]}</option>`).join('')}</select></div><div class="field"><label>Estimasi biaya servis</label><input name="estimated_cost" type="number" min="0" step="1000" value="${Number(ticket.estimated_cost || 0)}" required /></div><div class="field full"><label>Catatan pemeriksaan / progres</label><textarea name="technician_note" rows="4" required>${esc(ticket.technician_note || '')}</textarea></div></div>`, async (form) => {
     checkError(await supabase.rpc('update_customer_service', { _ticket_id: ticket.id, _status: String(form.get('status')), _technician_note: String(form.get('technician_note')).trim(), _estimated_cost: Number(form.get('estimated_cost')) }));
-    toast('Progres teknisi tersimpan dan terlihat oleh operator.'); await showPage('service');
+    toast(form.get('status') === 'ready' ? 'Tiket siap diambil dan masuk antrean serah terima operator.' : 'Progres teknisi tersimpan dan terlihat oleh operator.'); await showPage('service');
   }, 'Simpan progres');
 }
 
@@ -1508,21 +1514,58 @@ async function compressPhoto(file) {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', .82));
 }
 
-async function finishService(ticketId, file) {
-  if (!file) { toast('Pilih foto penyerahan untuk menyelesaikan tiket.', true); return showPage('service'); }
-  try {
-    const ticket = checkError(await supabase.from('service_tickets').select('organization_id,branch_id').eq('id', ticketId).single());
-    const compressed = await compressPhoto(file); const path = `${ticket.organization_id}/${ticket.branch_id}/${ticketId}/handover.jpg`;
-    checkError(await supabase.storage.from('service-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: true }));
-    const current = checkError(await supabase.from('service_tickets').select('estimated_cost').eq('id', ticketId).single());
-    openModal('Serah terima dan pembayaran servis', 'Pembayaran langsung masuk ke kas cabang. Sisa tempo akan muncul sebagai piutang.', `<div class="form-grid"><div class="field"><label>Total biaya servis</label><input name="final_cost" type="number" min="0" value="${Number(current.estimated_cost || 0)}" required /></div><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="${Number(current.estimated_cost || 0)}" required /></div><div class="field service-due" hidden><label>Jatuh tempo piutang</label><input name="due_date" type="date" /></div></div>`, async (form) => {
-      const { error } = await supabase.rpc('complete_service_handover', { _ticket_id: ticketId, _final_cost: Number(form.get('final_cost')), _paid_amount: Number(form.get('paid_amount')), _due_date: form.get('due_date') || null, _handover_photo_path: path });
-      if (error) throw error; toast('Serah terima tersimpan; kas dan piutang diperbarui.'); await showPage('service');
-    }, 'Simpan serah terima');
-    const modalForm = document.querySelector('#active-modal');
-    const updateDue = () => { const outstanding = Number(modalForm.final_cost.value) > Number(modalForm.paid_amount.value); modalForm.querySelector('.service-due').hidden = !outstanding; modalForm.due_date.required = outstanding; };
-    modalForm.final_cost.addEventListener('input', updateDue); modalForm.paid_amount.addEventListener('input', updateDue); updateDue();
-  } catch (error) { toast(error.message, true); }
+function serviceReadyWhatsApp(ticket) {
+  const phone = [ticket.customers?.phone, ticket.customer_phone].map((value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    return digits.replace(/^0/, '62').replace(/^8/, '628');
+  }).find((number) => /^[1-9]\d{7,14}$/.test(number));
+  if (!phone) return '';
+  const message = `Halo ${ticket.customer_name}, servis ${ticket.device_name} dengan nomor tiket ${ticket.ticket_number} sudah selesai dan siap diambil di ${state.organization.name}, ${branchName(ticket.branch_id)}. Terima kasih.`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function finishService(ticket) {
+  if (!ticket || ticket.status !== 'ready') return;
+  const estimate = Number(ticket.estimated_cost || 0);
+  const path = `${ticket.organization_id}/${ticket.branch_id}/${ticket.id}/handover-${crypto.randomUUID()}.jpg`;
+  let uploadedFile;
+  const host = openModal('Serah terima dan pembayaran servis', 'Pembayaran masuk ke kas cabang. Sisa tagihan dicatat sebagai piutang.', `
+    <div class="notice"><strong>${esc(ticket.ticket_number)}</strong> · ${esc(ticket.customer_name)} · ${esc(ticket.device_name)}</div>
+    <div class="form-grid">
+      <div class="field full"><label for="handover-evidence">Foto bukti penyerahan (wajib)</label><input id="handover-evidence" name="handover_photo" type="file" accept="image/jpeg,image/png,image/webp" required /></div>
+      <div class="field"><label>Total biaya servis</label><input name="final_cost" type="number" min="0" value="${estimate}" required /></div>
+      <div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" max="${estimate}" value="${estimate}" required /></div>
+      <div class="field service-due" hidden><label>Jatuh tempo piutang</label><input name="due_date" type="date" /></div>
+    </div>`, async (form) => {
+    const file = form.get('handover_photo');
+    if (!(file instanceof File) || !file.size) throw new Error('Foto bukti penyerahan wajib dilampirkan.');
+    const fileKey = JSON.stringify([file.name, file.size, file.lastModified]);
+    if (uploadedFile !== fileKey) {
+      const compressed = await compressPhoto(file);
+      if (!compressed) throw new Error('Foto bukti penyerahan gagal diproses.');
+      checkError(await supabase.storage.from('service-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: true }));
+      uploadedFile = fileKey;
+    }
+    checkError(await supabase.rpc('complete_service_handover', {
+      _ticket_id: ticket.id,
+      _final_cost: Number(form.get('final_cost')),
+      _paid_amount: Number(form.get('paid_amount')),
+      _due_date: form.get('due_date') || null,
+      _handover_photo_path: path
+    }));
+    toast('Serah terima tersimpan dan masuk laporan cabang.');
+    if (state.page === 'service' && state.branchId === ticket.branch_id) await showPage('service');
+  }, 'Simpan serah terima');
+  const form = host.querySelector('#active-modal');
+  const updateDue = () => {
+    form.paid_amount.max = form.final_cost.value;
+    const outstanding = Number(form.final_cost.value) > Number(form.paid_amount.value);
+    form.querySelector('.service-due').hidden = !outstanding;
+    form.due_date.required = outstanding;
+  };
+  form.final_cost.addEventListener('input', updateDue);
+  form.paid_amount.addEventListener('input', updateDue);
+  updateDue();
 }
 
 async function partsModal(ticketId) {
