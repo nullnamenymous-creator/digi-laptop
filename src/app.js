@@ -2335,12 +2335,12 @@ async function showServiceReceipt(ticket, kind, technicianName) {
     ['Nomor seri', ticket.serial_number],
     ['Diterima', date(ticket.created_at)],
     ['Teknisi', technicianName || ticket.technician_name],
-    ['Keluhan pelanggan', ticket.complaint],
+    ['Keluhan pelanggan', ticket.complaint, true],
   ];
   if (handover) {
     details.push(
       ['Diserahkan', date(ticket.handed_over_at)],
-      ['Catatan teknisi', ticket.technician_note],
+      ['Catatan teknisi', ticket.technician_note, true],
       ['Biaya akhir', money(ticket.final_cost ?? 0)],
       ['Total pembayaran tercatat', money(ticket.paid_amount ?? 0)],
       ['Sisa tagihan', money(Math.max(0, Number(ticket.final_cost ?? 0) - Number(ticket.paid_amount ?? 0)))],
@@ -2355,7 +2355,7 @@ async function showServiceReceipt(ticket, kind, technicianName) {
     </header>
     <h2>${esc(title)}</h2>
     <p class="service-receipt-ticket">No. tiket <strong>${esc(ticket.ticket_number)}</strong></p>
-    <dl>${details.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value || '—')}</dd></div>`).join('')}</dl>
+    <dl>${details.map(([label, value, fullWidth]) => `<div${fullWidth ? ' class="service-receipt-wide"' : ''}><dt>${esc(label)}</dt><dd>${esc(value || '—')}</dd></div>`).join('')}</dl>
     ${link ? `<section class="service-receipt-tracking">
       <img width="120" height="120" src="${qr}" alt="QR pelacakan servis" />
       <div><strong>Lacak servis</strong><p>Pindai QR atau gunakan kode pelacakan berikut.</p>
@@ -2367,19 +2367,25 @@ async function showServiceReceipt(ticket, kind, technicianName) {
     <button type="button" class="btn" id="copy-service-link">Salin link</button>` : ''}
     <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, () => {}, 'Tutup');
   host.querySelector('#print-service-receipt').addEventListener('click', () => {
+    const narrow = printPreferences().receipt === '58';
     printDocument(title, documentBody, 'receipt', `
-      .service-receipt{margin:12px auto;max-width:680px}
-      .service-receipt-brand{display:flex;align-items:center;gap:8px;border-bottom:2px solid #214536;padding-bottom:8px}
-      .service-receipt-brand img{flex:none;object-fit:contain}
-      .service-receipt h2{font-size:16px;margin-bottom:4px}
-      .service-receipt-ticket{margin-top:0}
-      .service-receipt dl{margin:10px 0}
-      .service-receipt dl div{border-bottom:1px solid #ddd;padding:4px 0;break-inside:avoid}
-      .service-receipt dt{font-size:10px;font-weight:bold}
-      .service-receipt dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
-      .service-receipt-tracking{break-inside:avoid;overflow-wrap:anywhere}
-      .service-receipt-tracking img{display:block;max-width:100%;height:auto}
+      .service-receipt{margin:12px auto;max-width:560px;line-height:1.35}
+      .service-receipt-brand{display:grid;justify-items:center;gap:4px;text-align:center;border-bottom:1px solid #222;padding-bottom:9px;break-inside:avoid}
+      .service-receipt-brand img{width:36px;height:36px;object-fit:contain}
+      .service-receipt-brand strong{font-size:12px;letter-spacing:.025em}
+      .service-receipt-brand strong + div{font-size:10px}
+      .service-receipt h2{font-size:14px;margin:9px 0 3px;text-align:center}
+      .service-receipt-ticket{margin:0;text-align:center;font-size:11px}
+      .service-receipt dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px;margin:10px 0}
+      .service-receipt dl div{border-bottom:1px solid #ccc;padding:5px 0;break-inside:avoid}
+      .service-receipt-wide{grid-column:1 / -1}
+      .service-receipt dt{font-size:10px;font-weight:700}
+      .service-receipt dd{margin:1px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+      .service-receipt-tracking{display:grid;grid-template-columns:${narrow ? '1fr' : '96px minmax(0,1fr)'};align-items:center;justify-items:${narrow ? 'center' : 'start'};gap:6px;border:1px solid #ccc;padding:6px;break-inside:avoid;overflow-wrap:anywhere;text-align:${narrow ? 'center' : 'left'};font-size:10px}
+      .service-receipt-tracking img{display:block;width:96px;max-width:100%;height:auto}
       .service-receipt-tracking p{margin:3px 0}
+      .service-receipt-tracking a{color:inherit;text-decoration:none}
+      @media print{.service-receipt{margin:0 auto}}
     `);
   });
   host.querySelector('#copy-service-link')?.addEventListener('click', async () => {
