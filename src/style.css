@@ -825,3 +825,33 @@ body { font-size: 14px; line-height: 1.5; }
   .cashier-search input { font-size: 16px; }
   .cashier-quantity .small-btn { min-width: 44px; }
 }
+.app { font-size: 13px; }
+.app .sidebar { background: #0b3629; padding-inline: 14px; }
+.app .sidebar .brand { gap: 11px; padding: 0 8px 20px; }
+.app .sidebar .brand-mark { width: 38px; height: 38px; flex: none; animation: none; }
+.app .sidebar .brand-text { gap: 2px; }
+.app .sidebar .brand-text b { font: 800 14px/1.25 Manrope, sans-serif; letter-spacing: 0; white-space: nowrap; }
+.app .sidebar .brand-text small { font-size: 10px; letter-spacing: .09em; }
+.app .nav-button { font-size: 12px; min-height: 35px; border-radius: 5px; }
+.app .nav-button.active { background: #1c513c; border-left-color: var(--gold); }
+.app .nav-icon { font-size: 13px; }
+.app .profile { gap: 7px; }
+.app .profile-meta span, .app .logout { font-size: 11px; }
+.app .topbar { height: 52px; background: #fdfdf9; border-color: var(--line); }
+.app .topbar .crumb b, .app .topbar .online-label { color: #214536; }
+.app .topbar .top-logout { color: #214536; border-color: var(--line); border-radius: 5px; }
+.app .top-tools { gap: 9px; }
+.app .page { background: #f8f9f4; }
+.app .page-head h1 { font-size: clamp(18px, 2vw, 22px); }
+.app .dashboard-slogan { padding: 13px 17px; border-radius: 7px; }
+.app .dashboard-slogan h1 { font-size: clamp(15px, 1.7vw, 21px); }
+.app .panel, .app .card { border-radius: 6px; }
+.app .panel-title, .app .btn, .app td { font-size: 12px; }
+.app .panel-sub, .app .card-sub, .app .field-hint { font-size: 11px; }
+.app .card-value { font-size: 20px; }
+.app .inventory-product-body h3 { font-size: 13px; }
+@media (max-width: 740px) {
+  .app .nav-button { min-height: 44px; }
+  .app .mobile-menu { min-width: 34px; min-height: 44px; }
+  .app .top-tools { gap: 5px; }
+}
