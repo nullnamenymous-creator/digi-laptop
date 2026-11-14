@@ -1059,3 +1059,31 @@ body { font-size: 14px; line-height: 1.5; }
   .modal .form-grid { grid-template-columns: minmax(0, 1fr); }
   .modal .field input, .modal .field select, .modal .field textarea { width: 100%; min-width: 0; }
 }
+/* Compact service dialogs without changing their forms or actions. */
+.modal:has([name="intake_photo"], [name="technician_note"], [name="handover_photo"], #service-tracking-link) {
+  border-radius: 12px;
+}
+.modal:has([name="intake_photo"], [name="technician_note"], [name="handover_photo"]) textarea {
+  min-height: 68px;
+}
+@media (min-width: 900px) {
+  .modal:has([name="intake_photo"], [name="technician_note"], [name="handover_photo"], #service-tracking-link) {
+    width: min(860px, 100%);
+    padding: 16px 18px;
+  }
+  .modal:has([name="intake_photo"], [name="technician_note"], [name="handover_photo"], #service-tracking-link) .modal-head {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+  }
+  .modal:has([name="intake_photo"]) > .form-grid,
+  .modal:has([name="handover_photo"]) > .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .modal:has([name="intake_photo"]) .field:has([name="customer_id"], [name="assigned_technician_id"]),
+  .modal:has([name="handover_photo"]) .field:has([name="handover_photo"]) {
+    grid-column: auto;
+  }
+  .modal:has([name="intake_photo"]) .field:has([name="complaint"]) { grid-column: span 2; }
+}
