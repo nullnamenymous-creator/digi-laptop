@@ -4,7 +4,7 @@
   "short_name": "Digi-Laptop",
   "description": "Operasional toko DIGITAL LAPTOP JOMBANG.",
   "lang": "id-ID",
-  "start_url": "/",
+  "start_url": "/petugas",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0c542e",

@@ -2058,7 +2058,21 @@ async function financePage(page) {
 }
 
 function customerPortal(tracking) {
-  root.innerHTML = `<main class="catalog-page"><header class="panel-head"><h1>Digital Laptop Jombang</h1><nav class="actions-cell"><a class="btn" href="/catalog">Katalog produk</a><a class="btn" href="/lacak-servis">Lacak servis</a><a class="btn" href="/">Masuk staf</a></nav></header><section class="panel" id="customer-content"></section></main>`;
+  root.innerHTML = `<main class="catalog-page storefront">
+    <header class="storefront-header">
+      <a class="storefront-brand" href="/"><img src="/store-logo-transparent.png" alt="" width="42" height="42" /><span>Digital Laptop <small>Jombang</small></span></a>
+      <nav aria-label="Navigasi toko">
+        <a href="/" ${tracking ? '' : 'aria-current="page"'}>Katalog</a>
+        <a href="/lacak-servis" ${tracking ? 'aria-current="page"' : ''}>Lacak servis</a>
+        <a class="storefront-staff" href="/petugas">Masuk petugas</a>
+      </nav>
+    </header>
+    ${tracking ? '' : `<section class="storefront-hero">
+      <div><p>Digital Laptop Jombang</p><h1>Temukan laptop<br />pilihanmu.</h1><p>Untuk kerja, kuliah, dan kebutuhan sehari-hari. Cek produk yang tersedia dan tanyakan langsung ke toko.</p><a href="#produk">Jelajahi produk <span aria-hidden="true">↓</span></a></div>
+      <img src="/login-laptops.webp" alt="Pilihan laptop bisnis Digital Laptop Jombang" fetchpriority="high" />
+    </section>`}
+    <section class="storefront-content" id="customer-content"></section>
+  </main>`;
   const panel = root.querySelector('#customer-content');
   if (tracking) {
     panel.innerHTML = '<h2>Lacak servis</h2><form class="form-grid"><div class="field"><label for="tracking-code">Kode pelacakan</label><input id="tracking-code" name="code" required /></div><div><button class="btn primary">Lacak</button></div></form><div id="tracking-result" aria-live="polite"></div>';
@@ -2083,16 +2097,58 @@ function customerPortal(tracking) {
     if (form.code.value) form.requestSubmit();
     return;
   }
-  panel.innerHTML = '<h2>Katalog produk</h2><p>Memuat produk…</p>';
+  panel.id = 'produk';
+  panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
   supabase.rpc('customer_catalog').then(({data, error}) => {
-    panel.innerHTML = '<h2>Katalog produk</h2>' + (error ? '<p>Katalog belum bisa dimuat. Coba lagi.</p>' : data?.length
-      ? `<div class="inventory-product-grid">${data.map((product) => {
+    if (error) {
+      panel.innerHTML = '<h2>Katalog produk</h2><p role="alert">Katalog belum bisa dimuat.</p><button class="btn" type="button">Coba lagi</button>';
+      panel.querySelector('button').addEventListener('click', () => customerPortal(false));
+      return;
+    }
+    const products = data || [];
+    if (!products.length) {
+      panel.innerHTML = '<h2>Katalog produk</h2><p>Belum ada produk siap jual di katalog publik. Silakan cek kembali nanti.</p>';
+      return;
+    }
+    const brands = [...new Set(products.map(product => product.brand?.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
+    panel.innerHTML = `<h2>Katalog produk</h2>
+      <div class="storefront-filters">
+        <input type="search" aria-label="Cari laptop" placeholder="Cari nama, merek, atau model laptop" />
+        <select aria-label="Filter merek"><option value="">Semua merek</option>${brands.map(brand => `<option>${esc(brand)}</option>`).join('')}</select>
+        <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
+      </div>
+      <p class="storefront-count" role="status"></p><div class="storefront-grid"></div>`;
+    const search = panel.querySelector('input');
+    const [brand, sort] = panel.querySelectorAll('select');
+    const grid = panel.querySelector('.storefront-grid');
+    const count = panel.querySelector('.storefront-count');
+    const render = () => {
+      const query = search.value.trim().toLocaleLowerCase('id');
+      const results = products.filter(product => (!brand.value || product.brand?.trim() === brand.value) &&
+        [product.name, product.brand, product.model].join(' ').toLocaleLowerCase('id').includes(query));
+      if (sort.value) results.sort((a, b) => (Number(a.retail_price) - Number(b.retail_price)) * (sort.value === 'asc' ? 1 : -1));
+      count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
+      grid.innerHTML = results.map(product => {
         const digits = String(product.phone || '').replace(/\D/g, '');
-        const phone = digits.startsWith('0') ? '62' + digits.slice(1) : digits;
-        const message = encodeURIComponent('Halo, saya mau pesan ' + product.name + '. Apakah masih tersedia?');
-        return `<article class="inventory-product-card"><div class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : 'Foto belum tersedia'}</div><div class="inventory-product-body"><h3>${esc(product.name)}</h3><strong>${money(product.retail_price)}</strong>${phone ? `<a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Pesan via WhatsApp</a>` : ''}</div></article>`;
-      }).join('')}</div>` : '<p>Belum ada produk tersedia di katalog publik.</p>');
+        const phone = digits.replace(/^0/, '62');
+        const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
+        return `<article class="storefront-card">
+          <div class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum tersedia</span>'}</div>
+          <div class="storefront-card-body">
+            ${product.brand ? `<small>${esc(product.brand)}</small>` : ''}
+            <h3>${esc(product.name)}</h3>
+            <strong>${money(product.retail_price)}</strong>
+            ${phone ? `<a href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a>` : ''}
+          </div>
+        </article>`;
+      }).join('');
+    };
+    search.addEventListener('input', render);
+    brand.addEventListener('change', render);
+    sort.addEventListener('change', render);
+    render();
   });
+
 }
 
 async function showServiceReceipt(ticket) {
@@ -2112,7 +2168,7 @@ async function showServiceReceipt(ticket) {
 
 async function start() {
   const route = location.pathname.replace(/\/$/, '');
-  if (route === '/catalog' || route === '/lacak-servis') {
+  if (route === '' || route === '/catalog' || route === '/lacak-servis') {
     if (!hasBackendConfig) return configurationScreen();
     return customerPortal(route === '/lacak-servis');
   }
