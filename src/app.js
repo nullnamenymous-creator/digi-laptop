@@ -1302,7 +1302,7 @@ function printPreferences() {
   };
 }
 
-function printDocument(title, body, kind) {
+function printDocument(title, body, kind, documentStyles = '') {
   const size = printPreferences()[kind];
   const thermal = size === '58' || size === '80';
   const paper = thermal ? 'auto' : size;
@@ -1314,6 +1314,7 @@ function printDocument(title, body, kind) {
     *{box-sizing:border-box}body{max-width:${width};margin:12px auto;padding:0 6px;color:#111;font:12px/1.4 Arial,sans-serif}
     table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:4px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
     thead{display:table-header-group}tr{break-inside:avoid}
+    ${documentStyles}
     @media print{button{display:none}body{margin:0 auto;padding:0}}
   </style></head><body><button type="button" onclick="window.print()">Pilih printer / Cetak</button>${body}</body></html>`);
   win.document.close();
@@ -1587,7 +1588,7 @@ async function servicePage(page) {
     const whatsapp = !isTechnician && ticket.status === 'ready' ? serviceReadyWhatsApp(ticket) : '';
     const actions = isTechnician
       ? `${!['handed_over','cancelled'].includes(ticket.status) ? `<button class="small-btn" data-work-ticket="${ticket.id}">Perbarui progres</button>` : ''}${ticket.status === 'repairing' ? `<button class="small-btn" data-parts="${ticket.id}">＋ Sparepart</button>` : ''}${photoButtons}`
-      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>${whatsapp ? `<a class="small-btn" href="${esc(whatsapp)}" target="_blank" rel="noopener noreferrer">Kabari via WhatsApp</a>` : ''}` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
+      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'handed_over' ? `<button class="small-btn" data-service-receipt="${ticket.id}" data-receipt-kind="handover">Bukti penyerahan</button>` : ''} ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>${whatsapp ? `<a class="small-btn" href="${esc(whatsapp)}" target="_blank" rel="noopener noreferrer">Kabari via WhatsApp</a>` : ''}` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
     return `<tr data-service-status="${esc(ticket.status)}"><td class="product-name">${esc(ticket.ticket_number)}<div class="field-hint">${new Date(ticket.created_at).toLocaleDateString('id-ID')}</div></td><td>${esc(ticket.customer_name)}<div class="field-hint">${esc(ticket.device_name)} · ${esc(ticket.serial_number || 'tanpa serial')}<br/>Teknisi: ${esc(techName)}</div></td><td>${esc(ticket.complaint)}${ticket.technician_note ? `<div class="field-hint"><b>Catatan teknisi:</b> ${esc(ticket.technician_note)}</div>` : ''}</td><td><span class="pill ${ticket.status === 'ready' ? 'blue' : ticket.status === 'handed_over' ? '' : 'warn'}">${esc(statusText[ticket.status] || ticket.status)}</span></td><td>${money(ticket.final_cost || ticket.estimated_cost)}<div class="field-hint">Dibayar ${money(ticket.paid_amount || 0)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
   }).join('') || `<tr><td colspan="6"><div class="empty"><b>${isTechnician ? 'Belum ada tiket di antrean teknisi' : 'Belum ada tiket servis'}</b>${isTechnician ? 'Tiket baru dari operator cabang ini akan muncul di sini.' : 'Buat tiket saat laptop diterima di toko.'}</div></td></tr>`}</tbody></table></div></section>`;
   page.querySelector('#new-service')?.addEventListener('click', () => serviceIntakeModal());
@@ -1597,8 +1598,8 @@ async function servicePage(page) {
   }));
   page.querySelectorAll('[data-service-receipt]').forEach((button) => button.addEventListener('click', async () => {
     try {
-      const ticket = checkError(await supabase.from('service_tickets').select('ticket_number,tracking_code').eq('id', button.dataset.serviceReceipt).single());
-      await showServiceReceipt(ticket);
+      const ticket = tickets.find((row) => row.id === button.dataset.serviceReceipt);
+      await showServiceReceipt(ticket, button.dataset.receiptKind, technicians.get(ticket.assigned_technician_id));
     } catch (error) { toast(error.message, true); }
   }));
   page.querySelectorAll('[data-cancel-ticket]').forEach((button) => button.addEventListener('click', async () => { if (!confirm('Batalkan tiket servis ini?')) return; try { checkError(await supabase.rpc('update_customer_service', { _ticket_id: button.dataset.cancelTicket, _status: 'cancelled', _technician_note: '', _estimated_cost: 0 })); toast('Tiket servis dibatalkan.'); await showPage('service'); } catch (error) { toast(error.message, true); } }));
@@ -2314,16 +2315,74 @@ function customerPortal(tracking) {
 
 }
 
-async function showServiceReceipt(ticket) {
-  const link = new URL('/lacak-servis', location.origin);
-  link.hash = new URLSearchParams({ kode: ticket.tracking_code });
-  const { default: QRCode } = await import('qrcode');
-  const qr = await QRCode.toDataURL(link.href);
-  const host = openModal('Bukti penerimaan servis', esc(ticket.ticket_number), `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /><div class="field-hint">Kode pelacakan: ${esc(ticket.tracking_code)}</div></div><img width="150" height="150" src="${qr}" alt="QR pelacakan servis" /><button type="button" class="btn" id="copy-service-link">Salin link</button> <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, async () => {}, 'Tutup');
+async function showServiceReceipt(ticket, kind, technicianName) {
+  const handover = kind === 'handover';
+  if (handover && ticket.status !== 'handed_over') return;
+  const title = handover ? 'Bukti penyerahan selesai servis' : 'Bukti penerimaan servis';
+  const logo = new URL('/store-logo-transparent.png', location.origin).href;
+  const date = (value) => value ? new Date(value).toLocaleString('id-ID') : '—';
+  const link = ticket.tracking_code ? new URL('/lacak-servis', location.origin) : null;
+  let qr;
+  if (link) {
+    link.hash = new URLSearchParams({ kode: ticket.tracking_code });
+    const { default: QRCode } = await import('qrcode');
+    qr = await QRCode.toDataURL(link.href, { width: 320 });
+  }
+  const details = [
+    ['Nama pelanggan', ticket.customer_name || ticket.customers?.name],
+    ['No. HP / WhatsApp', ticket.customer_phone || ticket.customers?.phone],
+    ['Unit / model', ticket.device_name],
+    ['Nomor seri', ticket.serial_number],
+    ['Diterima', date(ticket.created_at)],
+    ['Teknisi', technicianName || ticket.technician_name],
+    ['Keluhan pelanggan', ticket.complaint],
+  ];
+  if (handover) {
+    details.push(
+      ['Diserahkan', date(ticket.handed_over_at)],
+      ['Catatan teknisi', ticket.technician_note],
+      ['Biaya akhir', money(ticket.final_cost ?? 0)],
+      ['Total pembayaran tercatat', money(ticket.paid_amount ?? 0)],
+      ['Sisa tagihan', money(Math.max(0, Number(ticket.final_cost ?? 0) - Number(ticket.paid_amount ?? 0)))],
+    );
+  } else {
+    details.push(['Estimasi biaya tercatat', money(ticket.estimated_cost ?? 0)]);
+  }
+  const documentBody = `<article class="service-receipt">
+    <header class="service-receipt-brand">
+      <img src="${esc(logo)}" width="48" height="48" alt="" />
+      <div><strong>${esc(state.organization.name)}</strong><div>${esc(branchName(ticket.branch_id))}</div></div>
+    </header>
+    <h2>${esc(title)}</h2>
+    <p class="service-receipt-ticket">No. tiket <strong>${esc(ticket.ticket_number)}</strong></p>
+    <dl>${details.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value || '—')}</dd></div>`).join('')}</dl>
+    ${link ? `<section class="service-receipt-tracking">
+      <img width="120" height="120" src="${qr}" alt="QR pelacakan servis" />
+      <div><strong>Lacak servis</strong><p>Pindai QR atau gunakan kode pelacakan berikut.</p>
+      <p>${esc(ticket.tracking_code)}</p><a href="${esc(link.href)}">${esc(link.origin + link.pathname)}</a></div>
+    </section>` : '<p>Kode pelacakan belum tersedia untuk tiket ini.</p>'}
+  </article>`;
+  const host = openModal(title, ticket.ticket_number, `${documentBody}
+    ${link ? `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /></div>
+    <button type="button" class="btn" id="copy-service-link">Salin link</button>` : ''}
+    <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, () => {}, 'Tutup');
   host.querySelector('#print-service-receipt').addEventListener('click', () => {
-    printDocument('Bukti penerimaan servis', `<h1>${esc(state.organization.name)}</h1><h2>Bukti penerimaan servis</h2><p>${esc(ticket.ticket_number)}</p><p>Kode pelacakan: ${esc(ticket.tracking_code)}</p><img width="130" height="130" src="${qr}" alt="QR pelacakan servis" /><p style="overflow-wrap:anywhere">${esc(link.href)}</p>`, 'receipt');
+    printDocument(title, documentBody, 'receipt', `
+      .service-receipt{margin:12px auto;max-width:680px}
+      .service-receipt-brand{display:flex;align-items:center;gap:8px;border-bottom:2px solid #214536;padding-bottom:8px}
+      .service-receipt-brand img{flex:none;object-fit:contain}
+      .service-receipt h2{font-size:16px;margin-bottom:4px}
+      .service-receipt-ticket{margin-top:0}
+      .service-receipt dl{margin:10px 0}
+      .service-receipt dl div{border-bottom:1px solid #ddd;padding:4px 0;break-inside:avoid}
+      .service-receipt dt{font-size:10px;font-weight:bold}
+      .service-receipt dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+      .service-receipt-tracking{break-inside:avoid;overflow-wrap:anywhere}
+      .service-receipt-tracking img{display:block;max-width:100%;height:auto}
+      .service-receipt-tracking p{margin:3px 0}
+    `);
   });
-  host.querySelector('#copy-service-link').addEventListener('click', async () => {
+  host.querySelector('#copy-service-link')?.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(link.href); toast('Link pelacakan disalin.'); }
     catch { host.querySelector('#service-tracking-link').select(); }
   });

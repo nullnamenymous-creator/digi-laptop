@@ -1213,3 +1213,29 @@ body { font-size: 14px; line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) {
   .storefront-media video { transition: none; visibility: hidden; }
 }
+
+.service-receipt { margin-bottom: 14px; }
+.service-receipt-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #edf3eb;
+  border-bottom: 2px solid #286248;
+  overflow-wrap: anywhere;
+}
+.service-receipt-brand img { flex: none; object-fit: contain; }
+.service-receipt-brand strong { color: #163e30; font-size: 17px; }
+.service-receipt h2 { margin: 12px 0 2px; font-size: 17px; }
+.service-receipt-ticket { margin: 0; }
+.service-receipt dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.service-receipt dl > div { padding: 5px 0; border-bottom: 1px solid #dce5db; }
+.service-receipt dt { font-weight: 700; }
+.service-receipt dd { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.service-receipt-tracking { display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.service-receipt-tracking img { flex: none; }
+.service-receipt-tracking p { margin: 3px 0; }
+@media (max-width: 480px) {
+  .service-receipt dl { gap: 5px 10px; }
+  .service-receipt-tracking img { width: 96px; height: 96px; }
+}
