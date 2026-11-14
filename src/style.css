@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&family=Playball&family=Sora:wght@500;600;700;800&display=swap');
 
 :root {
   font-family: Inter, Arial, sans-serif;
@@ -921,18 +921,17 @@ body { font-size: 14px; line-height: 1.5; }
   display: flex;
   align-items: center;
   gap: 11px;
-  color: #103a2d;
-  font: 800 clamp(23px, 2.5vw, 30px)/1.05 Manrope, sans-serif;
-  letter-spacing: -.05em;
+  color: #303631;
+  font: 400 clamp(31px, 4vw, 48px)/1.05 Playball, "Segoe Script", "Brush Script MT", cursive;
   text-decoration: none;
 }
 .storefront-brand img { flex: none; filter: drop-shadow(0 3px 5px #17433429); }
 .storefront-brand small {
   display: block;
   margin-top: 4px;
-  color: #715622;
-  font: 800 10px/1.2 Manrope, sans-serif;
-  letter-spacing: .19em;
+  color: #865b46;
+  font: 700 clamp(10px, 1.2vw, 13px)/1.2 Georgia, serif;
+  letter-spacing: .26em;
   text-transform: uppercase;
 }
 .storefront-header nav { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
