@@ -21,7 +21,7 @@ self.addEventListener('fetch', (event) => {
   if (requestUrl.pathname.startsWith('/rest/') || requestUrl.pathname.startsWith('/auth/') || requestUrl.pathname.startsWith('/storage/')) return;
   if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/@vite/') || requestUrl.pathname.startsWith('/node_modules/') || requestUrl.pathname.startsWith('/@id/') || requestUrl.pathname.startsWith('/@fs/')) return;
   if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request, { cache: 'no-cache' }).catch(async (error) => {
+    event.respondWith(fetch(event.request, { cache: 'no-cache', signal: AbortSignal.timeout(8000) }).catch(async (error) => {
       const cache = await caches.open(CACHE_NAME);
       const offlinePage = await cache.match('/index.html');
       if (offlinePage) return offlinePage;

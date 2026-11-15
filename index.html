@@ -11,6 +11,21 @@
   </head>
   <body>
     <div id="app"><div class="loading-screen"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><p>Menyiapkan Digi-Laptop…</p></div></div>
+    <script>
+      setTimeout(() => {
+        const loading = document.querySelector('#app > .loading-screen');
+        if (!loading || loading.querySelector('button')) return;
+        const notice = document.createElement('p');
+        notice.setAttribute('role', 'status');
+        notice.textContent = 'Aplikasi membutuhkan waktu lebih lama dari biasanya.';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn';
+        retry.textContent = 'Muat ulang';
+        retry.addEventListener('click', () => location.reload());
+        loading.append(notice, retry);
+      }, 12000);
+    </script>
     <script type="module" src="/src/app.js"></script>
   </body>
 </html>

@@ -1388,8 +1388,18 @@ function productModal(product = null, available = 0) {
     const imagePath=file?await uploadProductPhoto(file,product?.id||crypto.randomUUID()):product?.image_path||'';
     const values={name,sku,brand,model,category:form.get('category'),cost_price:Number(form.get('cost_price')),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price')),warranty_months:Number(form.get('warranty_months')),image_path:imagePath,is_public:form.has('is_public'),...productCopyValues(form)};
     if(Object.values(values).some(value=>typeof value==='number'&&(!Number.isFinite(value)||value<0)))throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
-    if(product)checkError(await supabase.from('products').update(values).eq('id',product.id));else checkError(await supabase.from('products').insert({id:crypto.randomUUID(),organization_id:state.organization.id,...values,gallery_paths:await readGallery(form)}));
-    toast(product?'Detail produk diperbarui.':'Produk tersimpan.');await showPage('inventory');
+    if (product) {
+      checkError(await supabase.from('products').update(values).eq('id', product.id).select('id').single());
+      toast('Detail produk diperbarui.');
+    } else {
+      checkError(await supabase.from('products').insert({
+        id: crypto.randomUUID(), organization_id: state.organization.id,
+        ...values, gallery_paths: await readGallery(form),
+      }).select('id').single());
+      state.inventoryFilters = { 'inventory-stock': 'all', 'inventory-search': sku };
+      toast('Produk tersimpan di katalog toko. Tambahkan stok agar unit bisa dijual.');
+    }
+    await showPage('inventory');
   },product?'Simpan perubahan':'Simpan produk');
   host.querySelector('[data-add-opening-stock]')?.addEventListener('click', () => openingStockModal([product]));
   bindProductPhotoPicker(host.querySelector('#active-modal'));
@@ -2635,5 +2645,11 @@ async function start() {
 }
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch((error) => console.warn('PWA offline cache could not start', error)));
-start();
+start().catch((error) => {
+  console.error('Digi-Laptop startup failed', error);
+  const loading = root.querySelector(':scope > .loading-screen');
+  if (!loading) return;
+  loading.innerHTML = '<p role="alert">Digi-Laptop belum bisa dibuka. Periksa koneksi lalu coba lagi.</p><button class="btn" type="button">Muat ulang</button>';
+  loading.querySelector('button').addEventListener('click', () => location.reload());
+});
 window.setTimeout(showMobileInstall, 1800);
