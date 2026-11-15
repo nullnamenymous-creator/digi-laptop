@@ -1243,3 +1243,10 @@ body { font-size: 14px; line-height: 1.5; }
   .service-receipt dl { gap: 5px 10px; }
   .service-receipt-tracking img { width: 96px; height: 96px; }
 }
+
+.service-wa-button { background: #edf7ef; border-color: #afd1b6; color: #14532d; }
+.service-wa-button:hover { background: #dcefe0; }
+.service-share-panel { margin: 12px 0; padding: 12px; background: #edf3eb; border: 1px solid #c8d8cb; border-radius: 8px; }
+.service-share-panel .actions-cell { gap: 8px; }
+.service-share-panel .btn { text-decoration: none; }
+.service-share-panel [hidden] { display: none; }
