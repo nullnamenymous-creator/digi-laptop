@@ -1705,7 +1705,7 @@ async function servicePage(page) {
     const whatsapp = serviceCustomerWhatsApp(ticket);
     const actions = isTechnician
       ? `${!['handed_over','cancelled'].includes(ticket.status) ? `<button class="small-btn" data-work-ticket="${ticket.id}">Perbarui progres</button>` : ''}${ticket.status === 'repairing' ? `<button class="small-btn" data-parts="${ticket.id}">＋ Sparepart</button>` : ''}${photoButtons}`
-      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'handed_over' ? `<button class="small-btn" data-service-receipt="${ticket.id}" data-receipt-kind="handover">Bukti penyerahan</button>` : ''} ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>${whatsapp ? `<button type="button" class="small-btn service-wa-button" data-service-receipt="${ticket.id}" data-share-receipt>Kirim PDF via WhatsApp</button>` : ''}` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
+      : `<button class="small-btn" data-service-receipt="${ticket.id}">Bukti penerimaan</button> ${ticket.status === 'handed_over' ? `<button class="small-btn" data-service-receipt="${ticket.id}" data-receipt-kind="handover">Bukti penyerahan</button>` : ''} ${ticket.status === 'ready' ? `<button class="small-btn" data-handover="${ticket.id}">Serah terima</button>` : ''}${whatsapp && ['received', 'ready'].includes(ticket.status) ? `<button type="button" class="small-btn service-wa-button" data-service-receipt="${ticket.id}">Kirim PDF via WhatsApp</button>` : ''}${!['handed_over','cancelled','ready'].includes(ticket.status) ? `<button class="small-btn" data-cancel-ticket="${ticket.id}">Batalkan</button>` : ''}${photoButtons}`;
     return `<tr data-service-status="${esc(ticket.status)}"><td class="product-name">${esc(ticket.ticket_number)}<div class="field-hint">${new Date(ticket.created_at).toLocaleDateString('id-ID')}</div></td><td>${esc(ticket.customer_name)}<div class="field-hint">${esc(ticket.device_name)} · ${esc(ticket.serial_number || 'tanpa serial')}<br/>Teknisi: ${esc(techName)}</div></td><td>${esc(ticket.complaint)}${ticket.technician_note ? `<div class="field-hint"><b>Catatan teknisi:</b> ${esc(ticket.technician_note)}</div>` : ''}</td><td><span class="pill ${ticket.status === 'ready' ? 'blue' : ticket.status === 'handed_over' ? '' : 'warn'}">${esc(statusText[ticket.status] || ticket.status)}</span></td><td>${money(ticket.final_cost || ticket.estimated_cost)}<div class="field-hint">Dibayar ${money(ticket.paid_amount || 0)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
   }).join('') || `<tr><td colspan="6"><div class="empty"><b>${isTechnician ? 'Belum ada tiket di antrean teknisi' : 'Belum ada tiket servis'}</b>${isTechnician ? 'Tiket baru dari operator cabang ini akan muncul di sini.' : 'Buat tiket saat laptop diterima di toko.'}</div></td></tr>`}</tbody></table></div></section>`;
   page.querySelector('#new-service')?.addEventListener('click', () => serviceIntakeModal());
@@ -1716,7 +1716,7 @@ async function servicePage(page) {
   page.querySelectorAll('[data-service-receipt]').forEach((button) => button.addEventListener('click', async () => {
     try {
       const ticket = tickets.find((row) => row.id === button.dataset.serviceReceipt);
-      await showServiceReceipt(ticket, button.dataset.receiptKind, technicians.get(ticket.assigned_technician_id), button.hasAttribute('data-share-receipt'));
+      await showServiceReceipt(ticket, button.dataset.receiptKind, technicians.get(ticket.assigned_technician_id));
     } catch (error) { toast(error.message, true); }
   }));
   page.querySelectorAll('[data-cancel-ticket]').forEach((button) => button.addEventListener('click', async () => { if (!confirm('Batalkan tiket servis ini?')) return; try { checkError(await supabase.rpc('update_customer_service', { _ticket_id: button.dataset.cancelTicket, _status: 'cancelled', _technician_note: '', _estimated_cost: 0 })); toast('Tiket servis dibatalkan.'); await showPage('service'); } catch (error) { toast(error.message, true); } }));
@@ -1783,9 +1783,20 @@ async function serviceIntakeModal() {
     }
     catch (error) { await supabase.storage.from('service-evidence').remove([path]); throw error; }
     toast(`Tiket ${ticketNumber} tersimpan dan terhubung ke data pelanggan.`);
+    if (state.page !== 'service' || state.branchId !== branchId) return;
     await showPage('service');
+    if (!host.contains(modalForm) || state.page !== 'service' || state.branchId !== branchId) return;
+    try {
+      const ticket = checkError(await supabase.from('service_tickets').select('*,customers(id,name,phone)')
+        .eq('id', ticketId).eq('branch_id', branchId).single());
+      if (!host.contains(modalForm) || state.page !== 'service' || state.branchId !== branchId) return;
+      await showServiceReceipt(ticket, 'intake', assignedTechnician?.full_name);
+    } catch {
+      toast('Tiket sudah tersimpan. Buka Bukti penerimaan dari daftar tiket untuk menyiapkan PDF.', true);
+    }
   }, 'Simpan tiket');
-  const form = host.querySelector('#active-modal');
+  const modalForm = host.querySelector('#active-modal');
+  const form = modalForm;
   const syncCustomer = () => {
     const customer = customerRows.find((row) => row.id === form.customer_id.value);
     const isNew = form.customer_id.value === '__new__';
@@ -1807,7 +1818,7 @@ async function compressPhoto(file) {
 }
 
 function serviceCustomerWhatsApp(ticket) {
-  const phone = [ticket.customers?.phone, ticket.customer_phone].map((value) => {
+  const phone = [ticket.customer_phone, ticket.customers?.phone].map((value) => {
     const digits = String(value || '').replace(/\D/g, '');
     return digits.replace(/^0/, '62').replace(/^8/, '628');
   }).find((number) => /^[1-9]\d{7,14}$/.test(number));
@@ -2476,8 +2487,10 @@ function customerPortal(tracking) {
 
 }
 
-async function showServiceReceipt(ticket, kind, technicianName, shareReceipt) {
+async function showServiceReceipt(ticket, kind, technicianName) {
   const handover = kind === 'handover';
+  const shareReceipt = !handover;
+  const whatsapp = serviceCustomerWhatsApp(ticket);
   if (handover && ticket.status !== 'handed_over') return;
   const title = handover ? 'Bukti penyerahan selesai servis' : 'Bukti penerimaan servis';
   const logo = new URL('/store-logo-transparent.png', location.origin).href;
@@ -2531,7 +2544,7 @@ async function showServiceReceipt(ticket, kind, technicianName, shareReceipt) {
       <div class="actions-cell">
         <button type="button" class="btn primary" data-share-pdf hidden>Bagikan PDF</button>
         <button type="button" class="btn" data-download-pdf disabled>Unduh PDF</button>
-        <a class="btn" href="${esc(serviceCustomerWhatsApp(ticket))}" target="_blank" rel="noopener noreferrer">Buka chat pelanggan</a>
+        ${whatsapp ? `<a class="btn" href="${esc(whatsapp)}" target="_blank" rel="noopener noreferrer">Buka chat pelanggan</a>` : ''}
       </div>
     </section>` : ''}
     ${link ? `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /></div>
@@ -2579,7 +2592,8 @@ async function showServiceReceipt(ticket, kind, technicianName, shareReceipt) {
       const canShare = Boolean(navigator.share && navigator.canShare?.({ files: [file] }));
       status.textContent = canShare
         ? 'Pilih WhatsApp dan kontak pelanggan saat menu berbagi terbuka.'
-        : 'Unduh PDF, buka chat pelanggan, lalu lampirkan file sebagai dokumen.';
+        : whatsapp ? 'Unduh PDF, buka chat pelanggan, lalu lampirkan file sebagai dokumen.'
+          : 'Nomor WhatsApp pelanggan belum tersedia atau tidak valid. PDF tetap bisa diunduh.';
       download.disabled = false;
       download.addEventListener('click', () => {
         const url = URL.createObjectURL(file);
