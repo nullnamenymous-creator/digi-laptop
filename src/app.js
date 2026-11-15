@@ -2390,8 +2390,8 @@ function startStorefrontSlides(hero) {
 }
 
 function customerPortal(tracking) {
-  root.innerHTML = `<main class="catalog-page storefront">
-    <header class="storefront-header" id="storefront-top">
+  root.innerHTML = `<main class="catalog-page storefront" id="storefront-top">
+    <header class="storefront-header">
       <a class="storefront-brand" href="${tracking ? '/' : '#storefront-top'}"><img src="/store-logo-transparent.png" alt="" width="64" height="64" /><span>Digital Laptop <small>Jombang</small></span></a>
       <nav aria-label="Navigasi toko">
         <a href="/" ${tracking ? '' : 'aria-current="page"'}>Katalog</a>
@@ -2445,7 +2445,12 @@ function customerPortal(tracking) {
   startStorefrontSlides(root.querySelector('.storefront-hero'));
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
-  supabase.rpc('customer_catalog').then(({data, error}) => {
+  const loadCatalog = async () => {
+    const result = await supabase.rpc('customer_catalog_details');
+    if (result.error?.code === 'PGRST202') return supabase.rpc('customer_catalog');
+    return result;
+  };
+  loadCatalog().then(({data, error}) => {
     if (error) {
       panel.innerHTML = '<h2>Katalog produk</h2><p role="alert">Katalog belum bisa dimuat.</p><button class="btn" type="button">Coba lagi</button>';
       panel.querySelector('button').addEventListener('click', () => customerPortal(false));
@@ -2478,12 +2483,25 @@ function customerPortal(tracking) {
         const digits = String(product.phone || '').replace(/\D/g, '');
         const phone = digits.replace(/^0/, '62');
         const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
+        const specs = pamphletSpecs.flatMap(([key, label]) => {
+          const value = product.specifications?.[key]?.trim();
+          return value ? [[label, value]] : [];
+        });
+        if (product.model) specs.unshift(['Tipe', product.model]);
+        if (Number(product.warranty_months) > 0) specs.push(['Garansi', `${Number(product.warranty_months)} bulan`]);
+        const description = product.description?.trim();
         return `<article class="storefront-card">
           <div class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum tersedia</span>'}</div>
           <div class="storefront-card-body">
             ${product.brand ? `<small>${esc(product.brand)}</small>` : ''}
             <h3>${esc(product.name)}</h3>
             <strong>${money(product.retail_price)}</strong>
+            <details class="storefront-product-details">
+              <summary>Lihat detail &amp; spesifikasi</summary>
+              ${description ? `<p>${esc(description)}</p>` : ''}
+              ${specs.length ? `<dl>${specs.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : ''}
+              ${!description && !specs.length ? '<p>Detail produk belum tersedia.</p>' : ''}
+            </details>
             ${phone ? `<a href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a>` : ''}
           </div>
         </article>`;
