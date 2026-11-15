@@ -2446,6 +2446,8 @@ function customerPortal(tracking) {
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
   const loadCatalog = async () => {
+    const gallery = await supabase.rpc('customer_catalog_gallery');
+    if (gallery.error?.code !== 'PGRST202') return gallery;
     const result = await supabase.rpc('customer_catalog_details');
     if (result.error?.code === 'PGRST202') return supabase.rpc('customer_catalog');
     return result;
@@ -2480,32 +2482,17 @@ function customerPortal(tracking) {
       if (sort.value) results.sort((a, b) => (Number(a.retail_price) - Number(b.retail_price)) * (sort.value === 'asc' ? 1 : -1));
       count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
       grid.innerHTML = results.map(product => {
-        const digits = String(product.phone || '').replace(/\D/g, '');
-        const phone = digits.replace(/^0/, '62');
-        const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
-        const specs = pamphletSpecs.flatMap(([key, label]) => {
-          const value = product.specifications?.[key]?.trim();
-          return value ? [[label, value]] : [];
-        });
-        if (product.model) specs.unshift(['Tipe', product.model]);
-        if (Number(product.warranty_months) > 0) specs.push(['Garansi', `${Number(product.warranty_months)} bulan`]);
-        const description = product.description?.trim();
-        return `<article class="storefront-card">
-          <div class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum tersedia</span>'}</div>
-          <div class="storefront-card-body">
-            ${product.brand ? `<small>${esc(product.brand)}</small>` : ''}
-            <h3>${esc(product.name)}</h3>
+        return `<button type="button" class="storefront-card" data-public-product>
+          <span class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : '<span>Foto belum tersedia</span>'}</span>
+          <span class="storefront-card-body">
+            <span class="storefront-product-name">${esc(product.name)}</span>
             <strong>${money(product.retail_price)}</strong>
-            <details class="storefront-product-details">
-              <summary>Lihat detail &amp; spesifikasi</summary>
-              ${description ? `<p>${esc(description)}</p>` : ''}
-              ${specs.length ? `<dl>${specs.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : ''}
-              ${!description && !specs.length ? '<p>Detail produk belum tersedia.</p>' : ''}
-            </details>
-            ${phone ? `<a href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a>` : ''}
-          </div>
-        </article>`;
+          </span>
+        </button>`;
       }).join('');
+      grid.querySelectorAll('[data-public-product]').forEach((button, index) => {
+        button.addEventListener('click', () => showPublicProduct(results[index]));
+      });
     };
     search.addEventListener('input', render);
     brand.addEventListener('change', render);
@@ -2513,6 +2500,65 @@ function customerPortal(tracking) {
     render();
   });
 
+}
+
+function showPublicProduct(product) {
+  const photos = [...new Set([product.image_path, ...(product.gallery_paths || [])].filter(Boolean))].slice(0, 4);
+  const specs = pamphletSpecs.flatMap(([key, label]) => {
+    const value = product.specifications?.[key]?.trim();
+    return value ? [[label, value]] : [];
+  });
+  if (product.brand) specs.unshift(['Merek', product.brand]);
+  if (product.model) specs.push(['Tipe', product.model]);
+  if (Number(product.warranty_months) > 0) specs.push(['Garansi', `${Number(product.warranty_months)} bulan`]);
+  const phone = String(product.phone || '').replace(/\D/g, '').replace(/^0/, '62');
+  const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
+  const dialog = document.createElement('dialog');
+  dialog.className = 'public-product-dialog';
+  dialog.setAttribute('aria-labelledby', 'public-product-title');
+  dialog.innerHTML = `
+    <header><h2 id="public-product-title">${esc(product.name)}</h2><button type="button" aria-label="Tutup detail">×</button></header>
+    <div class="public-product-layout">
+      <div class="public-product-media">
+        <div class="public-product-photos" aria-label="Galeri foto produk">
+          ${photos.map((path, index) => `<img src="${esc(productImageUrl(path))}" alt="${esc(product.name)} · Foto ${index + 1}" ${index ? 'loading="lazy"' : ''} />`).join('') || '<p>Foto belum tersedia.</p>'}
+        </div>
+        ${photos.length > 1 ? `<div class="public-product-thumbs" aria-label="Pilih foto">${photos.map((path, index) =>
+          `<button type="button" aria-label="Foto ${index + 1}" aria-pressed="${index === 0}"><img src="${esc(productImageUrl(path))}" alt="" /></button>`).join('')}</div>` : ''}
+      </div>
+      <div>
+        <strong class="public-product-price">${money(product.retail_price)}</strong>
+        <div class="public-product-tabs" aria-label="Informasi produk">
+          <button type="button" data-product-info="specs" aria-pressed="true">Spesifikasi</button>
+          <button type="button" data-product-info="description" aria-pressed="false">Deskripsi</button>
+        </div>
+        <section class="public-product-info" data-product-panel="specs" aria-label="Spesifikasi">
+          ${specs.length ? `<dl>${specs.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : '<p>Spesifikasi belum tersedia.</p>'}
+        </section>
+        <section class="public-product-info" data-product-panel="description" aria-label="Deskripsi" hidden tabindex="0"><p>${esc(product.description?.trim() || 'Deskripsi belum tersedia.')}</p></section>
+      </div>
+    </div>
+    ${phone ? `<footer><a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a></footer>` : ''}`;
+  dialog.querySelector('header button').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  const gallery = dialog.querySelector('.public-product-photos');
+  const thumbs = [...dialog.querySelectorAll('.public-product-thumbs button')];
+  thumbs.forEach((button, index) => button.addEventListener('click', () => {
+    gallery.scrollTo({ left: index * gallery.clientWidth });
+  }));
+  gallery.addEventListener('scroll', () => {
+    const active = Math.round(gallery.scrollLeft / gallery.clientWidth);
+    thumbs.forEach((button, index) => button.setAttribute('aria-pressed', index === active));
+  }, { passive: true });
+  const tabs = dialog.querySelectorAll('[data-product-info]');
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(button => button.setAttribute('aria-pressed', button === tab));
+    dialog.querySelectorAll('[data-product-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.productPanel !== tab.dataset.productInfo;
+    });
+  }));
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 async function showServiceReceipt(ticket, kind, technicianName) {
