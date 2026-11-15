@@ -251,7 +251,7 @@ function showShell() {
     subscribeOperationalUpdates();
     await showPage(state.page);
   });
-  window.addEventListener('online',()=>{updateConnection();syncPendingOfflineSales()}); window.addEventListener('offline',updateConnection); updateConnection();
+  updateConnection();
 }
 
 function selectedBranchTheme() {
@@ -274,19 +274,30 @@ function refreshOwnerOverview() {
 
 document.addEventListener('visibilitychange', refreshOwnerOverview);
 window.addEventListener('online', refreshOwnerOverview);
+window.addEventListener('online', () => {
+  updateConnection();
+  syncPendingOfflineSales();
+});
+window.addEventListener('offline', updateConnection);
 setInterval(refreshOwnerOverview, 45000);
 
+let operationalSubscriptionRequest = 0;
 async function subscribeOperationalUpdates() {
-  if (state.realtimeChannel) await supabase.removeChannel(state.realtimeChannel);
-  if (!state.branchId || !state.profile) return;
+  const request = ++operationalSubscriptionRequest;
+  const previous = state.realtimeChannel;
+  state.realtimeChannel = null;
+  clearTimeout(state.refreshTimer);
+  if (previous) await supabase.removeChannel(previous);
+  if (request !== operationalSubscriptionRequest || !state.branchId || !state.profile) return;
   const refresh = () => {
+    if (request !== operationalSubscriptionRequest || state.realtimeChannel !== channel) return;
     clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(() => {
       if (canManage() && ['dashboard', 'service', 'reports', 'finance'].includes(state.page)) refreshOwnerOverview();
       else if (state.page !== 'cashier' && document.querySelector('#page') && !document.querySelector('.modal-backdrop') && !document.activeElement?.closest('#page input, #page select, #page textarea')) showPage(state.page, { background: true });
     }, 350);
   };
-  const channel = supabase.channel(`digi-branch-${state.branchId}`);
+  const channel = supabase.channel(`digi-branch-${state.branchId}-${request}`);
   for (const table of ['stock_items','stock_repairs','intake_batches','sales','service_tickets']) {
     const subscription = { event: '*', schema: 'public', table };
     if (!canManage()) subscription.filter = `branch_id=eq.${state.branchId}`;
