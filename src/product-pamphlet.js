@@ -1,0 +1,91 @@
+export const pamphletSpecs = [
+  ['processor', 'Prosesor'], ['ram', 'RAM'], ['storage', 'Penyimpanan'],
+  ['display', 'Layar'], ['graphics', 'Grafis'], ['os', 'Sistem operasi'],
+];
+
+export async function renderProductPamphlet({ store, name, price, specifications, barcode, warranty }) {
+  const logo = new Image();
+  logo.src = '/store-logo-transparent.png';
+  await logo.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = 1788;
+  canvas.height = 1260;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(3, 3);
+  const box = (x, y, w, h, fill, border) => {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (border) { ctx.strokeStyle = border; ctx.stroke(); }
+  };
+  const text = (value, x, y, maxWidth, size, color, min = 9) => {
+    ctx.fillStyle = color;
+    do { ctx.font = `700 ${size}px Arial`; } while (ctx.measureText(value).width > maxWidth && size-- > min);
+    ctx.fillText(value, x, y, maxWidth);
+  };
+  const line = (x, y, x2, y2) => {
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
+  };
+  const icons = [
+    () => {
+      ctx.strokeRect(4, 4, 12, 12);
+      ctx.strokeRect(7, 7, 6, 6);
+      for (const n of [6, 10, 14]) { line(n, 1, n, 4); line(n, 16, n, 19); line(1, n, 4, n); line(16, n, 19, n); }
+    },
+    () => {
+      ctx.strokeRect(0, 5, 20, 10);
+      for (const n of [3, 8, 13]) { ctx.strokeRect(n, 8, 3, 4); line(n, 15, n, 18); }
+    },
+    () => { ctx.strokeRect(1, 3, 18, 14); line(1, 12, 19, 12); line(13, 15, 16, 15); },
+    () => { ctx.strokeRect(1, 2, 18, 12); line(10, 14, 10, 18); line(5, 18, 15, 18); },
+    () => {
+      ctx.strokeRect(0, 4, 20, 12);
+      for (const n of [5, 15]) { ctx.beginPath(); ctx.arc(n, 10, 3, 0, Math.PI * 2); ctx.stroke(); }
+    },
+    () => { ctx.strokeRect(2, 2, 16, 16); line(10, 2, 10, 18); line(2, 10, 18, 10); },
+  ];
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, 596, 420);
+  box(15, 15, 566, 390, '#fafbf7', '#c3d4c7');
+  const logoScale = Math.min(38 / logo.naturalWidth, 38 / logo.naturalHeight);
+  ctx.drawImage(logo, 36, 38, logo.naturalWidth * logoScale, logo.naturalHeight * logoScale);
+  text(store, 82, 63, 470, 19, '#173329');
+  text(name, 36, 114, 524, 34, '#173329', 15);
+  box(36, 128, 524, 73, '#dfefe0');
+  text(price, 52, 183, 490, 55, '#155035');
+  pamphletSpecs.forEach(([key, label], index) => {
+    const x = 36 + (index % 3) * 176;
+    const y = 217 + Math.floor(index / 3) * 58;
+    box(x, y, 171, 51, '#fff', '#c3d4c7');
+    ctx.save();
+    ctx.translate(x + 10, y + 16);
+    ctx.strokeStyle = '#286646';
+    ctx.lineWidth = 1.3;
+    icons[index]();
+    ctx.restore();
+    text(label.toUpperCase(), x + 38, y + 19, 122, 9, '#286646');
+    text(specifications?.[key] || '—', x + 38, y + 38, 122, 14, '#173329');
+  });
+  ctx.strokeStyle = '#c3d4c7';
+  line(36, 345, 560, 345);
+  if (warranty > 0) text(`Garansi ${warranty} bulan`, 36, 379, 145, 14, '#286646');
+  box(206, 357, 354, 33, '#fff', '#c3d4c7');
+  text(`KODE UNIT · ${barcode}`, 218, 379, 329, 15, '#173329');
+  return canvas.toDataURL('image/png');
+}
+
+export async function downloadProductPamphlet(image, filename) {
+  const { PDFDocument, PageSizes } = await import('pdf-lib');
+  const pdf = await PDFDocument.create();
+  const [height, width] = PageSizes.A5;
+  const page = pdf.addPage([width, height]);
+  const artwork = await pdf.embedPng(image);
+  page.drawImage(artwork, { x: 0, y: 0, width, height });
+  const url = URL.createObjectURL(new Blob([await pdf.save()], { type: 'application/pdf' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
