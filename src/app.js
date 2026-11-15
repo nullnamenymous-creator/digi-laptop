@@ -2290,14 +2290,16 @@ function customerPortal(tracking) {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const result = panel.querySelector('#tracking-result');
-      const code = form.code.value.trim();
-      if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(code)) {
-        result.textContent = 'Masukkan kode lengkap dari bukti penerimaan servis.';
+      const code = form.code.value.trim().toUpperCase();
+      const short = /^DGL-[0-9A-F]{10}$/.test(code);
+      if (!short && !/^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/.test(code)) {
+        result.textContent = 'Masukkan kode dari bukti servis, misalnya DGL-83A7629F04.';
         return;
       }
       result.textContent = 'Memeriksa status…';
-      const {data, error} = await supabase.rpc('customer_service_status', { _code: code });
-      if (form.code.value.trim() !== code) return;
+      const rpc = short ? 'customer_service_status_short' : 'customer_service_status';
+      const {data, error} = await supabase.rpc(rpc, { _code: code });
+      if (form.code.value.trim().toUpperCase() !== code) return;
       const ticket = data?.[0];
       result.innerHTML = error ? '<p>Status belum bisa dimuat. Coba lagi.</p>' : ticket
         ? `<div class="notice"><b>${esc(ticket.ticket_number)}</b> · ${esc(statusText[ticket.status] || ticket.status)}<br>${esc(ticket.branch)} · ${new Date(ticket.updated_at).toLocaleString('id-ID')}</div>`
@@ -2367,10 +2369,11 @@ async function showServiceReceipt(ticket, kind, technicianName) {
   const title = handover ? 'Bukti penyerahan selesai servis' : 'Bukti penerimaan servis';
   const logo = new URL('/store-logo-transparent.png', location.origin).href;
   const date = (value) => value ? new Date(value).toLocaleString('id-ID') : '—';
-  const link = ticket.tracking_code ? new URL('/lacak-servis', location.origin) : null;
+  const trackingCode = ticket.short_tracking_code || ticket.tracking_code;
+  const link = trackingCode ? new URL('/lacak-servis', location.origin) : null;
   let qr;
   if (link) {
-    link.hash = new URLSearchParams({ kode: ticket.tracking_code });
+    link.hash = new URLSearchParams({ kode: trackingCode });
     const { default: QRCode } = await import('qrcode');
     qr = await QRCode.toDataURL(link.href, { width: 320 });
   }
@@ -2405,7 +2408,7 @@ async function showServiceReceipt(ticket, kind, technicianName) {
     ${link ? `<section class="service-receipt-tracking">
       <img width="120" height="120" src="${qr}" alt="QR pelacakan servis" />
       <div><strong>Lacak servis</strong><p>Pindai QR atau gunakan kode pelacakan berikut.</p>
-      <p>${esc(ticket.tracking_code)}</p><a href="${esc(link.href)}">${esc(link.origin + link.pathname)}</a></div>
+      <p>${esc(trackingCode)}</p><a href="${esc(link.href)}">${esc(link.origin + link.pathname)}</a></div>
     </section>` : '<p>Kode pelacakan belum tersedia untuk tiket ini.</p>'}
   </article>`;
   const host = openModal(title, ticket.ticket_number, `${documentBody}
