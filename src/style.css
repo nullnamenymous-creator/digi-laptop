@@ -1326,3 +1326,24 @@ button.storefront-card:hover { border-color: #659477; }
   .public-product-layout { grid-template-columns: minmax(0,1fr); gap: 12px; padding: 10px 14px; }
   .public-product-photos { max-height: 37dvh; }
 }
+
+.modal.compact-product-modal {
+  width: min(700px, 100%);
+  padding: 16px;
+}
+.compact-product-modal .modal-head { margin-bottom: 10px; padding-bottom: 8px; }
+.compact-product-modal .form-grid { gap: 8px 10px; }
+.compact-product-modal .field { gap: 3px; }
+.compact-product-modal .field input,
+.compact-product-modal .field select { min-height: 34px; padding: 5px 8px; }
+.compact-product-modal .field textarea { min-height: 60px; height: 64px; padding: 6px 8px; }
+.product-form-stock { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 0 0 10px; }
+.product-public-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.product-public-toggle input[type="checkbox"] { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--green-700); }
+.product-form-photos { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.product-form-photos summary { cursor: pointer; font-weight: 700; }
+.product-form-photos[open] summary { margin-bottom: 8px; }
+@media (min-width: 440px) and (max-width: 899px) {
+  .modal.compact-product-modal .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modal.compact-product-modal .form-grid > .full { grid-column: 1 / -1; }
+}

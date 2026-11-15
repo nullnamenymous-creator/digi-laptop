@@ -243,6 +243,7 @@ function showShell() {
     }
     state.branchId = selected;
     state.inventoryFilters = null;
+    state.inventoryUnitPage = null;
     state.inventorySearchQuery = '';
     if (canManage()) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, selected);
     const allowedPages = rolePages();
@@ -912,12 +913,14 @@ function downloadCsv(filename, rows) { const keys=Object.keys(rows[0]||{name:'',
 function parseCsv(text) { const rows=[];let row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}else if(c==='"')quoted=true;else if(c===','){row.push(value);value=''}else if(c==='\n'){row.push(value.replace(/\r$/,''));rows.push(row);row=[];value=''}else value+=c}if(value||row.length){row.push(value.replace(/\r$/,''));rows.push(row)}const headers=(rows.shift()||[]).map((h)=>h.trim().replace(/^\ufeff/,''));return rows.filter((r)=>r.some((v)=>v.trim())).map((r)=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||''])));}
 
 async function inventoryPage(page) {
+  const branchId = state.branchId;
   const [{ products, stock }, openingResult] = await Promise.all([
     fetchInventory(),
     canManage()
       ? supabase.from('stock_opening_batches').select('id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20)
       : Promise.resolve({ data: [], error: null }),
   ]);
+  if (!page.isConnected || state.branchId !== branchId) return;
   if (openingResult.error) throw openingResult.error;
   const openingBatches = openingResult.data || [];
   const totals = new Map(); stock.forEach((item) => totals.set(item.product_id, (totals.get(item.product_id) || 0) + (item.status === 'available' ? Number(item.quantity) : 0)));
@@ -982,7 +985,7 @@ async function inventoryPage(page) {
       <button type="button" class="card unit-summary-button" aria-controls="laptop-unit-rows" aria-pressed="false" data-unit-filter="sold"><span class="card-label">Laptop terjual<span aria-hidden="true">↗</span></span><span class="card-value">${unitCountFor('sold')} <small>unit</small></span><span class="card-sub">QR garansi muncul bila unit bergaransi</span></button>
     </section>
     ${catalogSection}
-    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">Siap dijual</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div></section>
+    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">Siap dijual</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canManage() ? `<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Batch pembukaan inventaris · 20 terbaru di ${esc(branchName(state.branchId))}. Barcode bisa dicetak ulang.</div></div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">Belum ada batch stok awal di cabang ini.</div></td></tr>'}</tbody></table></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
@@ -990,28 +993,52 @@ async function inventoryPage(page) {
   const unitStatus = page.querySelector('#unit-status-filter');
   const unitRows = [...page.querySelectorAll('#laptop-unit-rows tr[data-unit-status]')];
   const unitSummaryButtons = [...page.querySelectorAll('[data-unit-filter]')];
+  const unitPagination = page.querySelector('#unit-pagination');
+  const unitPrevious = page.querySelector('#unit-previous');
+  const unitNext = page.querySelector('#unit-next');
+  const unitPageStatus = page.querySelector('#unit-page-status');
+  const unitsPerPage = 10;
+  const savedUnits = state.inventoryUnitPage;
+  let unitPage = savedUnits?.number || 1;
+  unitSearch.value = savedUnits?.search || '';
+  unitStatus.value = savedUnits?.filter || 'all';
   const filterUnits = () => {
     const query = unitSearch.value.trim().toLocaleLowerCase('id');
     const filter = unitStatus.value;
-    let visible = 0;
-    for (const row of unitRows) {
+    const matches = unitRows.filter((row) => {
       const status = row.dataset.unitStatus;
       const matchesStatus = filter === 'all' || status === filter ||
         (filter === 'repair' && repairStatuses.has(status)) ||
         (filter === 'other' && !repairStatuses.has(status) && !['pending_qc', 'available', 'sold'].includes(status));
-      const matches = matchesStatus && row.textContent.toLocaleLowerCase('id').includes(query);
-      row.classList.toggle('hidden', !matches);
-      if (matches) visible++;
-    }
-    page.querySelector('#unit-filter-empty').hidden = visible > 0;
+      return matchesStatus && row.textContent.toLocaleLowerCase('id').includes(query);
+    });
+    const pageCount = Math.max(1, Math.ceil(matches.length / unitsPerPage));
+    unitPage = Math.max(1, Math.min(unitPage, pageCount));
+    const start = (unitPage - 1) * unitsPerPage;
+    const visible = new Set(matches.slice(start, start + unitsPerPage));
+    unitRows.forEach(row => row.classList.toggle('hidden', !visible.has(row)));
+    page.querySelector('#unit-filter-empty').hidden = matches.length > 0;
+    unitPagination.hidden = pageCount === 1;
+    unitPrevious.disabled = unitPage === 1;
+    unitNext.disabled = unitPage === pageCount;
+    unitPageStatus.textContent = `Halaman ${unitPage} / ${pageCount} · ${matches.length} unit`;
+    state.inventoryUnitPage = { number: unitPage, search: unitSearch.value, filter };
     unitSummaryButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.unitFilter === filter)));
   };
-  unitSearch.addEventListener('input', filterUnits);
-  unitStatus.addEventListener('change', filterUnits);
+  const resetUnitPage = () => { unitPage = 1; filterUnits(); };
+  unitSearch.addEventListener('input', resetUnitPage);
+  unitStatus.addEventListener('change', resetUnitPage);
+  [[unitPrevious, -1], [unitNext, 1]].forEach(([button, direction]) => {
+    button.addEventListener('click', () => {
+      unitPage += direction;
+      filterUnits();
+      unitPagination.closest('.stock-unit-panel').scrollIntoView({ block: 'start' });
+    });
+  });
   unitSummaryButtons.forEach((button) => button.addEventListener('click', () => {
     unitSearch.value = '';
     unitStatus.value = button.dataset.unitFilter;
-    filterUnits();
+    resetUnitPage();
     unitStatus.focus({ preventScroll: true });
     page.querySelector('.stock-unit-panel').scrollIntoView({ block: 'start' });
   }));
@@ -1392,7 +1419,7 @@ function productIdentity(form, product = null, prefix = '') {
 
 function productModal(product = null, available = 0) {
   const v=(key,fallback='')=>esc(product?.[key]??fallback);
-  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice"><strong>Stok siap jual di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><div class="field-hint">Catat unit fisik yang sudah siap dijual melalui Stok awal.</div><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category">${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="field full"><span><input type="checkbox" name="is_public" ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</span></label>${productCopyFields(product)}</div><div class="form-grid" style="margin-top:12px">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div>`, async (form) => {
+  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice product-form-stock"><strong>Stok siap jual di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category">${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="product-public-toggle"><input type="checkbox" name="is_public" ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</label>${productCopyFields(product)}</div><details class="product-form-photos" ${product ? '' : 'open'}><summary>Foto produk</summary><div class="form-grid">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div></details>`, async (form) => {
     if (!canManage()) throw new Error('Hanya pemilik yang dapat mengubah produk.');
     const { name, sku, brand, model } = productIdentity(form, product);
     const file=selectedProductPhoto(form);if(!product&&!file)throw new Error('Foto produk wajib dipilih.');
@@ -1412,6 +1439,7 @@ function productModal(product = null, available = 0) {
     }
     await showPage('inventory');
   },product?'Simpan perubahan':'Simpan produk');
+  host.querySelector('#active-modal').classList.add('compact-product-modal');
   host.querySelector('[data-add-opening-stock]')?.addEventListener('click', () => openingStockModal([product]));
   bindProductPhotoPicker(host.querySelector('#active-modal'));
 }
