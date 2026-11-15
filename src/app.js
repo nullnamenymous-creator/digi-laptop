@@ -105,10 +105,11 @@ function showLoginError(error) {
   dialog.className = 'login-error-dialog';
   dialog.setAttribute('aria-labelledby', 'login-error-title');
   dialog.setAttribute('aria-describedby', 'login-error-message');
-  dialog.innerHTML = '<h2 id="login-error-title">Gagal masuk</h2><p id="login-error-message"></p><form method="dialog"><button class="btn primary" autofocus>Coba lagi</button></form>';
+  dialog.innerHTML = '<h2 id="login-error-title">Gagal masuk</h2><p id="login-error-message"></p><form method="dialog"><button class="modal-close" type="submit" aria-label="Tutup" autofocus>×</button></form>';
   dialog.querySelector('p').textContent = error.code === 'invalid_credentials' || error.message === 'Invalid login credentials'
     ? 'Email atau password salah. Periksa kembali lalu coba lagi.'
     : 'Login belum berhasil. Periksa koneksi atau coba lagi nanti.';
+  dialog.addEventListener('cancel', event => event.preventDefault());
   dialog.addEventListener('close', () => {
     dialog.remove();
     root.querySelector('#auth-form [name="password"]')?.focus();
@@ -298,12 +299,12 @@ async function subscribeOperationalUpdates() {
 function header(title, subtitle, actions = '') { return `<div class="page-head"><div><div class="eyebrow">DIGITAL LAPTOP JOMBANG</div><h1>${title}</h1><p>${subtitle}</p></div><div class="head-actions">${actions}</div></div>`; }
 function openModal(title, subtitle, body, onSubmit, submitLabel = 'Simpan') {
   const host = document.querySelector('#modal-root');
-  host.innerHTML = `<div class="modal-backdrop"><form class="modal" id="active-modal"><div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="modal-close" type="button" data-close-modal>×</button></div>${body}<div class="modal-actions"><button class="btn" type="button" data-close-modal>Batal</button><button class="btn primary" type="submit">${submitLabel}</button></div></form></div>`;
+  host.innerHTML = `<div class="modal-backdrop"><form class="modal" id="active-modal"><div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="modal-close" type="button" data-close-modal aria-label="Tutup">×</button></div>${body}${onSubmit ? `<div class="modal-actions"><button class="btn primary" type="submit">${submitLabel}</button></div>` : ''}</form></div>`;
   host.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', () => { host.innerHTML = ''; }));
-  host.querySelector('.modal-backdrop').addEventListener('click', (event) => { if (event.target.classList.contains('modal-backdrop')) host.innerHTML = ''; });
   const modalForm = host.querySelector('#active-modal');
   modalForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!onSubmit) return;
     const button = modalForm.querySelector('[type="submit"]');
     button.disabled = true;
     try {
@@ -523,8 +524,7 @@ async function dashboardPage(page) {
     const body = rows.length
       ? `<ul class="dashboard-detail-list">${rows.map((row) => `<li>${label(row)}</li>`).join('')}</ul>`
       : '<div class="empty">Belum ada data.</div>';
-    const host = openModal(title, esc(branchName(state.branchId)), body, async () => {}, 'Tutup');
-    host.querySelector('.modal-actions [data-close-modal]').remove();
+    openModal(title, esc(branchName(state.branchId)), body, null);
   }
   const finderSearch = page.querySelector('#finder-search');
   const finderResults = page.querySelector('#finder-results');
@@ -1303,9 +1303,8 @@ function openingStockModal(products) {
 function productDetailModal(product, available = 0, stock = []) {
   if (!product) return;
   const host=document.querySelector('#modal-root');
-  host.innerHTML=`<div class="modal-backdrop"><section class="modal product-detail-modal"><div class="modal-head"><div><h2>${esc(product.name)}</h2><p>Detail produk dan harga saat ini</p></div><button class="modal-close" type="button" data-detail-close>×</button></div><div class="product-detail-content"><div class="product-detail-photo">${product.image_path?`<img src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />`:'Foto belum tersedia'}</div><dl><dt>SKU</dt><dd>${esc(product.sku)}</dd><dt>Merek / model</dt><dd>${esc([product.brand,product.model].filter(Boolean).join(' · ')||'—')}</dd><dt>Kategori</dt><dd>${esc(product.category)}</dd><dt>Stok tersedia di cabang</dt><dd>${Number(available).toLocaleString('id-ID')} unit</dd><dt>Harga modal / unit</dt><dd>${money(product.cost_price)}</dd><dt>Harga end user</dt><dd>${money(product.retail_price)}</dd><dt>Harga reseller</dt><dd>${money(product.reseller_price)}</dd><dt>Garansi produk</dt><dd>${Number(product.warranty_months||0)} bulan</dd></dl></div><div class="modal-actions"><button class="btn" type="button" data-detail-close>Tutup</button>${canManage()?'<button class="btn primary" type="button" data-detail-edit>Edit detail</button>':''}</div></section></div>`;
+  host.innerHTML=`<div class="modal-backdrop"><section class="modal product-detail-modal"><div class="modal-head"><div><h2>${esc(product.name)}</h2><p>Detail produk dan harga saat ini</p></div><button class="modal-close" type="button" data-detail-close aria-label="Tutup">×</button></div><div class="product-detail-content"><div class="product-detail-photo">${product.image_path?`<img src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />`:'Foto belum tersedia'}</div><dl><dt>SKU</dt><dd>${esc(product.sku)}</dd><dt>Merek / model</dt><dd>${esc([product.brand,product.model].filter(Boolean).join(' · ')||'—')}</dd><dt>Kategori</dt><dd>${esc(product.category)}</dd><dt>Stok tersedia di cabang</dt><dd>${Number(available).toLocaleString('id-ID')} unit</dd><dt>Harga modal / unit</dt><dd>${money(product.cost_price)}</dd><dt>Harga end user</dt><dd>${money(product.retail_price)}</dd><dt>Harga reseller</dt><dd>${money(product.reseller_price)}</dd><dt>Garansi produk</dt><dd>${Number(product.warranty_months||0)} bulan</dd></dl></div><div class="modal-actions">${canManage()?'<button class="btn primary" type="button" data-detail-edit>Edit detail</button>':''}</div></section></div>`;
   host.querySelectorAll('[data-detail-close]').forEach(button=>button.addEventListener('click',()=>{host.innerHTML=''}));
-  host.querySelector('.modal-backdrop').addEventListener('click',event=>{if(event.target.classList.contains('modal-backdrop'))host.innerHTML=''});
   host.querySelector('[data-detail-edit]')?.addEventListener('click',()=>{host.innerHTML='';productModal(product, available)});
   const branchId = state.branchId;
   const units = product.category === 'Laptop'
@@ -2186,9 +2185,7 @@ async function contactsPage(page, type) {
       ? relatedBatches.map((batch) => ({ id: batch.id, source: 'intake_batch', label: batch.invoice_number || `Batch ${batch.id.slice(0,8).toUpperCase()}`, branch: batch.branches?.name || branchName(batch.branch_id), date: batch.created_at, total: Number(batch.total_amount), paid: Number(batch.amount_paid), remaining: Math.max(0, Number(batch.total_amount)-Number(batch.amount_paid)), due: batch.due_date }))
       : [...relatedSales.map((sale) => ({ id: sale.id, source: 'sale', label: sale.receipt_number, branch: sale.branches?.name || branchName(sale.branch_id), date: sale.created_at, total: Number(sale.total), paid: Number(sale.paid_amount), remaining: Math.max(0, Number(sale.total)-Number(sale.paid_amount)), due: sale.due_date })), ...relatedServices.map((ticket) => ({ id: ticket.id, source: 'service_ticket', label: ticket.ticket_number, branch: ticket.branches?.name || branchName(ticket.branch_id), date: ticket.created_at, total: Number(ticket.final_cost), paid: Number(ticket.paid_amount), remaining: Math.max(0, Number(ticket.final_cost)-Number(ticket.paid_amount)), due: ticket.due_date, status: ticket.status }))].sort((a,b) => new Date(b.date)-new Date(a.date));
     const recordRows = records.map((record) => `<tr><td class="product-name">${esc(record.label)}<div class="field-hint">${new Date(record.date).toLocaleDateString('id-ID')} · ${esc(record.branch)}${record.status ? ` · ${esc(statusText[record.status] || record.status)}` : ''}</div></td><td>${money(record.total)}</td><td>${money(record.paid)}</td><td><b>${money(record.remaining)}</b></td><td>${record.due ? new Date(`${record.due}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td>${record.remaining > 0 ? `<button class="small-btn" data-detail-pay="${record.id}" data-source="${record.source}">${supplierMode ? 'Bayar hutang' : 'Terima piutang'}</button>` : '<span class="pill">Lunas</span>'}</td></tr>`).join('');
-    const host = openModal(`Detail ${supplierMode ? 'supplier' : 'pelanggan'}`, `${contact.name} · ${supplierMode ? 'Saldo hutang supplier' : 'Saldo piutang pelanggan'} ${money(balance)}`, `<div class="contact-detail-grid"><div><small>TELEPON</small><b>${esc(contact.phone || '—')}</b></div><div><small>${supplierMode ? 'KODE SUPPLIER' : 'EMAIL'}</small><b>${esc(supplierMode ? contact.initials : contact.email || '—')}</b></div><div class="full"><small>ALAMAT</small><b>${esc(contact.address || '—')}</b></div><div class="full"><small>CATATAN</small><b>${esc(contact.notes || '—')}</b></div></div><section class="contact-detail-ledger"><div class="panel-title">${supplierMode ? 'Riwayat tagihan pembelian' : 'Riwayat penjualan, servis & piutang'}</div><div class="table-wrap"><table><thead><tr><th>${supplierMode ? 'NOTA / BATCH' : 'STRUK / TIKET'}</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th>AKSI</th></tr></thead><tbody>${recordRows || `<tr><td colspan="6"><div class="empty">Belum ada ${supplierMode ? 'penerimaan barang' : 'penjualan atau servis'} terkait kontak ini.</div></td></tr>`}</tbody></table></div></section>`, async () => {}, 'Tutup');
-    host.querySelector('#active-modal [type="submit"]').hidden = true;
-    host.querySelector('#active-modal [data-close-modal]:not(.modal-close)').textContent = 'Tutup';
+    const host = openModal(`Detail ${supplierMode ? 'supplier' : 'pelanggan'}`, `${contact.name} · ${supplierMode ? 'Saldo hutang supplier' : 'Saldo piutang pelanggan'} ${money(balance)}`, `<div class="contact-detail-grid"><div><small>TELEPON</small><b>${esc(contact.phone || '—')}</b></div><div><small>${supplierMode ? 'KODE SUPPLIER' : 'EMAIL'}</small><b>${esc(supplierMode ? contact.initials : contact.email || '—')}</b></div><div class="full"><small>ALAMAT</small><b>${esc(contact.address || '—')}</b></div><div class="full"><small>CATATAN</small><b>${esc(contact.notes || '—')}</b></div></div><section class="contact-detail-ledger"><div class="panel-title">${supplierMode ? 'Riwayat tagihan pembelian' : 'Riwayat penjualan, servis & piutang'}</div><div class="table-wrap"><table><thead><tr><th>${supplierMode ? 'NOTA / BATCH' : 'STRUK / TIKET'}</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th>AKSI</th></tr></thead><tbody>${recordRows || `<tr><td colspan="6"><div class="empty">Belum ada ${supplierMode ? 'penerimaan barang' : 'penjualan atau servis'} terkait kontak ini.</div></td></tr>`}</tbody></table></div></section>`, null);
     host.querySelectorAll('[data-detail-pay]').forEach((action) => action.addEventListener('click', () => {
       const record = records.find((entry) => entry.id === action.dataset.detailPay);
       if (!record) return;
@@ -2531,7 +2528,7 @@ async function showServiceReceipt(ticket, kind, technicianName, shareReceipt) {
     </section>` : ''}
     ${link ? `<div class="field"><label for="service-tracking-link">Link pelacakan pelanggan</label><input id="service-tracking-link" value="${esc(link.href)}" readonly /></div>
     <button type="button" class="btn" id="copy-service-link">Salin link</button>` : ''}
-    <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, () => {}, 'Tutup');
+    <button type="button" class="btn" id="print-service-receipt">Cetak bukti</button>`, null);
   host.querySelector('#print-service-receipt').addEventListener('click', () => {
     const narrow = printPreferences().receipt === '58';
     printDocument(title, documentBody, 'receipt', `
