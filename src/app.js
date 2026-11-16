@@ -167,14 +167,17 @@ function ownerSetupScreen(message = '') {
 async function afterAuth({ preferCentral = false } = {}) {
   loading();
   const sessionCacheKey=`digi-offline-session:${state.user.id}`;
-  const {data:profile,error}=await supabase.from('profiles').select('*, organizations(*)').eq('id',state.user.id).abortSignal(AbortSignal.timeout(10000)).maybeSingle();
+  const deadline = AbortSignal.timeout(10000);
+  const [{ data: profile, error }, { data: branches, error: branchError }] = await Promise.all([
+    supabase.from('profiles').select('*, organizations(*)').eq('id', state.user.id).abortSignal(deadline).maybeSingle(),
+    supabase.from('branches').select('*').eq('is_active', true).order('name').abortSignal(deadline),
+  ]);
   if(error){
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=state.profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(error.message);return;
   }
   if(!profile){ownerSetupScreen();return;}
   state.profile=profile;state.organization=profile.organizations;
-  const {data:branches,error:branchError}=await supabase.from('branches').select('*').eq('is_active',true).order('name').abortSignal(AbortSignal.timeout(10000));
   if(branchError){
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(branchError.message);return;
@@ -510,6 +513,13 @@ async function showPage(name, { background = false } = {}) {
     page.replaceWith(nextPage);
     page = nextPage;
   }
+  const loadTimer = background ? null : setTimeout(() => {
+    if (!page.isConnected || page.firstElementChild?.className !== 'empty') return;
+    const retryPage = page.cloneNode(false);
+    retryPage.innerHTML = '<div class="notice error" role="alert">Data halaman belum merespons. Menu lain tetap bisa dibuka.</div><button type="button" class="btn">Coba muat data lagi</button>';
+    page.replaceWith(retryPage);
+    retryPage.querySelector('button').addEventListener('click', () => showPage(name));
+  }, 12000);
   try {
     if (name === 'dashboard') await dashboardPage(page);
     else if (name === 'receiving') await receivingPage(page);
@@ -524,7 +534,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
   } catch (error) { if (!background) page.innerHTML = `<div class="notice error">${esc(error.message || 'Gagal memuat data.')}</div>`; }
-  finally { if (background) delete page.dataset.refreshing; }
+  finally { clearTimeout(loadTimer); if (background) delete page.dataset.refreshing; }
 }
 
 async function centralDashboardPage(page) {

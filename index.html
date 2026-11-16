@@ -18,19 +18,25 @@
       fonts.href = 'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&family=Playball&family=Sora:wght@500;600;700;800&display=swap';
       fonts.addEventListener('load', () => { fonts.media = 'all'; }, { once: true });
       document.head.append(fonts);
-      setTimeout(() => {
+      function showStartupRetry(message) {
         const loading = document.querySelector('#app > .loading-screen');
         if (!loading || loading.querySelector('button')) return;
         const notice = document.createElement('p');
         notice.setAttribute('role', 'status');
-        notice.textContent = 'Aplikasi membutuhkan waktu lebih lama dari biasanya.';
+        notice.textContent = message;
         const retry = document.createElement('button');
         retry.type = 'button';
         retry.className = 'btn';
         retry.textContent = 'Muat ulang';
         retry.addEventListener('click', () => location.reload());
         loading.append(notice, retry);
-      }, 12000);
+      }
+      window.addEventListener('error', (event) => {
+        if (event.target instanceof HTMLScriptElement && event.target.type === 'module') {
+          showStartupRetry('File aplikasi gagal dimuat. Periksa koneksi lalu muat ulang.');
+        }
+      }, true);
+      setTimeout(() => showStartupRetry('Aplikasi membutuhkan waktu lebih lama dari biasanya.'), 12000);
     </script>
     <script type="module" src="/src/app.js"></script>
   </body>
