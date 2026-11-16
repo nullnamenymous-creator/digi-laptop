@@ -1470,18 +1470,44 @@ async function transfersPage(page) {
       const canReceive = transfer.status === 'in_transit' && (canManage() || (isCentralAdmin() ? branchId : state.profile.branch_id) === transfer.destination_branch_id);
       const status = transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
       return `<tr data-transfer-row="${esc(transfer.id)}"><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}</td><td>${canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Serah terima barang</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}</td></tr>`;
-    }).join('') || '<tr><td colspan="6"><div class="empty"><b>Belum ada mutasi stok</b>Buat mutasi untuk memindahkan barang antar cabang.</div></td></tr>'}<tr data-transfer-search-empty hidden><td colspan="6"><div class="empty">Tidak ada mutasi yang cocok.</div></td></tr></tbody></table></div></section>`;
+    }).join('') || '<tr><td colspan="6"><div class="empty"><b>Belum ada mutasi stok</b>Buat mutasi untuk memindahkan barang antar cabang.</div></td></tr>'}<tr data-transfer-search-empty hidden><td colspan="6"><div class="empty">Tidak ada mutasi yang cocok.</div></td></tr></tbody></table></div>
+    <nav class="inventory-pagination" id="transfer-pagination" aria-label="Halaman riwayat mutasi" hidden>
+      <button type="button" class="btn" data-transfer-prev>Sebelumnya</button>
+      <span data-transfer-page role="status"></span>
+      <button type="button" class="btn" data-transfer-next>Berikutnya</button>
+    </nav></section>`;
   const transferRows = [...page.querySelectorAll('[data-transfer-row]')];
   const transferSearch = page.querySelector('#transfer-unit-search');
-  transferSearch.addEventListener('input', () => {
+  const pagination = page.querySelector('#transfer-pagination');
+  const previous = pagination.querySelector('[data-transfer-prev]');
+  const next = pagination.querySelector('[data-transfer-next]');
+  const pageLabel = pagination.querySelector('[data-transfer-page]');
+  const pageSize = 10;
+  let currentPage = 1;
+  const renderTransfers = () => {
     const query = transferSearch.value.trim().toLowerCase();
-    let found = false;
-    transferRows.forEach((row) => {
-      row.hidden = !row.textContent.toLowerCase().includes(query);
-      if (!row.hidden) found = true;
-    });
-    page.querySelector('[data-transfer-search-empty]').hidden = found || !query || !transferRows.length;
+    const matches = transferRows.filter((row) => row.textContent.toLowerCase().includes(query));
+    const totalPages = Math.max(1, Math.ceil(matches.length / pageSize));
+    currentPage = Math.min(currentPage, totalPages);
+    const offset = (currentPage - 1) * pageSize;
+    const visible = new Set(matches.slice(offset, offset + pageSize));
+    transferRows.forEach((row) => { row.hidden = !visible.has(row); });
+    page.querySelector('[data-transfer-search-empty]').hidden = matches.length > 0 || !query || !transferRows.length;
+    previous.disabled = currentPage === 1;
+    next.disabled = currentPage === totalPages;
+    pagination.hidden = totalPages === 1;
+    pageLabel.textContent = `Halaman ${currentPage} dari ${totalPages} · ${matches.length} mutasi`;
+  };
+  transferSearch.addEventListener('input', () => {
+    currentPage = 1;
+    renderTransfers();
   });
+  [[previous, -1], [next, 1]].forEach(([button, step]) => button.addEventListener('click', () => {
+    currentPage += step;
+    renderTransfers();
+    transferSearch.closest('.panel-head').scrollIntoView({ block: 'start' });
+  }));
+  renderTransfers();
   page.querySelector('#new-stock-transfer')?.addEventListener('click', transferModal);
   page.querySelectorAll('[data-receive-transfer]').forEach((button) => button.addEventListener('click', () => {
     const transfer = rows.find((row) => row.id === button.dataset.receiveTransfer);
