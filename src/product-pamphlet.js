@@ -12,16 +12,19 @@ export async function renderProductPamphlet({ store, name, price, specifications
   canvas.height = 1260;
   const ctx = canvas.getContext('2d');
   ctx.scale(3, 3);
-  const box = (x, y, w, h, fill, border) => {
+  const box = (x, y, w, h, fill, border, radius = 8) => {
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
+    ctx.roundRect(x, y, w, h, radius);
     ctx.fillStyle = fill;
     ctx.fill();
     if (border) { ctx.strokeStyle = border; ctx.stroke(); }
   };
   const text = (value, x, y, maxWidth, size, color, min = 9) => {
     ctx.fillStyle = color;
-    do { ctx.font = `700 ${size}px Arial`; } while (ctx.measureText(value).width > maxWidth && size-- > min);
+    ctx.font = `700 ${size}px Arial`;
+    while (size > min && ctx.measureText(value).width > maxWidth) {
+      ctx.font = `700 ${--size}px Arial`;
+    }
     ctx.fillText(value, x, y, maxWidth);
   };
   const line = (x, y, x2, y2) => {
@@ -45,46 +48,71 @@ export async function renderProductPamphlet({ store, name, price, specifications
     },
     () => { ctx.strokeRect(2, 2, 16, 16); line(10, 2, 10, 18); line(2, 10, 18, 10); },
   ];
-  const cream = '#fff7dc';
-  const gold = '#f3d679';
-  const border = '#53795f';
-  ctx.fillStyle = '#edf2eb';
-  ctx.fillRect(0, 0, 596, 420);
-  box(14, 9, 568, 398, '#154e33', border);
-  const logoScale = Math.min(31 / logo.naturalWidth, 31 / logo.naturalHeight);
-  ctx.drawImage(logo, 40, 31, logo.naturalWidth * logoScale, logo.naturalHeight * logoScale);
-  text(store, 81, 52, 350, 17, cream);
-  ctx.textAlign = 'right';
-  text('ETALASE LAPTOP', 556, 50, 113, 10, gold);
-  ctx.textAlign = 'left';
-  text(name, 40, 105, 516, 32, cream, 15);
+  const ink = '#273d33';
+  const sage = '#dce9d7';
+  const muted = '#476558';
+  const border = '#d5dfd1';
 
-  ctx.fillStyle = '#b2252a';
-  ctx.fillRect(40, 119, 516, 70);
-  ctx.fillStyle = gold;
-  ctx.fillRect(40, 119, 7, 70);
-  text(price, 61, 173, 480, 54, cream);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, 596, 420);
+  box(11, 11, 574, 398, '#faf8ee', border, 16);
+
+  const logoScale = Math.min(35 / logo.naturalWidth, 35 / logo.naturalHeight);
+  ctx.drawImage(logo, 31, 24, logo.naturalWidth * logoScale, logo.naturalHeight * logoScale);
+  text(store, 77, 48, 480, 16, ink);
+  ctx.strokeStyle = border;
+  line(31, 70, 565, 70);
+  text(name, 31, 120, 534, 35, ink, 17);
+
+  box(31, 137, 534, 74, sage, null, 11);
+  box(41, 147, 4, 54, '#84a583', null, 2);
+  text('HARGA JUAL', 57, 157, 126, 10, muted);
+
+  // Fit both the digits and the descender of "Rp" inside the price panel.
+  const priceTop = 163;
+  const priceHeight = 39;
+  const priceWidth = 493;
+  let fontSize = 43;
+  let priceMetrics;
+  let ascent;
+  let descent;
+  let left;
+  do {
+    ctx.font = `700 ${fontSize}px Georgia, "Times New Roman", serif`;
+    priceMetrics = ctx.measureText(price);
+    ascent = priceMetrics.actualBoundingBoxAscent ?? fontSize * 0.8;
+    descent = priceMetrics.actualBoundingBoxDescent ?? fontSize * 0.2;
+    left = Math.max(0, priceMetrics.actualBoundingBoxLeft ?? 0);
+    const right = Math.max(priceMetrics.width, priceMetrics.actualBoundingBoxRight ?? 0);
+    if (left + right <= priceWidth && ascent + descent <= priceHeight) break;
+  } while (--fontSize > 1);
+  ctx.fillStyle = ink;
+  ctx.fillText(price, 57 + left, priceTop + (priceHeight + ascent - descent) / 2, priceWidth - left);
 
   pamphletSpecs.forEach(([key, label], index) => {
-    const x = 40 + (index % 3) * 174;
-    const y = 200 + Math.floor(index / 3) * 52;
-    box(x, y, 168, 44, '#153d2c', border);
+    const x = 31 + (index % 3) * 181;
+    const y = 225 + Math.floor(index / 3) * 51;
+    box(x, y, 172, 44, '#fffefa', border);
+    box(x + 8, y + 9, 26, 26, '#edf3e9', null, 6);
     ctx.save();
-    ctx.translate(x + 8, y + 11);
-    ctx.strokeStyle = gold;
-    ctx.lineWidth = 1.3;
+    ctx.translate(x + 11, y + 12);
+    ctx.strokeStyle = muted;
+    ctx.lineWidth = 1.25;
     icons[index]();
     ctx.restore();
-    text(label.toUpperCase(), x + 36, y + 17, 123, 9, gold);
-    text(specifications?.[key] || '-', x + 36, y + 33, 123, 13, cream);
+    text(label.toUpperCase(), x + 42, y + 16, 122, 9, muted);
+    text(specifications?.[key] || '-', x + 42, y + 33, 122, 13, ink);
   });
 
-  if (warranty > 0) text(`Garansi ${warranty} bulan`, 40, 334, 170, 13, gold);
-  const code = `KODE UNIT \u00b7 ${barcode}`;
-  ctx.font = '700 14px Arial';
-  const codeWidth = Math.max(168, Math.min(330, Math.ceil(ctx.measureText(code).width) + 18));
-  box(556 - codeWidth, 316, codeWidth, 30, '#153d2c', border);
-  text(code, 565 - codeWidth, 336, codeWidth - 18, 14, cream);
+  ctx.strokeStyle = border;
+  line(31, 337, 565, 337);
+  if (warranty > 0) {
+    box(31, 350, 141, 33, sage, null, 16);
+    text(`Garansi ${warranty} bulan`, 44, 371, 116, 13, muted);
+  }
+  text('KODE UNIT', 331, 369, 64, 10, muted);
+  ctx.textAlign = 'right';
+  text(barcode, 555, 372, 150, 19, ink, 11);
   return canvas.toDataURL('image/png');
 }
 
