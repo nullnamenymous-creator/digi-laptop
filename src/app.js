@@ -2349,6 +2349,34 @@ async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8
   }
 }
 
+function bindFinanceTablePages(table, rows, pageSize = 8) {
+  if (rows.length <= pageSize) return;
+  let current = 0;
+  const pages = Math.ceil(rows.length / pageSize);
+  const controls = document.createElement('nav');
+  controls.className = 'finance-table-pages';
+  controls.setAttribute('aria-label', 'Halaman rincian');
+  controls.innerHTML = '<button type="button" class="small-btn">Sebelumnya</button><span role="status"></span><button type="button" class="small-btn">Berikutnya</button>';
+  const [previous, next] = controls.querySelectorAll('button');
+  const render = () => {
+    rows.forEach((row, index) => { row.hidden = Math.floor(index / pageSize) !== current; });
+    controls.querySelector('span').textContent = `Halaman ${current + 1} dari ${pages}`;
+    previous.disabled = current === 0;
+    next.disabled = current === pages - 1;
+  };
+  previous.addEventListener('click', () => { current--; render(); });
+  next.addEventListener('click', () => { current++; render(); });
+  table.after(controls);
+  render();
+}
+
+function financeSummaryCard(key, label, amount, detail) {
+  return `<button type="button" class="card unit-summary-button finance-summary-card" data-finance-metric="${key}">
+    <span class="card-label">${label}<span aria-hidden="true">&rarr;</span></span>
+    <span class="card-value">${amount}</span><span class="card-sub">${detail}</span>
+  </button>`;
+}
+
 async function reportsPage(page) {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const range = state.profile.role === 'operator' ? 'daily' : params.get('range') || 'daily';
@@ -2422,10 +2450,24 @@ async function reportsPage(page) {
   const rangeLabel = range === 'daily' ? '7 hari terakhir' : range === 'weekly' ? '8 minggu terakhir' : range === 'monthly' ? '12 bulan terakhir' : '5 tahun terakhir';
   const branchOptions = canManage() ? `<select id="report-branch" class="branch-select"><option value="all" ${state.reportBranch==='all'?'selected':''}>Semua cabang</option>${state.branches.map(branch=>`<option value="${branch.id}" ${state.reportBranch===branch.id?'selected':''}>${esc(branch.name)}</option>`).join('')}</select>` : '';
   page.innerHTML = `${header('Laporan laba & arus kas',`Rekap ${rangeLabel}. Laba memakai modal barang tersimpan dan belum memasukkan pembayaran hutang sebagai biaya baru.`,`<select id="report-range" class="branch-select"><option value="daily" ${range==='daily'?'selected':''}>Harian</option><option value="weekly" ${range==='weekly'?'selected':''}>Mingguan</option><option value="monthly" ${range==='monthly'?'selected':''}>Bulanan</option><option value="yearly" ${range==='yearly'?'selected':''}>Tahunan</option></select>${branchOptions}`)}
-    <div class="cards report-summary"><article class="card"><div class="card-label">Omzet produk</div><div class="card-value">${money(salesTotal)}</div><div class="card-sub">${sales.length} transaksi penjualan</div></article><article class="card"><div class="card-label">Omzet servis</div><div class="card-value">${money(serviceTotal)}</div><div class="card-sub">Servis yang sudah diserahkan</div></article><article class="card"><div class="card-label">HPP terjual</div><div class="card-value">${money(hppTotal)}</div><div class="card-sub">Modal barang dan sparepart servis</div></article><article class="card"><div class="card-label">Laba operasional · estimasi</div><div class="card-value">${money(netProfit)}</div><div class="card-sub">Setelah biaya operasional ${money(expenseTotal)}</div></article></div>
-    <section class="panel profit-note"><b>Perhitungan laba</b><span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional. Pembelian stok dan pembayaran hutang supplier tidak dihitung sebagai biaya sampai barangnya terjual.</span>${estimatedCostLines||missingCostLines?`<span class="profit-warning">${estimatedCostLines} baris memakai modal katalog sebagai perkiraan · ${missingCostLines} baris terjual belum memiliki data modal, sehingga laba dapat terlihat lebih tinggi.</span>`:'<span class="profit-ok">Seluruh barang terjual memiliki modal tercatat.</span>'}</section>
-    <div class="cards cash-summary report-summary"><article class="card"><div class="card-label">Kas masuk</div><div class="card-value">${money(sum('cashIn'))}</div><div class="card-sub">Uang diterima pada periode ini</div></article><article class="card"><div class="card-label">Kas keluar</div><div class="card-value">${money(sum('cashOut'))}</div><div class="card-sub">Termasuk pembayaran pembelian stok</div></article><article class="card"><div class="card-label">Saldo kas bersih</div><div class="card-value">${money(sum('cashIn')-sum('cashOut'))}</div><div class="card-sub">Kas masuk dikurangi kas keluar</div></article><article class="card"><div class="card-label">Laba kotor</div><div class="card-value">${money(grossProfit)}</div><div class="card-sub">Sebelum biaya operasional</div></article></div>
-    <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Rekap ${range==='daily'?'per hari':range==='weekly'?'per minggu':range==='monthly'?'per bulan':'per tahun'}</div><div class="panel-sub">Pilih periode untuk membuka transaksi, HPP, dan dampak labanya.</div></div></div><div class="table-wrap"><table><thead><tr><th>PERIODE</th><th>CATATAN</th><th>OMZET PRODUK</th><th>OMZET SERVIS</th><th>HPP</th><th>BIAYA OPERASIONAL</th><th>LABA OPERASIONAL</th><th>DETAIL</th></tr></thead><tbody>${[...buckets.values()].sort((a,b)=>b.key.localeCompare(a.key)).map(bucket=>`<tr><td class="product-name">${esc(bucket.key)}</td><td>${bucket.count}</td><td>${money(bucket.sales)}</td><td>${money(bucket.services)}</td><td>${money(bucket.hpp+bucket.serviceCost)}</td><td>${money(bucket.operatingExpense)}</td><td><b>${money(bucket.sales+bucket.services-bucket.hpp-bucket.serviceCost+bucket.otherIncome-bucket.operatingExpense)}</b></td><td><button class="small-btn" data-report-detail="${esc(bucket.key)}">Lihat detail</button></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Belum ada transaksi pada periode ini.</div></td></tr>'}</tbody></table></div></section><section id="report-detail"></section>`;
+    <div class="cards report-summary">
+      ${financeSummaryCard('sales', 'Omzet produk', money(salesTotal), `${sales.length} transaksi penjualan`)}
+      ${financeSummaryCard('service', 'Omzet servis', money(serviceTotal), 'Servis yang sudah diserahkan')}
+      ${financeSummaryCard('hpp', 'HPP terjual', money(hppTotal), 'Modal barang dan sparepart servis')}
+      ${financeSummaryCard('net', 'Laba operasional (estimasi)', money(netProfit), `Biaya operasional ${money(expenseTotal)}`)}
+    </div>
+    <div class="cards cash-summary report-summary">
+      ${financeSummaryCard('in', 'Kas masuk', money(sum('cashIn')), 'Uang diterima pada periode ini')}
+      ${financeSummaryCard('out', 'Kas keluar', money(sum('cashOut')), 'Termasuk pembayaran pembelian stok')}
+      ${financeSummaryCard('balance', 'Saldo kas bersih', money(sum('cashIn') - sum('cashOut')), 'Kas masuk dikurangi kas keluar')}
+      ${financeSummaryCard('gross', 'Laba kotor', money(grossProfit), 'Sebelum biaya operasional')}
+    </div>
+    <details class="panel profit-note finance-profit-note"><summary>Perhitungan laba ${estimatedCostLines || missingCostLines ? '<span class="profit-warning">· Ada modal estimasi atau kosong</span>' : ''}</summary>
+      <span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional. Pembelian stok dan pembayaran hutang supplier tidak dihitung sebagai biaya sampai barangnya terjual.</span>
+      ${estimatedCostLines || missingCostLines ? `<span class="profit-warning">${estimatedCostLines} baris memakai perkiraan modal katalog. ${missingCostLines} baris belum memiliki data modal.</span>` : '<span class="profit-ok">Seluruh barang terjual memiliki modal tercatat.</span>'}
+    </details>
+    <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Rekap ${range==='daily'?'per hari':range==='weekly'?'per minggu':range==='monthly'?'per bulan':'per tahun'}</div><div class="panel-sub">Pilih periode untuk membuka transaksi, HPP, dan dampak labanya.</div></div></div><div class="table-wrap"><table><thead><tr><th>PERIODE</th><th>CATATAN</th><th>OMZET PRODUK</th><th>OMZET SERVIS</th><th>HPP</th><th>BIAYA OPERASIONAL</th><th>LABA OPERASIONAL</th><th>DETAIL</th></tr></thead><tbody>${[...buckets.values()].sort((a,b)=>b.key.localeCompare(a.key)).map(bucket=>`<tr><td class="product-name">${esc(bucket.key)}</td><td>${bucket.count}</td><td>${money(bucket.sales)}</td><td>${money(bucket.services)}</td><td>${money(bucket.hpp+bucket.serviceCost)}</td><td>${money(bucket.operatingExpense)}</td><td><b>${money(bucket.sales+bucket.services-bucket.hpp-bucket.serviceCost+bucket.otherIncome-bucket.operatingExpense)}</b></td><td><button class="small-btn" data-report-detail="${esc(bucket.key)}">Lihat detail</button></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Belum ada transaksi pada periode ini.</div></td></tr>'}</tbody></table></div></section>`;
+  let selectedPeriod = null;
   const printReport = document.createElement('button');
   printReport.type = 'button';
   printReport.className = 'btn';
@@ -2449,7 +2491,7 @@ async function reportsPage(page) {
         copy.classList.add('print-detail');
       }
       return `<section><h3>${esc(panel.querySelector('.panel-title').textContent)}</h3>${copy.outerHTML}</section>`;
-    }).join('');
+    }).join('') + (selectedPeriod ? `<section><h3>Rincian ${esc(selectedPeriod.key)}</h3>${reportFinanceTable(selectedPeriod.rows, 'detail', 'print-detail')}</section>` : '');
     const summary = [
       ['Kas masuk', sum('cashIn')],
       ['Kas keluar', sum('cashOut')],
@@ -2491,11 +2533,53 @@ async function reportsPage(page) {
   if (state.profile.role === 'operator') page.querySelector('#report-range').disabled = true;
   page.querySelector('#report-range').addEventListener('change',event=>{location.hash=`reports?range=${event.target.value}&branch=${state.reportBranch||'all'}`;showPage('reports')});
   page.querySelector('#report-branch')?.addEventListener('change',event=>{state.reportBranch=event.target.value;location.hash=`reports?range=${range}&branch=${state.reportBranch}`;showPage('reports')});
-  page.querySelectorAll('[data-report-detail]').forEach(button=>button.addEventListener('click',()=>{
-    const bucket=buckets.get(button.dataset.reportDetail),detail=page.querySelector('#report-detail');
-    detail.innerHTML=`<section class="panel table-panel report-detail-panel"><div class="panel-head"><div><div class="panel-title">Rincian ${esc(bucket.key)}</div><div class="panel-sub">${bucket.rows.length} catatan · dampak laba tidak menghitung pembayaran hutang supplier sebagai biaya stok.</div></div><button class="small-btn" id="close-report-detail">Tutup</button></div><div class="table-wrap"><table><thead><tr><th>WAKTU</th><th>JENIS</th><th>NOTA / KETERANGAN</th><th>CABANG</th><th>NOMINAL</th><th>HPP / BIAYA</th><th>DAMPAK LABA</th></tr></thead><tbody>${bucket.rows.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(row=>`<tr><td>${new Date(row.date).toLocaleString('id-ID')}</td><td>${esc(row.kind)}</td><td>${esc(row.label||'—')}${row.purchasePayment?'<div class="field-hint">Pembayaran stok · dikeluarkan dari biaya laba</div>':''}</td><td>${esc(row.branch||branchName(row.branch_id))}</td><td>${money(row.value)}</td><td>${money(row.cost)}</td><td><b>${money(row.profitImpact)}</b></td></tr>`).join('')}</tbody></table></div></section>`;
-    detail.querySelector('#close-report-detail').onclick=()=>detail.innerHTML='';
+  const cashIn = cashRows.filter((row) => row.direction === 'income');
+  const cashOut = cashRows.filter((row) => row.direction === 'expense');
+  const turnoverRows = [...saleRows, ...serviceRows];
+  const metrics = {
+    sales: ['Omzet produk', saleRows, 'turnover', [['Omzet produk', salesTotal]]],
+    service: ['Omzet servis', serviceRows, 'turnover', [['Omzet servis', serviceTotal]]],
+    hpp: ['HPP terjual', turnoverRows, 'cost', [['HPP produk', sum('hpp')], ['Biaya sparepart servis', sum('serviceCost')], ['Total HPP', hppTotal]]],
+    net: ['Laba operasional (estimasi)', [...turnoverRows, ...cashRows.filter((row) => row.profitImpact !== 0)], 'detail',
+      [['Laba kotor', grossProfit], ['Pemasukan lain', otherIncomeTotal], ['Biaya operasional', expenseTotal], ['Laba operasional', netProfit]]],
+    in: ['Kas masuk', cashIn, 'cash', [['Total kas masuk', sum('cashIn')]]],
+    out: ['Kas keluar', cashOut, 'cash', [['Total kas keluar', sum('cashOut')]]],
+    balance: ['Saldo kas bersih', cashRows, 'cash', [['Kas masuk', sum('cashIn')], ['Kas keluar', sum('cashOut')], ['Saldo kas bersih', sum('cashIn') - sum('cashOut')]]],
+    gross: ['Laba kotor', turnoverRows, 'detail', [['Omzet produk', salesTotal], ['Omzet servis', serviceTotal], ['HPP', hppTotal], ['Laba kotor', grossProfit]]],
+  };
+  const reportBranch = canManage() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canManage() ? state.reportBranch : state.profile.branch_id);
+  page.querySelectorAll('[data-finance-metric]').forEach((button) => button.addEventListener('click', () => {
+    const [title, rows, mode, totals] = metrics[button.dataset.financeMetric];
+    openReportFinanceDetail(title, `${reportBranch} · ${rangeLabel}`, rows, mode, totals);
   }));
+  page.querySelectorAll('[data-report-detail]').forEach((button) => button.addEventListener('click', () => {
+    selectedPeriod = buckets.get(button.dataset.reportDetail);
+    openReportFinanceDetail(`Rincian ${selectedPeriod.key}`, reportBranch, selectedPeriod.rows, 'detail');
+  }));
+}
+
+function reportFinanceTable(rows, mode, tableClass = '') {
+  const showValue = mode !== 'cost';
+  const showCost = mode === 'cost' || mode === 'detail';
+  const showImpact = mode === 'detail';
+  const ordered = [...rows].sort((a, b) => new Date(b.date) - new Date(a.date));
+  return `<table class="${tableClass}"><thead><tr><th>Waktu</th><th>Jenis</th><th>Nota / keterangan</th><th>Cabang</th>
+    ${showValue ? '<th>Nominal</th>' : ''}${showCost ? '<th>HPP / biaya</th>' : ''}${showImpact ? '<th>Dampak laba</th>' : ''}</tr></thead>
+    <tbody>${ordered.map((row) => `<tr><td>${new Date(row.date).toLocaleString('id-ID')}</td><td>${esc(row.kind)}</td>
+      <td>${esc(row.label || '-')}${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
+      ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Pembayaran stok tidak dihitung sebagai biaya laba.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
+      ${showValue ? `<td>${money(row.value)}</td>` : ''}${showCost ? `<td>${money(row.cost)}</td>` : ''}
+      ${showImpact ? `<td>${money(row.profitImpact)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
+}
+
+function openReportFinanceDetail(title, context, rows, mode, totals = []) {
+  const summary = totals.length ? `<dl class="finance-detail-totals">${totals.map(([label, amount]) =>
+    `<div><dt>${label}</dt><dd>${money(amount)}</dd></div>`).join('')}</dl>` : '';
+  const host = openModal(esc(title), esc(context), `${summary}${rows.length
+    ? `<div class="table-wrap finance-detail-table">${reportFinanceTable(rows, mode)}</div>`
+    : '<div class="empty">Belum ada catatan untuk pilihan ini.</div>'}`, null);
+  const table = host.querySelector('.finance-detail-table');
+  if (table) bindFinanceTablePages(table, [...table.querySelectorAll('tbody tr')]);
 }
 
 async function teamAdminRequest(payload) {
@@ -2716,13 +2800,61 @@ async function financePage(page) {
   cash.forEach((entry) => { const id = entry.branch_id; const row = branchTotals.get(id) || { name: entry.branches?.name || branchName(id), income: 0, expense: 0 }; row[entry.direction] += Number(entry.amount); branchTotals.set(id,row); });
   const options = `<option value="all" ${filter === 'all' ? 'selected' : ''}>Semua cabang</option>${state.branches.map((branch) => `<option value="${branch.id}" ${filter === branch.id ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}`;
   const branchControl = canManage() ? `<select id="finance-branch" class="branch-select">${options}</select>` : '';
-  const activityRows = cash.map((entry) => `<tr><td class="product-name">${new Date(entry.created_at).toLocaleDateString('id-ID')}<div class="field-hint">${esc(entry.branches?.name || branchName(entry.branch_id))}</div></td><td>${esc(entry.category)}</td><td>${esc(entry.description || entry.customers?.name || entry.suppliers?.name || '—')}</td><td><span class="pill ${entry.direction === 'income' ? 'blue' : 'warn'}">${entry.direction === 'income' ? 'Masuk' : 'Keluar'}</span></td><td>${money(entry.amount)}</td></tr>`).join('');
+  const activityRows = cash.map((entry) => `<tr data-cash-direction="${esc(entry.direction)}"><td class="product-name">${new Date(entry.created_at).toLocaleDateString('id-ID')}<div class="field-hint">${esc(entry.branches?.name || branchName(entry.branch_id))}</div></td><td>${esc(entry.category)}</td><td>${esc(entry.description || entry.customers?.name || entry.suppliers?.name || '—')}</td><td><span class="pill ${entry.direction === 'income' ? 'blue' : 'warn'}">${entry.direction === 'income' ? 'Masuk' : 'Keluar'}</span></td><td>${money(entry.amount)}</td></tr>`).join('');
   page.innerHTML = `${header('Keuangan cabang', `Arus kas bulan ${monthStart.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}. Pemasukan dan pengeluaran dihitung dari uang yang benar-benar dibayar.`, `${branchControl}<button class="btn" id="add-income">＋ Pemasukan</button><button class="btn primary" id="add-expense">− Pengeluaran</button>`)}
-    <div class="cards"><article class="card"><div class="card-label">Kas masuk bulan ini<span class="card-icon">↗</span></div><div class="card-value">${money(incomes)}</div><div class="card-sub">Penjualan dibayar, cicilan, dan pemasukan lain</div></article><article class="card"><div class="card-label">Kas keluar bulan ini<span class="card-icon">↘</span></div><div class="card-value">${money(expenses)}</div><div class="card-sub">Pembelian barang, hutang supplier, dan operasional</div></article><article class="card"><div class="card-label">Sisa kas bersih<span class="card-icon">＝</span></div><div class="card-value">${money(incomes-expenses)}</div><div class="card-sub">Kas masuk dikurangi kas keluar</div></article><article class="card"><div class="card-label">Piutang / hutang terbuka<span class="card-icon">≡</span></div><div class="card-value" style="font-size:17px">${money(receivableTotal)} / ${money(payableTotal)}</div><div class="card-sub">${receivables.length} pelanggan · ${payables.length} supplier</div></article></div>
-    ${filter === 'all' ? `<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Ringkasan per cabang</div><div class="panel-sub">Angka bulan ini untuk semua cabang toko</div></div></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>KAS MASUK</th><th>KAS KELUAR</th><th>BERSIH</th></tr></thead><tbody>${[...branchTotals.entries()].map(([id,row]) => `<tr><td class="product-name">${esc(row.name)}</td><td>${money(row.income)}</td><td>${money(row.expense)}</td><td>${money(row.income-row.expense)}</td></tr>`).join('') || '<tr><td colspan="4">Belum ada transaksi bulan ini.</td></tr>'}</tbody></table></div></section>` : ''}
-    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / STRUK</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect="${entry.id}" data-source="${entry.source_type}">Terima pembayaran</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>
-    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa pembayaran untuk batch barang masuk</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay="${batch.id}">Bayar supplier</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>
-    <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Arus kas bulan ini</div><div class="panel-sub">Pemasukan dan pengeluaran tercatat untuk cabang yang dipilih</div></div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / CABANG</th><th>KATEGORI</th><th>KETERANGAN</th><th>ARAH</th><th>NOMINAL</th></tr></thead><tbody>${activityRows || '<tr><td colspan="5"><div class="empty">Belum ada pemasukan atau pengeluaran bulan ini.</div></td></tr>'}</tbody></table></div></section>`;
+    <div class="cards finance-summary">
+      ${financeSummaryCard('income', 'Kas masuk bulan ini', money(incomes), 'Penjualan dibayar, cicilan, dan pemasukan lain')}
+      ${financeSummaryCard('expense', 'Kas keluar bulan ini', money(expenses), 'Pembelian, hutang supplier, dan operasional')}
+      ${financeSummaryCard('balance', 'Sisa kas bersih', money(incomes-expenses), 'Kas masuk dikurangi kas keluar')}
+      ${financeSummaryCard('debt', 'Piutang / hutang terbuka', `${money(receivableTotal)} / ${money(payableTotal)}`, `${receivables.length} piutang · ${payables.length} hutang`)}
+    </div>
+    <div class="finance-view-tabs" role="group" aria-label="Rincian keuangan">
+      ${filter === 'all' ? '<button type="button" class="btn" data-finance-tab="branches">Ringkasan cabang</button>' : ''}
+      <button type="button" class="btn" data-finance-tab="cash">Arus kas</button>
+      <button type="button" class="btn" data-finance-tab="receivables">Piutang pelanggan</button>
+      <button type="button" class="btn" data-finance-tab="payables">Hutang supplier</button>
+    </div>
+    ${filter === 'all' ? `<section class="panel table-panel" data-finance-view="branches"><div class="panel-head"><div><div class="panel-title">Ringkasan per cabang</div><div class="panel-sub">Angka bulan ini untuk semua cabang toko</div></div></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>KAS MASUK</th><th>KAS KELUAR</th><th>BERSIH</th></tr></thead><tbody>${[...branchTotals.entries()].map(([id,row]) => `<tr><td class="product-name">${esc(row.name)}</td><td>${money(row.income)}</td><td>${money(row.expense)}</td><td>${money(row.income-row.expense)}</td></tr>`).join('') || '<tr><td colspan="4">Belum ada transaksi bulan ini.</td></tr>'}</tbody></table></div></section>` : ''}
+    <section class="panel table-panel" data-finance-view="receivables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / STRUK</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect="${entry.id}" data-source="${entry.source_type}">Terima pembayaran</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>
+    <section class="panel table-panel" data-finance-view="payables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa pembayaran untuk batch barang masuk</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay="${batch.id}">Bayar supplier</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>
+    <section class="panel table-panel" data-finance-view="cash" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Arus kas bulan ini</div><div class="panel-sub" data-cash-total></div></div><div class="finance-cash-filter" role="group" aria-label="Arah arus kas">
+      <button type="button" class="small-btn" data-cash-filter="all">Semua</button><button type="button" class="small-btn" data-cash-filter="income">Masuk</button><button type="button" class="small-btn" data-cash-filter="expense">Keluar</button>
+    </div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / CABANG</th><th>KATEGORI</th><th>KETERANGAN</th><th>ARAH</th><th>NOMINAL</th></tr></thead><tbody>${activityRows}<tr data-cash-empty hidden><td colspan="5"><div class="empty">Belum ada catatan kas untuk pilihan ini.</div></td></tr></tbody></table></div></section>`;
+  const views = [...page.querySelectorAll('[data-finance-view]')];
+  const viewTabs = [...page.querySelectorAll('[data-finance-tab]')];
+  const cashView = page.querySelector('[data-finance-view="cash"]');
+  const cashTable = cashView.querySelector('.table-wrap');
+  const cashTableRows = [...cashTable.querySelectorAll('[data-cash-direction]')];
+  const cashFilters = [...cashView.querySelectorAll('[data-cash-filter]')];
+  const cachedView = state.financeView;
+  const selectView = (name, direction = 'all') => {
+    state.financeView = { name, direction };
+    views.forEach((view) => { view.hidden = view.dataset.financeView !== name; });
+    viewTabs.forEach((tab) => tab.setAttribute('aria-pressed', String(tab.dataset.financeTab === name)));
+    if (name !== 'cash') return;
+    cashView.querySelector('.finance-table-pages')?.remove();
+    const matches = cashTableRows.filter((row) => direction === 'all' || row.dataset.cashDirection === direction);
+    cashTableRows.forEach((row) => { row.hidden = direction !== 'all' && row.dataset.cashDirection !== direction; });
+    cashView.querySelector('[data-cash-empty]').hidden = matches.length > 0;
+    cashFilters.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.cashFilter === direction)));
+    cashView.querySelector('[data-cash-total]').textContent = direction === 'income' ? `Total masuk ${money(incomes)}`
+      : direction === 'expense' ? `Total keluar ${money(expenses)}`
+      : `Masuk ${money(incomes)} · Keluar ${money(expenses)} · Bersih ${money(incomes-expenses)}`;
+    bindFinanceTablePages(cashTable, matches);
+  };
+  views.filter((view) => view !== cashView).forEach((view) => {
+    bindFinanceTablePages(view.querySelector('.table-wrap'), [...view.querySelectorAll('tbody tr')]);
+  });
+  viewTabs.forEach((tab) => tab.addEventListener('click', () => selectView(tab.dataset.financeTab)));
+  cashFilters.forEach((button) => button.addEventListener('click', () => selectView('cash', button.dataset.cashFilter)));
+  page.querySelectorAll('[data-finance-metric]').forEach((card) => card.addEventListener('click', () => {
+    const metric = card.dataset.financeMetric;
+    if (metric === 'debt') selectView(receivables.length || !payables.length ? 'receivables' : 'payables');
+    else selectView('cash', metric === 'balance' ? 'all' : metric);
+  }));
+  const initialView = views.some((view) => view.dataset.financeView === cachedView?.name)
+    ? cachedView.name : views[0].dataset.financeView;
+  selectView(initialView, cachedView?.direction);
   page.querySelector('#finance-branch')?.addEventListener('change', async (event) => { state.financeBranch = event.target.value; await showPage('finance'); });
   page.querySelector('#add-expense').addEventListener('click', () => cashEntryModal('expense'));
   page.querySelector('#add-income').addEventListener('click', () => cashEntryModal('income'));

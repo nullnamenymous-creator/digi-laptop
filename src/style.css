@@ -1513,3 +1513,25 @@ button.storefront-card:hover { border-color: #659477; }
   .storefront-filter-panel .storefront-filters { grid-template-columns: minmax(0, 1fr); }
   .storefront-filter-panel .storefront-filters select { max-width: none; }
 }
+
+.finance-summary-card { min-height: 0; }
+.finance-summary-card .card-label > span { margin-left: 8px; color: #226247; }
+.finance-summary-card .card-value { overflow-wrap: anywhere; }
+.finance-summary-card[data-finance-metric="debt"] .card-value { font-size: 17px; }
+.finance-summary-card:hover { box-shadow: inset 0 0 0 1px #4a8969; }
+.finance-view-tabs, .finance-cash-filter, .finance-table-pages {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+}
+.finance-view-tabs { margin: 12px 0; }
+.finance-view-tabs [aria-pressed="true"], .finance-cash-filter [aria-pressed="true"] {
+  background: #144e36; color: #fff; border-color: #144e36;
+}
+.finance-table-pages { justify-content: center; padding: 10px; font-size: 12px; }
+.finance-profit-note { display: block; padding-block: 8px; }
+.finance-profit-note summary { cursor: pointer; font-weight: 700; }
+.finance-profit-note > span { display: block; margin-top: 5px; }
+.modal:has(.finance-detail-table) { width: min(940px, 100%); }
+.finance-detail-totals { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
+.finance-detail-totals div { flex: 1 1 120px; padding: 8px 10px; background: #edf5ed; }
+.finance-detail-totals dt { font-size: 12px; }
+.finance-detail-totals dd { margin: 4px 0 0; font-weight: 700; }
