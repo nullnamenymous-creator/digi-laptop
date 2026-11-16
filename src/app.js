@@ -268,18 +268,22 @@ function showShell() {
       toast('Cabang ini tidak tersedia untuk akun lo.', true);
       return;
     }
-    state.branchId = selected;
-    state.inventoryFilters = null;
-    state.inventoryUnitPage = null;
-    state.inventorySearchQuery = '';
-    if (canManage()) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, selected);
-    const allowedPages = rolePages();
-    if (!allowedPages.includes(state.page)) state.page = allowedPages[0];
-    showShell();
-    subscribeOperationalUpdates();
-    await showPage(state.page);
+    await openBranchPage(selected, state.page);
   });
   updateConnection();
+}
+
+async function openBranchPage(branchId, page, inventoryFilters = null) {
+  state.branchId = branchId;
+  state.inventoryFilters = inventoryFilters;
+  state.inventoryUnitPage = inventoryFilters ? { filter: 'available' } : null;
+  state.inventorySearchQuery = '';
+  if (canManage()) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, branchId);
+  const allowedPages = rolePages();
+  state.page = allowedPages.includes(page) ? page : allowedPages[0];
+  showShell();
+  subscribeOperationalUpdates();
+  await showPage(state.page);
 }
 
 function selectedBranchTheme() {
@@ -537,6 +541,44 @@ async function showPage(name, { background = false } = {}) {
   finally { clearTimeout(loadTimer); if (background) delete page.dataset.refreshing; }
 }
 
+const branchStockSection = '<section class="owner-branch-stock" data-owner-branch-stock><h2>Stok siap jual per cabang</h2><p role="status">Memuat stok cabang.</p></section>';
+
+async function showOwnerBranchStock(panel) {
+  if (!panel || !canManage()) return;
+  const branches = [...state.branches].sort((a, b) =>
+    Number(Boolean(b.is_central)) - Number(Boolean(a.is_central)) || a.name.localeCompare(b.name, 'id'));
+  if (!branches.length) {
+    panel.querySelector('p').textContent = 'Belum ada cabang aktif.';
+    return;
+  }
+  try {
+    const stock = await fetchAllRows(supabase.from('stock_items').select('branch_id,quantity')
+      .in('branch_id', branches.map(({ id }) => id)).eq('status', 'available').gt('quantity', 0)
+      .abortSignal(AbortSignal.timeout(10000)));
+    if (!panel.isConnected || !canManage()) return;
+    const totals = new Map();
+    for (const {branch_id, quantity} of stock) {
+      totals.set(branch_id, (totals.get(branch_id) || 0) + Number(quantity));
+    }
+    panel.querySelector('p').remove();
+    const colors = ['green', 'blue', 'amber', 'purple', 'teal', 'rose'];
+    panel.insertAdjacentHTML('beforeend', `<div class="cards branch-stock-cards">${branches.map((branch, index) =>
+      `<button type="button" class="card unit-summary-button branch-stock-card" data-stock-color="${colors[index % colors.length]}" data-stock-branch="${esc(branch.id)}">
+        <span class="card-label">${esc(branch.name)}</span>
+        <span class="card-value">${(totals.get(branch.id) || 0).toLocaleString('id-ID')} <small>unit</small></span>
+        <span class="card-sub">${branch.is_central ? 'Siap dikirim' : 'Siap jual'} · Lihat detail &rarr;</span>
+      </button>`).join('')}</div>`);
+    panel.querySelectorAll('[data-stock-branch]').forEach((button) => button.addEventListener('click', () => {
+      const branchId = button.dataset.stockBranch;
+      if (!canManage() || !state.branches.some((branch) => branch.id === branchId)) return;
+      window.scrollTo(0, 0);
+      openBranchPage(branchId, 'inventory', { 'inventory-stock': 'available' });
+    }));
+  } catch {
+    if (panel.isConnected) panel.querySelector('p').textContent = 'Stok cabang belum bisa dimuat.';
+  }
+}
+
 async function centralDashboardPage(page) {
   const branchId = state.branchId;
   const [stock, intake, transfers] = await Promise.all([
@@ -563,8 +605,10 @@ async function centralDashboardPage(page) {
   const unitCount = row => (row.stock_transfer_items || []).reduce((total, item) => total + Number(item.quantity), 0);
   page.innerHTML = `${header('Operasional Cabang Pusat', 'Penerimaan, pemeriksaan, dan distribusi stok ke cabang penjualan.', '<button class="btn primary" data-open-transfer>Kirim ke cabang</button>')}
     <section class="cards laptop-unit-summary">${cards.map(([label, count, action]) => `<button type="button" class="card unit-summary-button" data-central-page="${action}"><span class="card-label">${label}</span><span class="card-value">${count} <small>unit</small></span></button>`).join('')}</section>
+    ${canManage() ? branchStockSection : ''}
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Distribusi per cabang</div><div class="panel-sub">Jumlah pengiriman dari Cabang Pusat</div></div></div><div class="table-wrap"><table><thead><tr><th>Cabang tujuan</th><th>Menunggu diterima</th><th>Sudah diterima</th></tr></thead><tbody>${state.branches.filter(branch => !branch.is_central).map(branch => `<tr><td>${esc(branch.name)}</td><td>${pending.filter(row => row.destination_branch_id === branch.id).length}</td><td>${received.get(branch.id) || 0}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Mutasi menunggu diterima</div></div><div class="table-wrap"><table><thead><tr><th>Nomor mutasi</th><th>Tujuan</th><th>Jumlah unit</th><th>Tanggal kirim</th></tr></thead><tbody>${pending.map(row => `<tr><td>${esc(row.transfer_number)}</td><td>${esc(branchName(row.destination_branch_id))}</td><td>${unitCount(row)}</td><td>${new Date(row.created_at).toLocaleString('id-ID')}</td></tr>`).join('') || '<tr><td colspan="4">Tidak ada mutasi dalam perjalanan.</td></tr>'}</tbody></table></div></section>`;
+  showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
   page.querySelector('[data-open-transfer]').addEventListener('click', transferModal);
   page.querySelectorAll('[data-central-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.centralPage)));
 }
@@ -619,9 +663,11 @@ async function dashboardPage(page) {
   page.innerHTML = `<div class="page-head dashboard-slogan"><div><h1>Laptop pilihan untuk <em>kerja, belajar,</em> dan berkarya setiap hari.</h1></div>${state.profile.role === 'operator' ? '<button class="btn primary" data-go="cashier">＋ Transaksi baru</button>' : ''}</div>
     <section class="panel dashboard-finder"><div class="finder-controls"><input id="finder-search" type="search" placeholder="Cari produk, merek, SKU, barcode, atau nomor seri…" aria-label="Cari produk, merek, SKU, barcode, atau nomor seri" /></div><div id="finder-results" aria-live="polite"></div></section>
         <div class="cards"><button type="button" class="card dashboard-summary-button" data-dashboard-card="sales"><span class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></span><span class="card-value">${money(salesTotal)}</span><span class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="stock"><span class="card-label">Total unit siap jual<span class="card-icon">▤</span></span><span class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></span><span class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="service"><span class="card-label">Servis berjalan<span class="card-icon">⌁</span></span><span class="card-value">${activeServices}</span><span class="card-sub">${readyCount} siap diserahkan</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="branches"><span class="card-label">Jumlah cabang<span class="card-icon">⌂</span></span><span class="card-value">${state.branches.length}</span><span class="card-sub">Terhubung ke database pusat</span></button></div>
+    ${ownerView ? branchStockSection : ''}
     ${ownerBranchSales}
     <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).filter(([key]) => rolePages().includes(key)).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
+  showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
   page.querySelector('[data-dashboard-card="sales"]').addEventListener('click', () => {
     if (ownerView) {
       page.querySelector('.owner-branch-sales').scrollIntoView({ block: 'start' });

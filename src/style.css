@@ -1401,3 +1401,16 @@ button.storefront-card:hover { border-color: #659477; }
 @media (prefers-reduced-motion: reduce) {
   .central-support a { animation: none; }
 }
+
+.owner-branch-stock { margin: 16px 0; }
+.owner-branch-stock h2 { margin: 0 0 10px; font-size: 16px; }
+.branch-stock-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); }
+.app .branch-stock-card { background: var(--branch-stock-tint); border-top-color: var(--branch-stock-ink); }
+.branch-stock-card .card-value { color: var(--branch-stock-ink); }
+.branch-stock-card:hover { box-shadow: 0 0 0 1px var(--branch-stock-ink); }
+.branch-stock-card[data-stock-color="green"] { --branch-stock-tint: #e8f3e9; --branch-stock-ink: #205c39; }
+.branch-stock-card[data-stock-color="blue"] { --branch-stock-tint: #e9f2ff; --branch-stock-ink: #204e8c; }
+.branch-stock-card[data-stock-color="amber"] { --branch-stock-tint: #fff3d9; --branch-stock-ink: #7f4c13; }
+.branch-stock-card[data-stock-color="purple"] { --branch-stock-tint: #f1eaff; --branch-stock-ink: #613e89; }
+.branch-stock-card[data-stock-color="teal"] { --branch-stock-tint: #e2f4f1; --branch-stock-ink: #176358; }
+.branch-stock-card[data-stock-color="rose"] { --branch-stock-tint: #fcebf0; --branch-stock-ink: #893450; }
