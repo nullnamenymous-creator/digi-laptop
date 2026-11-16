@@ -1345,3 +1345,13 @@ button.storefront-card:hover { border-color: #659477; }
   .modal.compact-product-modal .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .modal.compact-product-modal .form-grid > .full { grid-column: 1 / -1; }
 }
+
+.transfer-scan-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.transfer-scan-controls #transfer-barcode { flex: 1 1 190px; width: auto; min-width: 0; }
+
+.public-price-block { display: grid; gap: 3px; }
+.public-price-savings { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; font-size: 11px; line-height: 1.35; }
+.public-price-savings del { color: #59665f; }
+.public-price-savings span { padding: 2px 6px; border-radius: 5px; background: #fff0dc; color: #824009; font-weight: 700; }
+.storefront-specs { display: grid; gap: 4px; padding-top: 7px; border-top: 1px solid #dce7df; color: #334b40; font-size: 11px; line-height: 1.35; }
+.storefront-specs b { font-weight: 650; color: #1c3e31; }

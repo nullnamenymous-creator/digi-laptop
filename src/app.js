@@ -367,6 +367,46 @@ function bindProductPhotoPicker(form) {
 
 function selectedProductPhoto(formData) { return formData.get('product_photo_file')?.size ? formData.get('product_photo_file') : formData.get('product_photo_camera')?.size ? formData.get('product_photo_camera') : null; }
 
+async function loadCashierProducts() {
+  const columns = 'id,name,sku,brand,model,retail_price,reseller_price,image_path,is_public';
+  const query = (fields) => fetchAllRows(supabase.from('products').select(fields).order('name'));
+  try {
+    return await query(`${columns},catalog_discount`);
+  } catch (error) {
+    if (error.code !== '42703' && error.code !== 'PGRST204') throw error;
+    return query(columns);
+  }
+}
+
+function publicRetailPrice(product) {
+  return Number(product.retail_price) - (product.is_public === false ? 0 : Number(product.catalog_discount || 0));
+}
+
+function publicPriceMarkup(product) {
+  const price = publicRetailPrice(product);
+  const discount = Number(product.retail_price) - price;
+  return `<span class="public-price-block">
+    ${discount > 0 ? `<span class="public-price-savings"><del aria-label="Harga normal ${money(product.retail_price)}">${money(product.retail_price)}</del>
+      <span>Hemat ${money(discount)}</span></span>` : ''}
+    <strong>${money(price)}</strong></span>`;
+}
+
+function productPromoField(product) {
+  if (!canManage()) return '';
+  return `<div class="field"><label for="catalog-discount">Potongan harga (Rp)</label>
+    <input id="catalog-discount" name="catalog_discount" type="number" min="0" step="1" value="${esc(product?.catalog_discount ?? 0)}" />
+    <small class="field-hint">Berlaku untuk pembeli umum selama produk ditampilkan di katalog. Isi 0 untuk menonaktifkan.</small></div>`;
+}
+
+function productPromoValues(form, product, retailPrice) {
+  if (!form.has('catalog_discount')) return {};
+  const discount = Number(form.get('catalog_discount') || 0);
+  if (!Number.isSafeInteger(discount) || discount < 0 || (discount > 0 && discount >= retailPrice)) {
+    throw new Error('Potongan harus lebih kecil dari harga end user.');
+  }
+  return discount || product?.catalog_discount != null ? { catalog_discount: discount } : {};
+}
+
 function productCopyFields(product) {
   return `<div class="field full"><label for="product-description">Deskripsi produk</label>
     <textarea id="product-description" name="description" rows="4" maxlength="4000" placeholder="Kondisi fisik, kelengkapan, dan catatan produk">${esc(product?.description || '')}</textarea></div>
@@ -1223,7 +1263,7 @@ async function transferModal() {
   const sourceField = owner
     ? `<div class="field"><label>Cabang asal</label><select name="source_branch_id" id="transfer-source" required>${state.branches.filter((branch) => branch.is_central).map((branch) => `<option value="${branch.id}" ${branch.id === sourceId ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}</select></div>`
     : `<input type="hidden" name="source_branch_id" value="${sourceId}" /><div class="field"><label>Cabang asal</label><input value="${esc(branchName(sourceId))}" readonly /></div>`;
-  const host = openModal('Kirim mutasi stok', 'Stok keluar dari cabang asal saat mutasi dikirim. Cabang tujuan perlu menghitung dan mengonfirmasi barang saat tiba.', `<div class="form-grid">${sourceField}<div class="field"><label>Cabang tujuan</label><select name="destination_branch_id" id="transfer-destination" required></select></div><div class="field full"><label>Catatan (opsional)</label><input name="note" maxlength="1000" placeholder="Contoh: pengiriman unit ke cabang Malang" /></div><div class="field full"><label>Daftar barang</label><div class="transfer-lines" id="transfer-lines"></div><button class="btn" type="button" id="add-transfer-line">＋ Tambah barang</button><small class="field-hint">Laptop dipindah per unit/barcode. Sparepart dapat dipindah sebagian dari satu lot.</small></div></div>`, async (form) => {
+  const host = openModal('Kirim mutasi stok', 'Stok keluar dari cabang asal saat mutasi dikirim. Cabang tujuan perlu menghitung dan mengonfirmasi barang saat tiba.', `<div class="form-grid">${sourceField}<div class="field"><label>Cabang tujuan</label><select name="destination_branch_id" id="transfer-destination" required></select></div><div class="field full"><label>Catatan (opsional)</label><input name="note" maxlength="1000" placeholder="Contoh: pengiriman unit ke cabang Malang" /></div><div class="field full"><label for="transfer-barcode">Scan barcode stok</label><div class="transfer-scan-controls"><input id="transfer-barcode" type="text" autocomplete="off" spellcheck="false" placeholder="Scan barcode, atau ketik lalu tekan Enter" /><button class="btn" type="button" id="transfer-scan-add">Tambah barcode</button><button class="btn" type="button" id="transfer-camera">Kamera</button></div><div id="transfer-camera-preview"></div><small class="field-hint" id="transfer-scan-status" role="status">Gunakan barcode internal pada label stok.</small></div><div class="field full"><label>Daftar barang</label><div class="transfer-lines" id="transfer-lines"></div><button class="btn" type="button" id="add-transfer-line">＋ Tambah barang</button><small class="field-hint">Laptop dipindah per unit/barcode. Sparepart dapat dipindah sebagian dari satu lot.</small></div></div>`, async (form) => {
     const sourceBranchId = String(form.get('source_branch_id') || sourceId);
     const destinationBranchId = String(form.get('destination_branch_id') || '');
     if (!destinationBranchId || destinationBranchId === sourceBranchId) throw new Error('Cabang asal dan tujuan harus berbeda.');
@@ -1246,7 +1286,12 @@ async function transferModal() {
   const form = host.querySelector('#active-modal');
   const destinationSelect = form.querySelector('#transfer-destination');
   const linesHost = form.querySelector('#transfer-lines');
+  const barcodeInput = form.querySelector('#transfer-barcode');
+  const scanStatus = form.querySelector('#transfer-scan-status');
+  const cameraPreview = form.querySelector('#transfer-camera-preview');
+  const cameraButton = form.querySelector('#transfer-camera');
   let stockRows = [];
+  let stockLoading = true;
   let lineValues = [{ stock_item_id: '', quantity: 1 }];
   const getSource = () => String(form.elements.namedItem('source_branch_id').value);
   const refreshDestinations = () => {
@@ -1256,9 +1301,13 @@ async function transferModal() {
     if (!options.some((branch) => branch.id === previous)) destinationSelect.value = options[0]?.id || '';
   };
   const loadStock = async () => {
-    const { data, error } = await supabase.from('stock_items').select('id,barcode,quantity,acquisition_cost,products(name,sku,category)').eq('branch_id', getSource()).eq('status', 'available').gt('quantity', 0).order('created_at', { ascending: false });
-    if (error) throw error;
-    stockRows = data || [];
+    stockLoading = true;
+    try {
+      stockRows = await fetchAllRows(supabase.from('stock_items').select('id,barcode,quantity,products(name,category)')
+        .eq('branch_id', getSource()).eq('status', 'available').gt('quantity', 0).order('created_at', { ascending: false }));
+    } finally {
+      stockLoading = false;
+    }
   };
   const renderLines = () => {
     linesHost.innerHTML = lineValues.map((line, index) => {
@@ -1277,6 +1326,39 @@ async function transferModal() {
     linesHost.querySelectorAll('[data-quantity-index]').forEach((input) => input.addEventListener('input', () => { lineValues[Number(input.dataset.quantityIndex)].quantity = Number(input.value); }));
     linesHost.querySelectorAll('[data-remove-transfer-line]').forEach((button) => button.addEventListener('click', () => { lineValues.splice(Number(button.dataset.removeTransferLine), 1); renderLines(); }));
   };
+  const addScannedUnit = () => {
+    if (form.querySelector('[type="submit"]').disabled) return;
+    const code = barcodeInput.value.trim().toUpperCase();
+    if (!code) return;
+    const item = stockRows.find(row => row.barcode.toUpperCase() === code);
+    if (stockLoading) scanStatus.textContent = 'Daftar stok sedang dimuat. Coba lagi sebentar.';
+    else if (!item) scanStatus.textContent = 'Barcode tidak ditemukan di stok Pusat yang siap dikirim.';
+    else if (lineValues.some(line => line.stock_item_id === item.id)) scanStatus.textContent = 'Barcode ini sudah masuk daftar kirim.';
+    else if (lineValues.filter(line => line.stock_item_id).length >= 100) scanStatus.textContent = 'Satu mutasi maksimal 100 baris barang.';
+    else {
+      const empty = lineValues.find(line => !line.stock_item_id);
+      const picked = { stock_item_id: item.id, quantity: 1 };
+      if (empty) Object.assign(empty, picked);
+      else lineValues.push(picked);
+      renderLines();
+      barcodeInput.value = '';
+      scanStatus.textContent = `${item.products?.name || 'Barang'} · ${item.barcode} ditambahkan.`;
+    }
+    barcodeInput.focus();
+    barcodeInput.select();
+  };
+  barcodeInput.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    addScannedUnit();
+  });
+  form.querySelector('#transfer-scan-add').addEventListener('click', addScannedUnit);
+  cameraButton.addEventListener('click', async () => {
+    if (cameraPreview.querySelector('video')) return;
+    cameraButton.disabled = true;
+    await startScanner(cameraPreview, barcodeInput, ['code_128'], addScannedUnit);
+    cameraButton.disabled = false;
+  });
   form.querySelector('#add-transfer-line').addEventListener('click', () => { lineValues.push({ stock_item_id: '', quantity: 1 }); renderLines(); });
   form.elements.namedItem('source_branch_id').addEventListener('change', async () => {
     refreshDestinations();
@@ -1284,7 +1366,7 @@ async function transferModal() {
     catch (error) { toast(error.message, true); }
   });
   refreshDestinations();
-  try { await loadStock(); renderLines(); }
+  try { await loadStock(); renderLines(); if (form.isConnected) barcodeInput.focus(); }
   catch (error) { host.innerHTML = ''; toast(error.message, true); }
 }
 
@@ -1302,7 +1384,7 @@ function receiveStockTransferModal(transfer, items) {
 function openingStockModal(products) {
   if (!canManage()) return toast('Stok awal hanya dapat dicatat oleh pemilik.', true);
   const productOptions = products.map((product) => `<option value="${product.id}" data-category="${esc(product.category)}" data-cost="${Number(product.cost_price || 0)}">${esc(product.name)} · ${esc(product.sku)} · ${esc(product.category)}</option>`).join('');
-  const host = openModal('Catat stok awal', 'Catat barang lama yang sudah siap jual. Jika produknya belum ada, buat dari form ini dan otomatis masuk ke katalog produk.', `<div class="form-grid">${branchField('branch_id', centralBranch()?.id, true)}<div class="field"><label>Produk</label><select name="product_id" required>${productOptions}<option value="__new__" ${products.length ? '' : 'selected'}>＋ Produk belum ada · buat produk baru</option></select></div><div class="opening-new-product-fields form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" placeholder="Dell, Lenovo, HP..." /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field"><label>Garansi produk (bulan)</label><input name="new_warranty" type="number" min="0" value="1" /></div><div class="field"><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field"><label>Harga reseller</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div>${productCopyFields()}</div><div class="opening-product-photo form-grid full" hidden>${productPhotoPicker('')}${galleryFields()}</div><div class="field"><label>Jumlah stok awal</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Laptop mendapat barcode unik per unit. Sparepart dicatat sebagai satu lot.</small></div><div class="field"><label>Modal per unit</label><input name="unit_cost" type="number" min="0" step="1000" value="${Number(products[0]?.cost_price || 0)}" required /><small class="field-hint">Isi 0 jika nilai modal lama tidak diketahui.</small></div><div class="field full opening-serial-field"><label>Nomor seri laptop (opsional, satu per baris)</label><textarea name="serial_numbers" rows="4" placeholder="SN pertama&#10;SN kedua&#10;SN ketiga"></textarea><small class="field-hint">Jika diisi, jumlah nomor seri harus sama dengan jumlah unit.</small></div><div class="field full"><label>Catatan pembukaan stok (opsional)</label><textarea name="notes" rows="2" maxlength="1000" placeholder="Contoh: stok display awal CABANG A"></textarea></div></div><div class="notice" style="margin-top:12px">Stok awal langsung berstatus siap dijual. Pakai fitur ini hanya untuk unit yang sudah lolos pemeriksaan. Laptop baru datang dan belum QC harus dicatat lewat Penerimaan & barcode.</div>`, async (form) => {
+  const host = openModal('Catat stok awal', 'Catat barang lama yang sudah siap jual. Jika produknya belum ada, buat dari form ini dan otomatis masuk ke katalog produk.', `<div class="form-grid">${branchField('branch_id', centralBranch()?.id, true)}<div class="field"><label>Produk</label><select name="product_id" required>${productOptions}<option value="__new__" ${products.length ? '' : 'selected'}>＋ Produk belum ada · buat produk baru</option></select></div><div class="opening-new-product-fields form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" placeholder="Dell, Lenovo, HP..." /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field"><label>Garansi produk (bulan)</label><input name="new_warranty" type="number" min="0" value="1" /></div><div class="field"><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field"><label>Harga reseller</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div>${productPromoField()}${productCopyFields()}</div><div class="opening-product-photo form-grid full" hidden>${productPhotoPicker('')}${galleryFields()}</div><div class="field"><label>Jumlah stok awal</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Laptop mendapat barcode unik per unit. Sparepart dicatat sebagai satu lot.</small></div><div class="field"><label>Modal per unit</label><input name="unit_cost" type="number" min="0" step="1000" value="${Number(products[0]?.cost_price || 0)}" required /><small class="field-hint">Isi 0 jika nilai modal lama tidak diketahui.</small></div><div class="field full opening-serial-field"><label>Nomor seri laptop (opsional, satu per baris)</label><textarea name="serial_numbers" rows="4" placeholder="SN pertama&#10;SN kedua&#10;SN ketiga"></textarea><small class="field-hint">Jika diisi, jumlah nomor seri harus sama dengan jumlah unit.</small></div><div class="field full"><label>Catatan pembukaan stok (opsional)</label><textarea name="notes" rows="2" maxlength="1000" placeholder="Contoh: stok display awal CABANG A"></textarea></div></div><div class="notice" style="margin-top:12px">Stok awal langsung berstatus siap dijual. Pakai fitur ini hanya untuk unit yang sudah lolos pemeriksaan. Laptop baru datang dan belum QC harus dicatat lewat Penerimaan & barcode.</div>`, async (form) => {
     const isNewProduct = form.get('product_id') === '__new__';
     let product = products.find((item) => item.id === String(form.get('product_id')));
     const category = String(isNewProduct ? form.get('new_category') : product?.category || '').toLowerCase();
@@ -1316,8 +1398,10 @@ function openingStockModal(products) {
       const { name, sku, brand, model } = productIdentity(form, null, 'new_');
       const photo = selectedProductPhoto(form);
       if (!photo) throw new Error('Foto wajib dipilih untuk produk baru.');
+      const retailPrice = Number(form.get('new_retail') || 0);
+      const promo = productPromoValues(form, null, retailPrice);
       const imagePath = await uploadProductPhoto(photo, crypto.randomUUID());
-      const values = { id: crypto.randomUUID(), organization_id: state.organization.id, name, sku, brand, model, category: String(form.get('new_category')), cost_price: Number(form.get('unit_cost') || 0), retail_price: Number(form.get('new_retail') || 0), reseller_price: Number(form.get('new_reseller') || 0), warranty_months: Number(form.get('new_warranty') || 0), image_path: imagePath, ...productCopyValues(form), gallery_paths: await readGallery(form) };
+      const values = { id: crypto.randomUUID(), organization_id: state.organization.id, name, sku, brand, model, category: String(form.get('new_category')), cost_price: Number(form.get('unit_cost') || 0), retail_price: retailPrice, ...promo, reseller_price: Number(form.get('new_reseller') || 0), warranty_months: Number(form.get('new_warranty') || 0), image_path: imagePath, ...productCopyValues(form), gallery_paths: await readGallery(form) };
       if ([values.cost_price, values.retail_price, values.reseller_price, values.warranty_months].some((value) => !Number.isFinite(value) || value < 0)) throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
       const { data, error } = await supabase.from('products').insert(values).select('*').single();
       if (error) throw error;
@@ -1456,12 +1540,13 @@ function productIdentity(form, product = null, prefix = '') {
 
 function productModal(product = null, available = 0) {
   const v=(key,fallback='')=>esc(product?.[key]??fallback);
-  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice product-form-stock"><strong>${readyStockLabel()} di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category" ${isCentralAdmin() && product ? 'disabled' : ''}>${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" ${isCentralAdmin() && product ? 'readonly' : ''} type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="product-public-toggle"><input type="checkbox" name="is_public" ${isCentralAdmin() ? 'disabled' : ''} ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</label>${productCopyFields(product)}</div><details class="product-form-photos" ${product ? '' : 'open'}><summary>Foto produk</summary><div class="form-grid">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div></details>`, async (form) => {
+  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice product-form-stock"><strong>${readyStockLabel()} di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category" ${isCentralAdmin() && product ? 'disabled' : ''}>${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" ${isCentralAdmin() && product ? 'readonly' : ''} type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="product-public-toggle"><input type="checkbox" name="is_public" ${isCentralAdmin() ? 'disabled' : ''} ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</label>${productPromoField(product)}${productCopyFields(product)}</div><details class="product-form-photos" ${product ? '' : 'open'}><summary>Foto produk</summary><div class="form-grid">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div></details>`, async (form) => {
     if (!canEditProducts()) throw new Error('Akses perubahan produk ditolak.');
     const { name, sku, brand, model } = productIdentity(form, product);
+    const promo = productPromoValues(form, product, Number(form.get('retail_price')));
     const file=selectedProductPhoto(form);if(!product&&!file)throw new Error('Foto produk wajib dipilih.');
     const imagePath=file?await uploadProductPhoto(file,crypto.randomUUID()):product?.image_path||'';
-    const values={name,sku,brand,model,category:form.get('category') || product?.category,cost_price:Number(form.get('cost_price')),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price')),warranty_months:Number(form.get('warranty_months')),image_path:imagePath,is_public:isCentralAdmin() ? Boolean(product?.is_public) : form.has('is_public'),...productCopyValues(form)};
+    const values={name,sku,brand,model,category:form.get('category') || product?.category,cost_price:Number(form.get('cost_price')),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price')),warranty_months:Number(form.get('warranty_months')),image_path:imagePath,is_public:isCentralAdmin() ? Boolean(product?.is_public) : form.has('is_public'),...productCopyValues(form), ...promo};
     if(Object.values(values).some(value=>typeof value==='number'&&(!Number.isFinite(value)||value<0)))throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
     if (product) {
       const changes = isCentralAdmin()
@@ -1596,7 +1681,7 @@ async function cashierPage(page) {
   if (atCentral()) throw new Error('Cabang Pusat tidak melayani penjualan.');
   const branchId = state.branchId;
   const cacheKey=`digi-offline-cashier:${state.organization.id}:${branchId}`;let products,customers,stock,sales=[];
-  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([fetchAllRows(supabase.from('products').select('id,name,sku,brand,model,retail_price,reseller_price,image_path').order('name')),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,sale_items(product_name,quantity,unit_price,line_total)').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
+  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,sale_items(product_name,quantity,unit_price,line_total)').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
   catch(error){if(navigator.onLine)throw error;const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(!cached)throw new Error('Data kasir belum tersimpan di perangkat ini. Buka halaman kasir saat online dahulu.');({products,customers,stock}=cached);sales=[];}
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
@@ -1606,7 +1691,7 @@ async function cashierPage(page) {
   page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Cetak</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
   const form = page.querySelector('#sale-form');
   const productSearch = page.querySelector('#sale-product-search');
-  const priceFor = product => Number(form.customer_type.value === 'reseller' ? product.reseller_price : product.retail_price);
+  const priceFor = product => form.customer_type.value === 'reseller' ? Number(product.reseller_price) : publicRetailPrice(product);
   let saving = false;
   const catalog = page.querySelector('#cashier-catalog-items');
   const catalogCount = page.querySelector('#cashier-catalog-count');
@@ -2008,18 +2093,46 @@ async function warrantyPage(page) {
   page.querySelectorAll('[data-claim-detail]').forEach(btn=>btn.addEventListener('click',()=>{const claim=claims.find(c=>c.id===btn.dataset.claimDetail);openModal(`Kelola klaim ${claim.claim_number}`,'Catatan dan status hanya terlihat oleh tim toko.',`<div class="notice">${esc(claim.customer_name)} · ${esc(claim.customer_phone)}<br/>${esc(claim.issue)}</div><div class="form-grid"><div class="field"><label>Status klaim</label><select name="status">${[['submitted','Diajukan'],['reviewing','Ditinjau'],['approved','Disetujui'],['rejected','Ditolak'],['resolved','Selesai']].map(([v,l])=>`<option value="${v}" ${claim.status===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="field full"><label>Catatan tim</label><textarea name="staff_note" rows="3">${esc(claim.staff_note||'')}</textarea></div></div>`,async form=>{checkError(await supabase.from('warranty_claims').update({status:form.get('status'),staff_note:String(form.get('staff_note')).trim(),updated_at:new Date().toISOString()}).eq('id',claim.id));await showPage('warranty')},'Simpan status')}));
 }
 
-async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a', 'upc_e', 'qr_code']) {
+async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a', 'upc_e', 'qr_code'], onDetected = () => input.form?.requestSubmit()) {
   if (!('BarcodeDetector' in window)) return toast('Browser ini belum mendukung scan barcode kamera. Masukkan kodenya manual.', true);
+  let stream;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const detector = new BarcodeDetector({ formats });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    if (!host.isConnected) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
     host.innerHTML = '<div class="camera-wrap"><video autoplay playsinline muted></video></div><button class="small-btn" id="stop-scan">Tutup kamera</button>';
     const video = host.querySelector('video'); video.srcObject = stream;
-    const detector = new BarcodeDetector({ formats });
     let active = true;
-    host.querySelector('#stop-scan').addEventListener('click', () => { active = false; stream.getTracks().forEach((track) => track.stop()); host.innerHTML = ''; });
-    const scan = async () => { if (!active) return; try { const values = await detector.detect(video); if (values.length) { input.value = values[0].rawValue; active = false; stream.getTracks().forEach((track) => track.stop()); host.innerHTML = ''; input.form.requestSubmit(); return; } } catch {} requestAnimationFrame(scan); };
+    const observer = new MutationObserver(() => { if (!video.isConnected) stop(); });
+    const stop = () => {
+      active = false;
+      observer.disconnect();
+      stream.getTracks().forEach(track => track.stop());
+      host.innerHTML = '';
+    };
+    observer.observe(document.body, { childList: true, subtree: true });
+    host.querySelector('#stop-scan').addEventListener('click', stop);
+    const scan = async () => {
+      if (!active) return;
+      let values;
+      try { values = await detector.detect(video); } catch {}
+      if (!active) return;
+      if (values?.length) {
+        input.value = values[0].rawValue;
+        stop();
+        onDetected();
+        return;
+      }
+      requestAnimationFrame(scan);
+    };
     video.addEventListener('playing', scan, { once: true });
-  } catch (error) { toast(error.message || 'Kamera tidak dapat dibuka.', true); }
+  } catch (error) {
+    stream?.getTracks().forEach(track => track.stop());
+    toast(error.message || 'Kamera tidak dapat dibuka.', true);
+  }
 }
 
 async function reportsPage(page) {
@@ -2526,6 +2639,8 @@ function customerPortal(tracking) {
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
   const loadCatalog = async () => {
+    const promotion = await supabase.rpc('customer_catalog_promotions');
+    if (promotion.error?.code !== 'PGRST202') return promotion;
     const gallery = await supabase.rpc('customer_catalog_gallery');
     if (gallery.error?.code !== 'PGRST202') return gallery;
     const result = await supabase.rpc('customer_catalog_details');
@@ -2559,14 +2674,21 @@ function customerPortal(tracking) {
       const query = search.value.trim().toLocaleLowerCase('id');
       const results = products.filter(product => (!brand.value || product.brand?.trim() === brand.value) &&
         [product.name, product.brand, product.model].join(' ').toLocaleLowerCase('id').includes(query));
-      if (sort.value) results.sort((a, b) => (Number(a.retail_price) - Number(b.retail_price)) * (sort.value === 'asc' ? 1 : -1));
+      if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
       count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
       grid.innerHTML = results.map(product => {
+        const specs = pamphletSpecs.flatMap(([key, label]) => {
+          const value = product.specifications?.[key]?.trim();
+          return value && ['processor', 'ram', 'storage', 'display'].includes(key) ? [[label, value]] : [];
+        });
         return `<button type="button" class="storefront-card" data-public-product>
           <span class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : '<span>Foto belum tersedia</span>'}</span>
           <span class="storefront-card-body">
             <span class="storefront-product-name">${esc(product.name)}</span>
-            <strong>${money(product.retail_price)}</strong>
+            ${publicPriceMarkup(product)}
+            ${specs.length ? `<span class="storefront-specs">
+              ${specs.map(([label, value]) => `<span><b>${label}</b> ${esc(value)}</span>`).join('')}
+            </span>` : ''}
           </span>
         </button>`;
       }).join('');
@@ -2607,7 +2729,7 @@ function showPublicProduct(product) {
           `<button type="button" aria-label="Foto ${index + 1}" aria-pressed="${index === 0}"><img src="${esc(productImageUrl(path))}" alt="" /></button>`).join('')}</div>` : ''}
       </div>
       <div>
-        <strong class="public-product-price">${money(product.retail_price)}</strong>
+        <div class="public-product-price">${publicPriceMarkup(product)}</div>
         <div class="public-product-tabs" aria-label="Informasi produk">
           <button type="button" data-product-info="specs" aria-pressed="true">Spesifikasi</button>
           <button type="button" data-product-info="description" aria-pressed="false">Deskripsi</button>
