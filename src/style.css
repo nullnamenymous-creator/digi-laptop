@@ -1629,3 +1629,32 @@ button.storefront-card:hover { border-color: #659477; }
   .storefront-filter-panel .storefront-quick-row { grid-template-columns: minmax(0, 1fr); padding: 6px 8px; }
   .storefront-filter-panel .storefront-quick-buttons { flex-wrap: wrap; overflow: visible; padding: 0; }
 }
+
+.warranty-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, .85fr);
+  align-items: start;
+  gap: 13px;
+  margin-bottom: 13px;
+}
+.warranty-claim-action { padding: 14px; }
+.warranty-claim-action .panel-sub { margin: 5px 0 12px; }
+.warranty-history-table {
+  table-layout: fixed;
+  min-width: 0;
+  white-space: normal;
+}
+.warranty-history-table td,
+.warranty-history-table th { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .warranty-overview { grid-template-columns: minmax(0, 1fr); }
+  .warranty-history-table,
+  .warranty-history-table tbody { display: block; }
+  .warranty-history-table thead { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+  .warranty-history-table tbody tr { display: grid; border-bottom: 1px solid var(--line); padding: 6px 12px; }
+  .warranty-history-table td { display: block; border: 0; padding: 5px 0; }
+  .warranty-history-table td[data-label]::before {
+    display: block; content: attr(data-label); font-size: 10px; color: #51695c; font-weight: 700;
+  }
+  .warranty-history-table td[data-label="Aksi"]::before { content: none; }
+}
