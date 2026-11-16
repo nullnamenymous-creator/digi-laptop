@@ -59,9 +59,13 @@ let installPrompt;
 let installDismissed = false;
 const installStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
-function showMobileInstall() {
-  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+function isAppleMobile() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function showMobileInstall() {
+  const apple = isAppleMobile();
   const androidChrome = /Android.*Chrome\//.test(navigator.userAgent);
   if ((!apple && !androidChrome) || installStandalone() || installDismissed || document.querySelector('#mobile-install')) return;
   const banner = document.createElement('aside');
@@ -968,9 +972,9 @@ async function printBarcodeLabels(items, printable = null) {
   }).join('');
   const prefs = JSON.parse(localStorage.getItem('digi-label-settings') || '{}');
   const isLaptopBatch=items.every((item)=>item.products?.category==='Laptop');
-  printable.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pratinjau barcode Digi-Laptop</title><style>
-    *{box-sizing:border-box}body{font:14px Arial;color:#17201b;margin:0;background:#eef2ee}.toolbar{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid #ccd5cd;padding:14px 20px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}.toolbar label{display:grid;gap:5px;font-size:12px}.toolbar input,.toolbar select,.toolbar button{height:36px;border:1px solid #aebcaf;border-radius:0;padding:0 9px;background:white}.toolbar button{background:#075c37;color:white;font-weight:bold;padding:0 16px;cursor:pointer}.toolbar .count{margin-right:auto;font-weight:bold}.sheets{padding:18px;display:grid;justify-items:center;gap:18px}.sheet{background:white;box-shadow:0 3px 16px #0002;padding:8mm;display:grid;grid-template-columns:repeat(var(--cols),var(--lw));grid-auto-rows:var(--lh);gap:3mm;align-content:start;justify-content:start;overflow:hidden}.label{border:1px solid #59655d;padding:1mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;text-align:center;break-inside:avoid;overflow:hidden}.label strong{font-size:8px;line-height:1;letter-spacing:.04em}.label span{font-size:8px;margin-top:2px}.label svg{width:100%;height:var(--barcode-h);max-height:75%;margin:0}.label small{font-size:7px}.label .barcode-value{font-size:8px;line-height:1.1;font-weight:700;letter-spacing:.03em;white-space:nowrap}.status{font-size:12px;color:#66756a}@media print{body{background:#fff}.toolbar,.status{display:none!important}.sheets{padding:0;gap:0}.sheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}}
-  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><button id="print">Cetak barcode</button></div><div class="status" style="padding:0 20px 8px">Atur dimensi label dan kertas. Printer dipilih melalui dialog cetak Windows/browser.</div><main class="sheets" id="sheets">${labels}</main><script>
+  printable.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Pratinjau barcode Digi-Laptop</title><style>
+    *{box-sizing:border-box}body{font:14px Arial;color:#17201b;margin:0;background:#eef2ee}.toolbar{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid #ccd5cd;padding:14px 20px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}.toolbar label{display:grid;gap:5px;font-size:12px}.toolbar input,.toolbar select,.toolbar button{height:36px;border:1px solid #aebcaf;border-radius:0;padding:0 9px;background:white}.toolbar button{background:#075c37;color:white;font-weight:bold;padding:0 16px;cursor:pointer}.toolbar .count{margin-right:auto;font-weight:bold}.sheets{padding:18px;overflow-x:auto;display:grid;justify-items:center;gap:18px}.sheet{background:white;box-shadow:0 3px 16px #0002;padding:8mm;display:grid;grid-template-columns:repeat(var(--cols),var(--lw));grid-auto-rows:var(--lh);gap:3mm;align-content:start;justify-content:start;overflow:hidden}.label{border:1px solid #59655d;padding:1mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;text-align:center;break-inside:avoid;overflow:hidden}.label strong{font-size:8px;line-height:1;letter-spacing:.04em}.label span{font-size:8px;margin-top:2px}.label svg{width:100%;height:var(--barcode-h);max-height:75%;margin:0}.label small{font-size:7px}.label .barcode-value{font-size:8px;line-height:1.1;font-weight:700;letter-spacing:.03em;white-space:nowrap}.status{font-size:12px;color:#66756a}@media screen and (max-width:760px){.sheets{justify-items:start}}@media print{body{background:#fff}.toolbar,.status{display:none!important}.sheets{padding:0;gap:0;overflow:visible}.sheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}}
+  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><button id="print">Cetak barcode</button></div><div class="status" style="padding:0 20px 8px">Atur dimensi label dan kertas. Printer dipilih melalui dialog cetak perangkat. ${mobilePrintHint()}</div><main class="sheets" id="sheets">${labels}</main><script>
   const $=id=>document.getElementById(id),presets={A4:[210,297],A5:[148,210],Letter:[216,279]},saved=${JSON.stringify(prefs)};if(saved.paper)$('paper').value=saved.paper;if(saved.width)$('lw').value=saved.width;if(saved.height)$('lh').value=saved.height;if(saved.cols)$('cols').value=saved.cols;
   function layout(){const paper=$('paper').value,[presetW,ph]=presets[paper]||[210,297],w=+$('lw').value,h=+$('lh').value,c=+$('cols').value,pw=paper==='custom'?w*c+16:presetW,per=Math.max(1,Math.floor((ph-16+3)/(h+3))),all=[...document.querySelectorAll('.label')],wrap=$('sheets');wrap.innerHTML='';for(let i=0;i<all.length;i+=per*c){const sheet=document.createElement('section');sheet.className='sheet';sheet.style.setProperty('--cols',c);sheet.style.setProperty('--lw',w+'mm');sheet.style.setProperty('--lh',h+'mm');sheet.style.setProperty('--barcode-h',Math.max(9,h*.70)+'mm');sheet.style.width=pw+'mm';sheet.style.minHeight=ph+'mm';all.slice(i,i+per*c).forEach(x=>sheet.append(x));wrap.append(sheet)}const st=document.getElementById('dynamic')||document.head.appendChild(Object.assign(document.createElement('style'),{id:'dynamic'}));st.textContent='@page{size:'+(paper==='custom'?(w*c+16)+'mm '+ph+'mm':paper)+';margin:0}';localStorage.setItem('digi-label-settings',JSON.stringify({paper,width:w,height:h,cols:c}))}
   ['paper','lw','lh','cols'].forEach(id=>$(id).addEventListener('input',layout));$('paper').addEventListener('change',layout);$('print').onclick=()=>window.print();layout();</script></body></html>`);
@@ -1609,21 +1613,51 @@ function printPreferences() {
   };
 }
 
-function printDocument(title, body, kind, documentStyles = '') {
-  const size = printPreferences()[kind];
+function printerPlatform() {
+  if (isAppleMobile()) return 'ios';
+  if (/Android/i.test(navigator.userAgent)) return 'android';
+  return 'desktop';
+}
+
+const printerSetup = {
+  android: '<strong>Wi-Fi.</strong> Sambungkan HP dan printer ke Wi-Fi yang sama. Di Pengaturan HP, cari “Pencetakan”, lalu aktifkan Layanan cetak default atau pasang layanan cetak merek printer. <strong>Bluetooth.</strong> Pasangkan printer di Pengaturan Bluetooth. Jika printer thermal tetap tidak muncul saat uji cetak, periksa apakah produsennya menyediakan aplikasi atau layanan cetak untuk model itu.',
+  ios: '<strong>Wi-Fi.</strong> Sambungkan iPhone dan printer yang mendukung AirPrint ke Wi-Fi yang sama. Pilih printer saat uji cetak. <strong>Bluetooth.</strong> Untuk printer thermal Bluetooth, periksa dukungan aplikasi resmi untuk model printer tersebut.',
+  desktop: 'Tambahkan printer melalui pengaturan sistem komputer. Di Windows, buka Pengaturan, lalu Bluetooth & perangkat, Printer & pemindai, dan Tambahkan perangkat.',
+};
+
+function mobilePrintHint(platform = printerPlatform()) {
+  if (platform === 'android') return 'Jika dialog cetak belum terbuka, di pratinjau Chrome pilih menu ⋮, Bagikan, lalu Cetak.';
+  if (platform === 'ios') return 'Jika dialog cetak belum terbuka, di pratinjau pilih Bagikan, lalu Cetak.';
+  return '';
+}
+
+const printViewport = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+const printControlsStyle = `.print-controls{margin:12px 0;padding:10px;background:#edf4ee;color:#173b2c}
+  .print-controls button{min-height:44px;padding:0 10px;border:1px solid #52705f;background:white;color:inherit;font:inherit;font-weight:bold}
+  .print-controls small{display:block;margin-top:6px}
+  @media print{.print-controls{display:none}}`;
+
+function printControls() {
+  const hint = mobilePrintHint();
+  return `<div class="print-controls"><button type="button" onclick="window.print()">Pilih printer / Cetak</button>
+    ${hint ? `<small>${hint}</small>` : ''}</div>`;
+}
+
+function printDocument(title, body, kind, documentStyles = '', size = printPreferences()[kind]) {
   const thermal = size === '58' || size === '80';
   const paper = thermal ? 'auto' : kind === 'report' ? `${size} landscape` : size;
   const width = thermal ? `${Number(size) - 8}mm` : '100%';
   const win = window.open('', '_blank', 'width=760,height=650');
   if (!win) return toast('Izinkan pop-up untuk membuka pratinjau cetak.', true);
-  win.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+  win.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8">${printViewport}<title>${esc(title)}</title><style>
     @page{size:${paper};margin:${thermal ? 4 : 10}mm}
     *{box-sizing:border-box}body{max-width:${width};margin:12px auto;padding:0 6px;color:#111;font:12px/1.4 Arial,sans-serif}
     table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:4px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}
     thead{display:table-header-group}tr{break-inside:avoid}
     ${documentStyles}
+    ${printControlsStyle}
     @media print{button{display:none}body{margin:0 auto;padding:0}}
-  </style></head><body><button type="button" onclick="window.print()">Pilih printer / Cetak</button>${body}</body></html>`);
+  </style></head><body>${printControls()}${body}</body></html>`);
   win.document.close();
 }
 
@@ -1636,18 +1670,23 @@ function printerSettings() {
       <div class="field"><label for="report-paper">Kertas laporan</label><select id="report-paper" name="report">${options('report')}</select></div>
       <div class="field"><label for="receipt-paper">Kertas struk / nota</label><select id="receipt-paper" name="receipt">${options('receipt')}</select></div>
     </div>
-    <p class="field-hint">Tambah atau cari printer di Windows melalui Pengaturan → Bluetooth & perangkat → Printer & pemindai → Tambahkan perangkat. Setelah terpasang, pilih printer dan ukuran kertas di dialog cetak. Untuk struk thermal, pilih rol 58 atau 80 mm sesuai pengaturan.</p>
-    <button type="button" class="btn" id="add-printer-help">Tambah printer</button>
-    <button type="button" class="btn" id="choose-printer">Pilih printer / Uji cetak</button>
-    <p class="notice" id="printer-help" hidden>Buka menu Start, cari “Printer & pemindai”, lalu pilih “Tambahkan perangkat”.</p>`, (form) => {
+    <p class="field-hint">Printer yang tersedia muncul di dialog cetak perangkat. Untuk struk thermal, sesuaikan ukuran kertas dengan rol printer.</p>
+    <button type="button" class="btn" id="add-printer-help" aria-controls="printer-help" aria-expanded="false">Cara hubungkan printer</button>
+    <button type="button" class="btn" id="choose-printer">Uji cetak struk</button>
+    <p class="notice" id="printer-help" hidden>${printerSetup[printerPlatform()]}</p>`, (form) => {
     localStorage.setItem(prefs.key, JSON.stringify({ report: form.get('report'), receipt: form.get('receipt') }));
     toast('Ukuran kertas tersimpan untuk cabang ini.');
   }, 'Simpan ukuran kertas');
-  host.querySelector('#add-printer-help').addEventListener('click', () => {
-    host.querySelector('#printer-help').hidden = false;
+  host.querySelector('#add-printer-help').addEventListener('click', (event) => {
+    const help = host.querySelector('#printer-help');
+    help.hidden = !help.hidden;
+    event.currentTarget.setAttribute('aria-expanded', String(!help.hidden));
   });
-  host.querySelector('#choose-printer').addEventListener('click', () =>
-    printDocument('Uji cetak', `<h1>${esc(state.organization.name)}</h1><p>Uji cetak · ${esc(branchName(state.branchId))}</p>`, 'receipt'));
+  host.querySelector('#choose-printer').addEventListener('click', () => {
+    const size = host.querySelector('#receipt-paper').value;
+    printDocument('Uji cetak', `<h1>${esc(state.organization.name)}</h1><p>Uji cetak • ${esc(branchName(state.branchId))}</p>
+      <p>Ukuran struk ${esc(printFormats.receipt[size])}</p>`, 'receipt', '', size);
+  });
 }
 
 function printSaleReceipt(sale) {
@@ -1657,17 +1696,19 @@ function printSaleReceipt(sale) {
   const width = thermal ? (Number(format) - 8) + 'mm' : '100%';
   const win = window.open('', '_blank', 'width=420,height=700');
   if (!win) return toast('Izinkan pop-up untuk mencetak struk.', true);
+  const mobile = printerPlatform() !== 'desktop';
   const lines = (sale.sale_items || []).map((line) => `<tr><td>${esc(line.product_name)} × ${Number(line.quantity)}</td><td>${money(line.line_total ?? Number(line.unit_price) * Number(line.quantity))}</td></tr>`).join('');
   const paid = Number(sale.paid_amount || 0), total = Number(sale.total || 0);
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Struk ${esc(sale.receipt_number || '')}</title><style>
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Struk ${esc(sale.receipt_number || '')}</title><style>
     @page{size:${paper};margin:${thermal ? 4 : 10}mm}*{box-sizing:border-box}body{max-width:${width};margin:0 auto;color:#111;font:12px/1.45 Arial,sans-serif}
     h1{margin:0 0 3px;text-align:center;font-size:15px}p{margin:2px 0;text-align:center}.meta{margin:10px 0;border-top:1px dashed #555;border-bottom:1px dashed #555;padding:6px 0}
     table{width:100%;border-collapse:collapse}td{padding:3px 0;vertical-align:top}td:last-child{text-align:right;white-space:nowrap}.totals{margin-top:7px;border-top:1px dashed #555;padding-top:6px}
     .thanks{text-align:center;margin-top:12px}@media print{body{width:auto}}
-  </style></head><body><h1>${esc(state.organization.name || 'DIGITAL LAPTOP JOMBANG')}</h1><p>${esc(state.organization.phone || '')}</p><p>${esc(state.organization.address || '')}</p>
+    ${printControlsStyle}
+  </style></head><body>${mobile ? printControls() : ''}<h1>${esc(state.organization.name || 'DIGITAL LAPTOP JOMBANG')}</h1><p>${esc(state.organization.phone || '')}</p><p>${esc(state.organization.address || '')}</p>
     <div class="meta">No: ${esc(sale.receipt_number || 'Transaksi')}<br>Waktu: ${new Date(sale.created_at || Date.now()).toLocaleString('id-ID')}<br>Pembeli: ${esc(sale.customer_name || 'Pembeli umum')}</div>
     <table>${lines || '<tr><td>Detail produk tidak tersedia</td></tr>'}</table><div class="totals">Total: <b>${money(total)}</b><br>Dibayar: ${money(paid)}${paid < total ? `<br>Sisa piutang: ${money(total - paid)}` : ''}<br>Metode: ${esc(sale.payment_method || '—')}</div><p class="thanks">Terima kasih telah berbelanja.</p>
-    <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150))<\/script></body></html>`);
+    ${mobile ? '' : `<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150))<\/script>`}</body></html>`);
   win.document.close();
 }
 
