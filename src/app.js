@@ -2852,7 +2852,10 @@ function customerPortal(tracking) {
   startStorefrontSlides(root.querySelector('.storefront-hero'));
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
+  const sharedProductId = new URLSearchParams(location.search).get('produk');
   const loadCatalog = async () => {
+    const shareable = await supabase.rpc('customer_catalog_share');
+    if (shareable.error?.code !== 'PGRST202') return shareable;
     const promotion = await supabase.rpc('customer_catalog_promotions');
     if (promotion.error?.code !== 'PGRST202') return promotion;
     const gallery = await supabase.rpc('customer_catalog_gallery');
@@ -2868,12 +2871,17 @@ function customerPortal(tracking) {
       return;
     }
     const products = data || [];
+    const sharedProduct = sharedProductId && products.find((product) => product.product_id === sharedProductId);
+    const unavailableNotice = sharedProductId && !sharedProduct
+      ? '<p class="notice" role="status">Produk dari link ini sudah tidak tersedia di katalog.</p>' : '';
     if (!products.length) {
-      panel.innerHTML = '<h2>Katalog produk</h2><p>Belum ada produk siap jual di katalog publik. Silakan cek kembali nanti.</p>';
+      panel.innerHTML = `<h2>Katalog produk</h2>${unavailableNotice}<p>Belum ada produk siap jual di katalog publik. Silakan cek kembali nanti.</p>`;
+      if (unavailableNotice) panel.scrollIntoView();
       return;
     }
     const brands = [...new Set(products.map(product => product.brand?.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
     panel.innerHTML = `<h2>Katalog produk</h2>
+      ${unavailableNotice}
       <div class="storefront-filters">
         <input type="search" aria-label="Cari laptop" placeholder="Cari nama, merek, atau model laptop" />
         <select aria-label="Filter merek"><option value="">Semua merek</option>${brands.map(brand => `<option>${esc(brand)}</option>`).join('')}</select>
@@ -2914,8 +2922,18 @@ function customerPortal(tracking) {
     brand.addEventListener('change', render);
     sort.addEventListener('change', render);
     render();
+    if (sharedProductId) panel.scrollIntoView();
+    if (sharedProduct) showPublicProduct(sharedProduct);
   });
 
+}
+
+function productWhatsAppShareUrl(product) {
+  if (!product.product_id) return '';
+  const url = new URL('/catalog', location.origin);
+  url.searchParams.set('produk', product.product_id);
+  const message = `Lihat ${product.name} di katalog Digital Laptop Jombang: ${url.href}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
 
 function showPublicProduct(product) {
@@ -2929,6 +2947,7 @@ function showPublicProduct(product) {
   if (Number(product.warranty_months) > 0) specs.push(['Garansi', `${Number(product.warranty_months)} bulan`]);
   const phone = String(product.phone || '').replace(/\D/g, '').replace(/^0/, '62');
   const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
+  const shareUrl = productWhatsAppShareUrl(product);
   const dialog = document.createElement('dialog');
   dialog.className = 'public-product-dialog';
   dialog.setAttribute('aria-labelledby', 'public-product-title');
@@ -2954,7 +2973,10 @@ function showPublicProduct(product) {
         <section class="public-product-info" data-product-panel="description" aria-label="Deskripsi" hidden tabindex="0"><p>${esc(product.description?.trim() || 'Deskripsi belum tersedia.')}</p></section>
       </div>
     </div>
-    ${phone ? `<footer><a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a></footer>` : ''}`;
+    ${phone || shareUrl ? `<footer>
+      ${phone ? `<a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a>` : ''}
+      ${shareUrl ? `<a class="btn" href="${esc(shareUrl)}" target="_blank" rel="noopener noreferrer">Bagikan link ke WhatsApp</a>` : ''}
+    </footer>` : ''}`;
   dialog.querySelector('header button').addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
   const gallery = dialog.querySelector('.public-product-photos');
