@@ -1355,3 +1355,49 @@ button.storefront-card:hover { border-color: #659477; }
 .public-price-savings span { padding: 2px 6px; border-radius: 5px; background: #fff0dc; color: #824009; font-weight: 700; }
 .storefront-specs { display: grid; gap: 4px; padding-top: 7px; border-top: 1px solid #dce7df; color: #334b40; font-size: 11px; line-height: 1.35; }
 .storefront-specs b { font-weight: 650; color: #1c3e31; }
+
+.central-support {
+  position: sticky;
+  top: 52px;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px clamp(12px, 3vw, 35px) 0;
+  pointer-events: none;
+}
+.central-support a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px 0 8px;
+  border: 1px solid #22844f;
+  border-radius: 999px;
+  background: #0b5e36;
+  box-shadow: 0 4px 12px #163d3033;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  pointer-events: auto;
+  animation: central-support-float 2.2s ease-in-out 3;
+}
+.central-support a:hover,
+.central-support a:focus-visible { background: #08482a; }
+.central-support a:focus-visible { outline: 2px solid #176440; outline-offset: 2px; }
+.central-support-icon {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #fff;
+  color: #0b5e36;
+}
+@keyframes central-support-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .central-support a { animation: none; }
+}
