@@ -2862,6 +2862,15 @@ function customerPortal(tracking) {
       </div>
     </section>`}
     <section class="storefront-content" id="customer-content"></section>
+    <footer class="storefront-footer">
+      <div class="storefront-footer-main">
+        <div class="storefront-footer-brand"><img src="/store-logo-transparent.png" alt="" width="40" height="40" />
+          <div><strong>Digital Laptop Jombang</strong><span>${tracking ? 'Lacak status servis laptop' : 'Katalog laptop dan layanan servis'}</span></div>
+        </div>
+        <nav aria-label="Tautan di bagian bawah"><a href="/catalog">Katalog laptop</a><a href="/lacak-servis">Lacak servis</a><a data-storefront-contact hidden target="_blank" rel="noopener noreferrer">WhatsApp toko</a></nav>
+      </div>
+      <div class="storefront-footer-bottom"><small>&copy; ${new Date().getFullYear()} Digital Laptop Jombang</small><a href="#storefront-top">Kembali ke atas &uarr;</a></div>
+    </footer>
   </main>`;
   const panel = root.querySelector('#customer-content');
   if (tracking) {
@@ -2916,6 +2925,12 @@ function customerPortal(tracking) {
       return;
     }
     const products = data || [];
+    const storePhone = products.map((product) => String(product.phone || '').replace(/\D/g, '').replace(/^0/, '62')).find(Boolean);
+    if (storePhone) {
+      const contact = root.querySelector('[data-storefront-contact]');
+      contact.href = `https://wa.me/${storePhone}`;
+      contact.hidden = false;
+    }
     const sharedProduct = sharedProductId && products.find((product) => product.product_id === sharedProductId);
     const unavailableNotice = sharedProductId && !sharedProduct
       ? '<p class="notice" role="status">Produk dari link ini sudah tidak tersedia di katalog.</p>' : '';
@@ -2936,25 +2951,33 @@ function customerPortal(tracking) {
     const hasPromo = (product) => publicRetailPrice(product) < Number(product.retail_price);
     panel.innerHTML = `<h2>Katalog produk</h2>
       ${unavailableNotice}
+      <div class="storefront-filter-panel">
       <div class="storefront-filters">
-        <input type="search" aria-label="Cari laptop" placeholder="Cari laptop berdasarkan nama atau spek" />
-        <select aria-label="Filter merek"><option value="">Semua merek</option>${brands.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select>
+        <input type="search" aria-label="Cari laptop" placeholder="Cari nama laptop atau spesifikasi" />
         <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
       </div>
       <div class="storefront-quick">
-        ${quickFilterRow('Kebutuhan', 'need', catalogNeeds)}
-        ${quickFilterRow('Anggaran', 'budget', catalogBudgets)}
         ${quickFilterRow('Merek', 'brand', brands)}
         ${quickFilterRow('Prosesor', 'processor', processors)}
+      </div>
+      <div class="storefront-quick storefront-quick-secondary">
+        ${quickFilterRow('Kebutuhan', 'need', catalogNeeds)}
+        ${quickFilterRow('Anggaran', 'budget', catalogBudgets)}
+      </div>
       </div>
       <div class="storefront-results-toolbar">
         <p class="storefront-count" role="status"></p>
         ${products.some(hasPromo) ? '<button type="button" data-quick-promo aria-pressed="false">Sedang promo</button>' : ''}
         <button type="button" data-reset-catalog hidden>Reset filter</button>
       </div>
-      <div class="storefront-grid"></div>`;
+      <div class="storefront-grid"></div>
+      <nav class="storefront-pagination" aria-label="Halaman katalog" hidden>
+        <button type="button" data-catalog-prev aria-label="Halaman produk sebelumnya">&larr; Sebelumnya</button>
+        <span data-catalog-page aria-live="polite"></span>
+        <button type="button" data-catalog-next aria-label="Halaman produk berikutnya">Berikutnya &rarr;</button>
+      </nav>`;
     const search = panel.querySelector('input');
-    const [brand, sort] = panel.querySelectorAll('select');
+    const sort = panel.querySelector('select');
     const grid = panel.querySelector('.storefront-grid');
     const count = panel.querySelector('.storefront-count');
     const brandButtons = [...panel.querySelectorAll('[data-quick-brand]')];
@@ -2963,6 +2986,12 @@ function customerPortal(tracking) {
     const reset = panel.querySelector('[data-reset-catalog]');
     const needButtons = [...panel.querySelectorAll('[data-quick-need]')];
     const budgetButtons = [...panel.querySelectorAll('[data-quick-budget]')];
+    const pagination = panel.querySelector('.storefront-pagination');
+    const previous = pagination.querySelector('[data-catalog-prev]');
+    const next = pagination.querySelector('[data-catalog-next]');
+    const productsPerPage = 12;
+    let currentPage = 1;
+    let brand = '';
     let processor = '';
     let need = '';
     let budget = '';
@@ -2976,24 +3005,32 @@ function customerPortal(tracking) {
       const query = search.value.trim().toLocaleLowerCase('id');
       const priceBand = catalogBudgets.find(([id]) => id === budget);
       const results = products.filter((product) =>
-        (!brand.value || product.brand?.trim().toLocaleLowerCase('id') === brand.value) &&
+        (!brand || product.brand?.trim().toLocaleLowerCase('id') === brand) &&
         (!processor || processorByProduct.get(product).toLocaleLowerCase('id') === processor) &&
         (!need || catalogNeedReason(product, need)) &&
         (!priceBand || (publicRetailPrice(product) >= priceBand[2] && publicRetailPrice(product) < priceBand[3])) &&
         (!promoOnly || hasPromo(product)) &&
         (!query || matchesSearch(product, query)));
-      brandButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBrand === brand.value)));
+      brandButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBrand === brand)));
       processorButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickProcessor === processor)));
       needButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickNeed === need)));
       budgetButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBudget === budget)));
       promoButton?.setAttribute('aria-pressed', String(promoOnly));
-      reset.hidden = !(query || brand.value || processor || need || budget || promoOnly || sort.value);
+      reset.hidden = !(query || brand || processor || need || budget || promoOnly || sort.value);
       if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
       else if (sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0) {
         results.sort((a, b) => Math.abs(publicRetailPrice(a) - sharedPrice) - Math.abs(publicRetailPrice(b) - sharedPrice));
       }
-      count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
-      grid.innerHTML = results.map(product => {
+      const totalPages = Math.max(1, Math.ceil(results.length / productsPerPage));
+      currentPage = Math.min(currentPage, totalPages);
+      const first = (currentPage - 1) * productsPerPage;
+      const shown = results.slice(first, first + productsPerPage);
+      count.textContent = results.length ? `${first + 1}–${first + shown.length} dari ${results.length} produk` : 'Produk yang cocok belum ditemukan.';
+      pagination.hidden = totalPages === 1;
+      previous.disabled = currentPage === 1;
+      next.disabled = currentPage === totalPages;
+      pagination.querySelector('[data-catalog-page]').textContent = `Halaman ${currentPage} dari ${totalPages}`;
+      grid.innerHTML = shown.map(product => {
         const specs = pamphletSpecs.flatMap(([key, label]) => {
           const value = product.specifications?.[key]?.trim();
           return value && ['processor', 'ram', 'storage', 'display'].includes(key) ? [[label, value]] : [];
@@ -3015,36 +3052,43 @@ function customerPortal(tracking) {
         </button>`;
       }).join('');
       grid.querySelectorAll('[data-public-product]').forEach((button, index) => {
-        button.addEventListener('click', () => showPublicProduct(results[index]));
+        button.addEventListener('click', () => showPublicProduct(shown[index]));
       });
     };
-    brandButtons.forEach((button) => button.addEventListener('click', () => {
-      brand.value = brand.value === button.dataset.quickBrand ? '' : button.dataset.quickBrand;
+    const renderFirstPage = () => { currentPage = 1; render(); };
+    const movePage = (offset) => {
+      currentPage += offset;
       render();
+      count.scrollIntoView({ block: 'start' });
+    };
+    previous.addEventListener('click', () => movePage(-1));
+    next.addEventListener('click', () => movePage(1));
+    brandButtons.forEach((button) => button.addEventListener('click', () => {
+      brand = brand === button.dataset.quickBrand ? '' : button.dataset.quickBrand;
+      renderFirstPage();
     }));
     processorButtons.forEach((button) => button.addEventListener('click', () => {
       processor = processor === button.dataset.quickProcessor ? '' : button.dataset.quickProcessor;
-      render();
+      renderFirstPage();
     }));
     needButtons.forEach((button) => button.addEventListener('click', () => {
       need = need === button.dataset.quickNeed ? '' : button.dataset.quickNeed;
-      render();
+      renderFirstPage();
     }));
     budgetButtons.forEach((button) => button.addEventListener('click', () => {
       budget = budget === button.dataset.quickBudget ? '' : button.dataset.quickBudget;
-      render();
+      renderFirstPage();
     }));
-    promoButton?.addEventListener('click', () => { promoOnly = !promoOnly; render(); });
+    promoButton?.addEventListener('click', () => { promoOnly = !promoOnly; renderFirstPage(); });
     reset.addEventListener('click', () => {
-      search.value = brand.value = sort.value = processor = need = budget = '';
+      search.value = brand = sort.value = processor = need = budget = '';
       promoOnly = false;
-      render();
+      renderFirstPage();
       search.focus();
     });
-    search.addEventListener('input', render);
-    brand.addEventListener('change', render);
-    sort.addEventListener('change', render);
-    render();
+    search.addEventListener('input', renderFirstPage);
+    sort.addEventListener('change', renderFirstPage);
+    renderFirstPage();
     if (sharedProductId) panel.scrollIntoView();
     if (sharedProduct) showPublicProduct(sharedProduct);
   });
