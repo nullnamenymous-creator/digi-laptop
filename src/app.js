@@ -10,22 +10,25 @@ const esc = (value = '') => String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&
 const dayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 const initials = (name = '') => name.split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || 'DL';
 const branchName = (id) => state.branches.find((branch) => branch.id === id)?.name || 'Cabang';
-const resolveOwnerBranch = (organizationId, branches, current = '') => {
+const resolveManagedBranch = (organizationId, branches, current = '') => {
   const valid = (id) => branches.some((branch) => branch.id === id);
-  const saved = localStorage.getItem(`digi-selected-branch:${organizationId}`) || '';
+  const saved = localStorage.getItem(managedBranchStorageKey(organizationId)) || '';
   return valid(current) ? current : valid(saved) ? saved : branches.find((branch) => branch.is_central)?.id || branches[0]?.id || '';
 };
 const canManage = () => state.profile?.role === 'owner';
 const centralBranch = () => state.branches.find((branch) => branch.is_central);
 const atCentral = () => centralBranch()?.id === state.branchId;
-const isCentralAdmin = () => atCentral() && state.profile?.role === 'central_admin';
+const isCentralAdmin = () => state.profile?.role === 'central_admin';
+const canSelectBranches = () => canManage() || isCentralAdmin();
+const managedBranchStorageKey = (orgId) => `digi-selected-branch:${orgId}${isCentralAdmin() ? `:${state.profile.id}` : ''}`;
+const canManageOpeningStock = () => canManage() || (isCentralAdmin() && atCentral());
 const canIntake = () => atCentral() && (canManage() || isCentralAdmin());
 const canStockQc = () => atCentral() && ['owner','technician','central_admin'].includes(state.profile?.role);
 const canEditProducts = () => canManage() || isCentralAdmin();
 const readyStockLabel = () => atCentral() ? 'Siap didistribusikan' : 'Siap jual';
 const rolePages = () => {
   const role = state.profile?.role;
-  if (role === 'central_admin') return ['dashboard','receiving','quality','inventory','transfers'];
+  if (role === 'central_admin') return ['dashboard', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality'] : [])];
   if (role === 'investor') return ['reports'];
   if (role === 'technician') return canStockQc() ? ['quality','service'] : ['service'];
   if (role === 'owner') return ['dashboard','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
@@ -173,20 +176,20 @@ async function afterAuth({ preferCentral = false } = {}) {
     supabase.from('branches').select('*').eq('is_active', true).order('name').abortSignal(deadline),
   ]);
   if(error){
-    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=state.profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
+    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=canSelectBranches()?resolveManagedBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(error.message);return;
   }
   if(!profile){ownerSetupScreen();return;}
   state.profile=profile;state.organization=profile.organizations;
   if(branchError){
-    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
+    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=canSelectBranches()?resolveManagedBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(branchError.message);return;
   }
   state.branches=branches||[];
 
   const initialBranch = preferCentral ? state.branches.find((branch) => branch.is_central)?.id : state.branchId;
-  state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,initialBranch):profile.branch_id;
-  if (preferCentral && profile.role === 'owner' && state.branchId) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, state.branchId);
+  state.branchId=canSelectBranches()?resolveManagedBranch(state.organization.id,state.branches,initialBranch):profile.branch_id;
+  if (preferCentral && canSelectBranches() && state.branchId) localStorage.setItem(managedBranchStorageKey(state.organization.id), state.branchId);
   if(!state.branchId){authScreen('Akun ini belum terhubung ke cabang. Minta pemilik toko mengatur cabangnya di Pengaturan Aplikasi.');return;}
   localStorage.setItem(sessionCacheKey,JSON.stringify({profile,branches:state.branches,cachedAt:new Date().toISOString()}));
   if (!rolePages().includes(state.page)) state.page = rolePages()[0];
@@ -215,7 +218,7 @@ function showShell() {
     ${mobilePages.filter(([key]) => rolePages().includes(key)).map(([key, label]) => `<button type="button" data-page="${key}" ${state.page === key ? 'aria-current="page"' : ''}><span aria-hidden="true">${pages[key][1]}</span>${label}</button>`).join('')}
     <button type="button" id="staff-more" aria-controls="sidebar"><span aria-hidden="true">☰</span>Menu</button>
   </nav>` : '';
-  const branchOptions = state.profile.role === 'owner' ? state.branches.map((branch) => `<option value="${branch.id}"${state.branchId === branch.id ? ' selected' : ''}>${esc(branch.name)}</option>`).join('') : `<option value="${state.profile.branch_id}">${esc(branchName(state.profile.branch_id))}</option>`;
+  const branchOptions = canSelectBranches() ? state.branches.map((branch) => `<option value="${branch.id}"${state.branchId === branch.id ? ' selected' : ''}>${esc(branch.name)}</option>`).join('') : `<option value="${state.profile.branch_id}">${esc(branchName(state.profile.branch_id))}</option>`;
   const roleLabel = canManage() ? 'Pemilik toko' : staffRoleLabel(state.profile.role);
   const supportMessage = encodeURIComponent('Halo, saya Admin Pusat Digi-Laptop. Saya ingin konsultasi penggunaan aplikasi atau melaporkan bug.\n\nHalaman: \nPertanyaan atau kendala: ');
   const supportLink = isCentralAdmin() ? `<div class="central-support">
@@ -260,7 +263,7 @@ function showShell() {
   document.querySelector('#mobile-menu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
   document.querySelector('#branch-select').addEventListener('change', async (event) => {
     const selected = event.target.value;
-    const allowed = canManage()
+    const allowed = canSelectBranches()
       ? state.branches.some((branch) => branch.id === selected)
       : selected === state.profile.branch_id;
     if (!allowed) {
@@ -278,7 +281,11 @@ async function openBranchPage(branchId, page, inventoryFilters = null) {
   state.inventoryFilters = inventoryFilters;
   state.inventoryUnitPage = inventoryFilters ? { filter: 'available' } : null;
   state.inventorySearchQuery = '';
-  if (canManage()) localStorage.setItem(`digi-selected-branch:${state.organization.id}`, branchId);
+  if (canSelectBranches()) localStorage.setItem(managedBranchStorageKey(state.organization.id), branchId);
+  if (isCentralAdmin()) {
+    state.reportBranch = branchId;
+    if (page === 'reports') history.replaceState(null, '', `#reports?range=${new URLSearchParams(location.hash.split('?')[1]).get('range') || 'daily'}&branch=${branchId}`);
+  }
   const allowedPages = rolePages();
   state.page = allowedPages.includes(page) ? page : allowedPages[0];
   showShell();
@@ -295,7 +302,7 @@ function selectedBranchTheme() {
 }
 function updateConnection() { const label=document.querySelector('#connect-label');if(label)label.textContent=navigator.onLine?'Online':'Offline · antrean kasir tersimpan di perangkat'; }
 function refreshOwnerOverview() {
-  if (state.profile?.role !== 'owner' || !['dashboard', 'service', 'reports', 'finance'].includes(state.page)) return;
+  if (!canSelectBranches() || !['dashboard', 'service', 'reports', 'finance'].includes(state.page)) return;
   if (!navigator.onLine || document.hidden || !document.querySelector('#page')) return;
   if (document.querySelector('.modal-backdrop, .report-detail-panel') ||
       document.activeElement?.closest('#page input, #page select, #page textarea')) return;
@@ -325,19 +332,19 @@ async function subscribeOperationalUpdates() {
     if (request !== operationalSubscriptionRequest || state.realtimeChannel !== channel) return;
     clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(() => {
-      if (canManage() && ['dashboard', 'service', 'reports', 'finance'].includes(state.page)) refreshOwnerOverview();
+      if (canSelectBranches() && ['dashboard', 'service', 'reports', 'finance'].includes(state.page)) refreshOwnerOverview();
       else if (state.page !== 'cashier' && document.querySelector('#page') && !document.querySelector('.modal-backdrop') && !document.activeElement?.closest('#page input, #page select, #page textarea')) showPage(state.page, { background: true });
     }, 350);
   };
   const channel = supabase.channel(`digi-branch-${state.branchId}-${request}`);
   for (const table of ['stock_items','stock_repairs','intake_batches','sales','service_tickets']) {
     const subscription = { event: '*', schema: 'public', table };
-    if (!canManage()) subscription.filter = `branch_id=eq.${state.branchId}`;
+    if (!canSelectBranches()) subscription.filter = `branch_id=eq.${state.branchId}`;
     channel.on('postgres_changes', subscription, refresh);
   }
   for (const table of ['stock_transfers','stock_transfer_items']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, refresh);
   for (const table of ['products','suppliers','customers']) channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `organization_id=eq.${state.organization.id}` }, refresh);
-  if (canManage()) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cash_transactions' }, refresh);
+  if (canSelectBranches()) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cash_transactions' }, refresh);
   else channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cash_transactions', filter: `branch_id=eq.${state.branchId}` }, refresh);
   state.realtimeChannel = channel.subscribe();
 }
@@ -544,7 +551,7 @@ async function showPage(name, { background = false } = {}) {
 const branchStockSection = '<section class="owner-branch-stock" data-owner-branch-stock><h2>Stok siap jual per cabang</h2><p role="status">Memuat stok cabang.</p></section>';
 
 async function showOwnerBranchStock(panel) {
-  if (!panel || !canManage()) return;
+  if (!panel || !canSelectBranches()) return;
   const branches = [...state.branches].sort((a, b) =>
     Number(Boolean(b.is_central)) - Number(Boolean(a.is_central)) || a.name.localeCompare(b.name, 'id'));
   if (!branches.length) {
@@ -555,7 +562,7 @@ async function showOwnerBranchStock(panel) {
     const stock = await fetchAllRows(supabase.from('stock_items').select('branch_id,quantity')
       .in('branch_id', branches.map(({ id }) => id)).eq('status', 'available').gt('quantity', 0)
       .abortSignal(AbortSignal.timeout(10000)));
-    if (!panel.isConnected || !canManage()) return;
+    if (!panel.isConnected || !canSelectBranches()) return;
     const totals = new Map();
     for (const {branch_id, quantity} of stock) {
       totals.set(branch_id, (totals.get(branch_id) || 0) + Number(quantity));
@@ -570,7 +577,7 @@ async function showOwnerBranchStock(panel) {
       </button>`).join('')}</div>`);
     panel.querySelectorAll('[data-stock-branch]').forEach((button) => button.addEventListener('click', () => {
       const branchId = button.dataset.stockBranch;
-      if (!canManage() || !state.branches.some((branch) => branch.id === branchId)) return;
+      if (!canSelectBranches() || !state.branches.some((branch) => branch.id === branchId)) return;
       window.scrollTo(0, 0);
       openBranchPage(branchId, 'inventory', { 'inventory-stock': 'available' });
     }));
@@ -605,7 +612,7 @@ async function centralDashboardPage(page) {
   const unitCount = row => (row.stock_transfer_items || []).reduce((total, item) => total + Number(item.quantity), 0);
   page.innerHTML = `${header('Operasional Cabang Pusat', 'Penerimaan, pemeriksaan, dan distribusi stok ke cabang penjualan.', '<button class="btn primary" data-open-transfer>Kirim ke cabang</button>')}
     <section class="cards laptop-unit-summary">${cards.map(([label, count, action]) => `<button type="button" class="card unit-summary-button" data-central-page="${action}"><span class="card-label">${label}</span><span class="card-value">${count} <small>unit</small></span></button>`).join('')}</section>
-    ${canManage() ? branchStockSection : ''}
+    ${canSelectBranches() ? branchStockSection : ''}
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Distribusi per cabang</div><div class="panel-sub">Jumlah pengiriman dari Cabang Pusat</div></div></div><div class="table-wrap"><table><thead><tr><th>Cabang tujuan</th><th>Menunggu diterima</th><th>Sudah diterima</th></tr></thead><tbody>${state.branches.filter(branch => !branch.is_central).map(branch => `<tr><td>${esc(branch.name)}</td><td>${pending.filter(row => row.destination_branch_id === branch.id).length}</td><td>${received.get(branch.id) || 0}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Mutasi menunggu diterima</div></div><div class="table-wrap"><table><thead><tr><th>Nomor mutasi</th><th>Tujuan</th><th>Jumlah unit</th><th>Tanggal kirim</th></tr></thead><tbody>${pending.map(row => `<tr><td>${esc(row.transfer_number)}</td><td>${esc(branchName(row.destination_branch_id))}</td><td>${unitCount(row)}</td><td>${new Date(row.created_at).toLocaleString('id-ID')}</td></tr>`).join('') || '<tr><td colspan="4">Tidak ada mutasi dalam perjalanan.</td></tr>'}</tbody></table></div></section>`;
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
@@ -663,7 +670,7 @@ async function dashboardPage(page) {
   page.innerHTML = `<div class="page-head dashboard-slogan"><div><h1>Laptop pilihan untuk <em>kerja, belajar,</em> dan berkarya setiap hari.</h1></div>${state.profile.role === 'operator' ? '<button class="btn primary" data-go="cashier">＋ Transaksi baru</button>' : ''}</div>
     <section class="panel dashboard-finder"><div class="finder-controls"><input id="finder-search" type="search" placeholder="Cari produk, merek, SKU, barcode, atau nomor seri…" aria-label="Cari produk, merek, SKU, barcode, atau nomor seri" /></div><div id="finder-results" aria-live="polite"></div></section>
         <div class="cards"><button type="button" class="card dashboard-summary-button" data-dashboard-card="sales"><span class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></span><span class="card-value">${money(salesTotal)}</span><span class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="stock"><span class="card-label">Total unit siap jual<span class="card-icon">▤</span></span><span class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></span><span class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="service"><span class="card-label">Servis berjalan<span class="card-icon">⌁</span></span><span class="card-value">${activeServices}</span><span class="card-sub">${readyCount} siap diserahkan</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="branches"><span class="card-label">Jumlah cabang<span class="card-icon">⌂</span></span><span class="card-value">${state.branches.length}</span><span class="card-sub">Terhubung ke database pusat</span></button></div>
-    ${ownerView ? branchStockSection : ''}
+    ${canSelectBranches() ? branchStockSection : ''}
     ${ownerBranchSales}
     <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).filter(([key]) => rolePages().includes(key)).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
@@ -1150,7 +1157,7 @@ async function inventoryPage(page) {
         </div>
         <button type="button" class="btn danger" id="cancel-opening-group" hidden>Batalkan semua batch tipe ini</button>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr data-opening-row="${batch.id}"><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button> ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('')}<tr data-opening-empty hidden><td colspan="6"><div class="empty">Tidak ada batch yang cocok.</div></td></tr></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr data-opening-row="${batch.id}"><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> ${canManageOpeningStock() ? `<button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button>` : ''} ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('')}<tr data-opening-empty hidden><td colspan="6"><div class="empty">Tidak ada batch yang cocok.</div></td></tr></tbody></table></div>
       <div class="panel-head"><span data-opening-count role="status"></span><button type="button" class="btn" data-opening-more hidden>Tampilkan lagi</button></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
   const unitSearch = page.querySelector('#unit-search');
@@ -1393,7 +1400,7 @@ function bindOpeningHistory(panel, batches, branchId) {
     panel.querySelector('[data-opening-empty]').hidden = matches.length > 0;
     panel.querySelector('[data-opening-count]').textContent = `${visible.size} dari ${matches.length} batch`;
     more.hidden = visible.size === matches.length;
-    bulk.hidden = !(brand.value && model.value && matches.length);
+    bulk.hidden = !(canManageOpeningStock() && brand.value && model.value && matches.length);
   };
   const updateModels = () => {
     options(model, brandMatches().map((batch) => batch.products.model), 'Semua tipe');
@@ -1404,7 +1411,7 @@ function bindOpeningHistory(panel, batches, branchId) {
   model.addEventListener('change', () => { limit = 20; render(); });
   more.addEventListener('click', () => { limit += 20; render(); });
   bulk.addEventListener('click', () => {
-    if (!canEditProducts() || state.branchId !== branchId || !brand.value || !model.value) return;
+    if (!canManageOpeningStock() || state.branchId !== branchId || !brand.value || !model.value) return;
     const matches = matching();
     const units = matches.reduce((sum, batch) => sum + Number(batch.unit_count), 0);
     const brandKey = brand.value;
@@ -1424,7 +1431,10 @@ function bindOpeningHistory(panel, batches, branchId) {
 }
 
 async function transfersPage(page) {
-  const { data: transfers, error } = await supabase.from('stock_transfers').select('*').order('created_at', { ascending: false }).limit(200);
+  const branchId = state.branchId;
+  let query = supabase.from('stock_transfers').select('*').order('created_at', { ascending: false }).limit(200);
+  if (isCentralAdmin() && !atCentral()) query = query.eq('destination_branch_id', branchId);
+  const { data: transfers, error } = await query;
   if (error) throw error;
   const rows = transfers || [];
   const items = rows.length
@@ -1433,11 +1443,12 @@ async function transfersPage(page) {
   const itemsByTransfer = new Map();
   items.forEach((item) => itemsByTransfer.set(item.transfer_id, [...(itemsByTransfer.get(item.transfer_id) || []), item]));
   const inTransit = rows.filter((row) => row.status === 'in_transit').length;
-  page.innerHTML = `${header('Mutasi stok antar cabang', 'Cabang tujuan mengonfirmasi barang yang dikirim dari Pusat.', canManage() || isCentralAdmin() ? '<button class="btn primary" id="new-stock-transfer">+ Kirim ke cabang</button>' : '')}
+  if (!page.isConnected || state.branchId !== branchId) return;
+  page.innerHTML = `${header('Mutasi stok antar cabang', 'Cabang tujuan mengonfirmasi barang yang dikirim dari Pusat.', canManage() || (isCentralAdmin() && atCentral()) ? '<button class="btn primary" id="new-stock-transfer">+ Kirim ke cabang</button>' : '')}
     <div class="cards"><article class="card"><div class="card-label">Menunggu diterima</div><div class="card-value">${inTransit}</div><div class="card-sub">Barang sedang dalam perjalanan</div></article><article class="card"><div class="card-label">Riwayat mutasi</div><div class="card-value">${rows.length}</div><div class="card-sub">Maksimal 200 catatan terbaru</div></article><article class="card"><div class="card-label">Aturan stok</div><div class="card-value" style="font-size:18px">Kirim → Terima</div><div class="card-sub">Stok tujuan bertambah setelah dikonfirmasi</div></article></div>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Riwayat mutasi barang</div><div class="panel-sub">Laptop mempertahankan barcode. Mutasi sebagian lot sparepart membuat barcode lot baru di cabang tujuan.</div></div></div><div class="table-wrap"><table><thead><tr><th>NO. / WAKTU</th><th>ASAL → TUJUAN</th><th>BARANG</th><th>STATUS</th><th>CATATAN</th><th>AKSI</th></tr></thead><tbody>${rows.map((transfer) => {
       const transferItems = itemsByTransfer.get(transfer.id) || [];
-      const canReceive = transfer.status === 'in_transit' && (canManage() || state.profile.branch_id === transfer.destination_branch_id);
+      const canReceive = transfer.status === 'in_transit' && (canManage() || (isCentralAdmin() ? branchId : state.profile.branch_id) === transfer.destination_branch_id);
       const status = transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
       return `<tr><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}</td><td>${canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Serah terima barang</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}</td></tr>`;
     }).join('') || '<tr><td colspan="6"><div class="empty"><b>Belum ada mutasi stok</b>Buat mutasi untuk memindahkan barang antar cabang.</div></td></tr>'}</tbody></table></div></section>`;
@@ -1451,7 +1462,7 @@ async function transfersPage(page) {
 async function transferModal() {
   const owner = canManage();
   const sourceId = centralBranch()?.id;
-  if ((!owner && !isCentralAdmin()) || !sourceId) return toast('Asal mutasi harus Cabang Pusat.', true);
+  if ((!owner && !(isCentralAdmin() && atCentral())) || !sourceId) return toast('Asal mutasi harus Cabang Pusat.', true);
   const sourceField = owner
     ? `<div class="field"><label>Cabang asal</label><select name="source_branch_id" id="transfer-source" required>${state.branches.filter((branch) => branch.is_central).map((branch) => `<option value="${branch.id}" ${branch.id === sourceId ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}</select></div>`
     : `<input type="hidden" name="source_branch_id" value="${sourceId}" /><div class="field"><label>Cabang asal</label><input value="${esc(branchName(sourceId))}" readonly /></div>`;
@@ -1574,7 +1585,7 @@ function receiveStockTransferModal(transfer, items) {
 }
 
 function openingStockModal(products, batch = null) {
-  if (!canEditProducts()) return toast('Akses pencatatan stok awal ditolak.', true);
+  if (!canManageOpeningStock()) return toast('Akses pencatatan stok awal ditolak.', true);
   const productOptions = products.map((product) => `<option value="${product.id}" data-category="${esc(product.category)}" data-cost="${Number(product.cost_price || 0)}">${esc(product.name)} · ${esc(product.sku)} · ${esc(product.category)}</option>`).join('');
   const host = openModal(batch ? 'Koreksi stok awal' : 'Catat stok awal', batch ? 'Barcode batch lama akan diganti. Cetak ulang label setelah menyimpan.' : 'Catat barang lama yang sudah siap jual. Jika produknya belum ada, buat dari form ini dan otomatis masuk ke katalog produk.', `<div class="form-grid">${batch ? `<div class="field"><label>Cabang</label><input value="${esc(branchName(batch.branch_id))}" readonly /></div>` : branchField('branch_id', centralBranch()?.id, true)}<div class="field"><label>Produk</label><select name="product_id" required>${productOptions}${batch ? '' : `<option value="__new__" ${products.length ? '' : 'selected'}>＋ Produk belum ada · buat produk baru</option>`}</select></div><div class="opening-new-product-fields form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" placeholder="Dell, Lenovo, HP..." /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field"><label>Garansi produk (bulan)</label><input name="new_warranty" type="number" min="0" value="1" /></div><div class="field"><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field"><label>Harga reseller</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div>${productPromoField()}${productCopyFields()}</div><div class="opening-product-photo form-grid full" hidden>${productPhotoPicker('')}${galleryFields()}</div><div class="field"><label>Jumlah stok awal</label><input name="quantity" type="number" min="1" max="500" value="${Number(batch?.unit_count ?? 1)}" required /><small class="field-hint">Laptop mendapat barcode unik per unit. Sparepart dicatat sebagai satu lot.</small></div><div class="field"><label>Modal per unit</label><input name="unit_cost" type="number" min="0" step="0.01" value="${Number(batch?.unit_cost ?? products[0]?.cost_price ?? 0)}" required /><small class="field-hint">Isi 0 jika nilai modal lama tidak diketahui.</small></div><div class="field full opening-serial-field"><label>Nomor seri laptop (opsional, satu per baris)</label><textarea name="serial_numbers" rows="4" placeholder="SN pertama&#10;SN kedua&#10;SN ketiga">${esc(batch?.items.map((item) => item.serial_number).filter(Boolean).join('\n') || '')}</textarea><small class="field-hint">Jika diisi, jumlah nomor seri harus sama dengan jumlah unit.</small></div><div class="field full"><label>Catatan pembukaan stok (opsional)</label><textarea name="notes" rows="2" maxlength="1000" placeholder="Contoh: stok display awal CABANG A">${esc(batch?.notes || '')}</textarea></div></div><div class="notice" style="margin-top:12px">Stok awal langsung berstatus siap dijual. Pakai fitur ini hanya untuk unit yang sudah lolos pemeriksaan. Laptop baru datang dan belum QC harus dicatat lewat Penerimaan & barcode.</div>`, async (form) => {
     const isNewProduct = form.get('product_id') === '__new__';
@@ -2419,8 +2430,9 @@ function financeSummaryCard(key, label, amount, detail) {
 async function reportsPage(page) {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const range = state.profile.role === 'operator' ? 'daily' : params.get('range') || 'daily';
-  const requestedBranch = params.get('branch') || state.reportBranch;
-  state.reportBranch = canManage() && state.branches.some((branch) => branch.id === requestedBranch) ? requestedBranch : 'all';
+  const requestedBranch = params.get('branch') || state.reportBranch || (isCentralAdmin() ? state.branchId : 'all');
+  state.reportBranch = canSelectBranches() && state.branches.some((branch) => branch.id === requestedBranch) ? requestedBranch : 'all';
+  const reportBranchId = state.reportBranch;
   const start = new Date();
   if (range === 'daily') { start.setDate(start.getDate() - 6); start.setHours(0,0,0,0); }
   else if (range === 'weekly') { start.setDate(start.getDate() - 55); start.setHours(0,0,0,0); }
@@ -2430,12 +2442,13 @@ async function reportsPage(page) {
   let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,branches(name),sale_items(quantity,unit_price,line_total,products(cost_price),stock_items(acquisition_cost,stock_repairs(status,labor_cost,stock_repair_parts(cost))))').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let cashQuery = supabase.from('cash_transactions').select('id,branch_id,direction,category,amount,description,source_type,created_at,branches(name)').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,ticket_number,customer_name,final_cost,handed_over_at,branches(name),service_parts(cost)').eq('status','handed_over').gte('handed_over_at', start.toISOString()).order('handed_over_at', { ascending: false });
-  if (canManage() && state.reportBranch && state.reportBranch !== 'all') {
+  if (canSelectBranches() && state.reportBranch && state.reportBranch !== 'all') {
     salesQuery = salesQuery.eq('branch_id', state.reportBranch); cashQuery = cashQuery.eq('branch_id', state.reportBranch); serviceQuery = serviceQuery.eq('branch_id', state.reportBranch);
-  } else if (!canManage()) {
+  } else if (!canSelectBranches()) {
     salesQuery = salesQuery.eq('branch_id', state.profile.branch_id); cashQuery = cashQuery.eq('branch_id', state.profile.branch_id); serviceQuery = serviceQuery.eq('branch_id', state.profile.branch_id);
   }
   const [sales, cash, services] = await Promise.all([fetchAllRows(salesQuery), fetchAllRows(cashQuery), fetchAllRows(serviceQuery)]);
+  if (!page.isConnected || state.reportBranch !== reportBranchId) return;
   let estimatedCostLines = 0, missingCostLines = 0;
   const saleRows = sales.map((sale) => {
     let cost = 0;
@@ -2487,7 +2500,7 @@ async function reportsPage(page) {
   const salesTotal=sum('sales'), serviceTotal=sum('services'), hppTotal=sum('hpp')+sum('serviceCost'), expenseTotal=sum('operatingExpense'), otherIncomeTotal=sum('otherIncome');
   const grossProfit=salesTotal+serviceTotal-hppTotal, netProfit=grossProfit+otherIncomeTotal-expenseTotal;
   const rangeLabel = range === 'daily' ? '7 hari terakhir' : range === 'weekly' ? '8 minggu terakhir' : range === 'monthly' ? '12 bulan terakhir' : '5 tahun terakhir';
-  const branchOptions = canManage() ? `<select id="report-branch" class="branch-select"><option value="all" ${state.reportBranch==='all'?'selected':''}>Semua cabang</option>${state.branches.map(branch=>`<option value="${branch.id}" ${state.reportBranch===branch.id?'selected':''}>${esc(branch.name)}</option>`).join('')}</select>` : '';
+  const branchOptions = canSelectBranches() ? `<select id="report-branch" class="branch-select"><option value="all" ${state.reportBranch==='all'?'selected':''}>Semua cabang</option>${state.branches.map(branch=>`<option value="${branch.id}" ${state.reportBranch===branch.id?'selected':''}>${esc(branch.name)}</option>`).join('')}</select>` : '';
   page.innerHTML = `${header('Laporan laba & arus kas',`Rekap ${rangeLabel}. Laba memakai modal barang tersimpan dan belum memasukkan pembayaran hutang sebagai biaya baru.`,`<select id="report-range" class="branch-select"><option value="daily" ${range==='daily'?'selected':''}>Harian</option><option value="weekly" ${range==='weekly'?'selected':''}>Mingguan</option><option value="monthly" ${range==='monthly'?'selected':''}>Bulanan</option><option value="yearly" ${range==='yearly'?'selected':''}>Tahunan</option></select>${branchOptions}`)}
     <div class="cards report-summary">
       ${financeSummaryCard('sales', 'Omzet produk', money(salesTotal), `${sales.length} transaksi penjualan`)}
@@ -2513,7 +2526,7 @@ async function reportsPage(page) {
   printReport.textContent = 'Cetak laporan';
   page.querySelector('.head-actions').append(printReport);
   printReport.addEventListener('click', () => {
-    const branch = canManage() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canManage() ? state.reportBranch : state.profile.branch_id);
+    const branch = canSelectBranches() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canSelectBranches() ? state.reportBranch : state.profile.branch_id);
     const amounts = [salesTotal, serviceTotal, hppTotal, expenseTotal, netProfit];
     const tables = [...page.querySelectorAll('.table-panel')].map((panel, index) => {
       const copy = panel.querySelector('table').cloneNode(true);
@@ -2586,7 +2599,7 @@ async function reportsPage(page) {
     balance: ['Saldo kas bersih', cashRows, 'cash', [['Kas masuk', sum('cashIn')], ['Kas keluar', sum('cashOut')], ['Saldo kas bersih', sum('cashIn') - sum('cashOut')]]],
     gross: ['Laba kotor', turnoverRows, 'detail', [['Omzet produk', salesTotal], ['Omzet servis', serviceTotal], ['HPP', hppTotal], ['Laba kotor', grossProfit]]],
   };
-  const reportBranch = canManage() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canManage() ? state.reportBranch : state.profile.branch_id);
+  const reportBranch = canSelectBranches() && state.reportBranch === 'all' ? 'Semua cabang' : branchName(canSelectBranches() ? state.reportBranch : state.profile.branch_id);
   page.querySelectorAll('[data-finance-metric]').forEach((button) => button.addEventListener('click', () => {
     const [title, rows, mode, totals] = metrics[button.dataset.financeMetric];
     openReportFinanceDetail(title, `${reportBranch} · ${rangeLabel}`, rows, mode, totals);
