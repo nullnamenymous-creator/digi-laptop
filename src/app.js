@@ -163,14 +163,14 @@ function ownerSetupScreen(message = '') {
 async function afterAuth({ preferCentral = false } = {}) {
   loading();
   const sessionCacheKey=`digi-offline-session:${state.user.id}`;
-  const {data:profile,error}=await supabase.from('profiles').select('*, organizations(*)').eq('id',state.user.id).maybeSingle();
+  const {data:profile,error}=await supabase.from('profiles').select('*, organizations(*)').eq('id',state.user.id).abortSignal(AbortSignal.timeout(10000)).maybeSingle();
   if(error){
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=state.profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(error.message);return;
   }
   if(!profile){ownerSetupScreen();return;}
   state.profile=profile;state.organization=profile.organizations;
-  const {data:branches,error:branchError}=await supabase.from('branches').select('*').eq('is_active',true).order('name');
+  const {data:branches,error:branchError}=await supabase.from('branches').select('*').eq('is_active',true).order('name').abortSignal(AbortSignal.timeout(10000));
   if(branchError){
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=profile.role==='owner'?resolveOwnerBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(branchError.message);return;
@@ -2778,7 +2778,14 @@ async function start() {
   }
   if (route === '/warranty') { location.replace('/'); return; }
   if (!hasBackendConfig) { configurationScreen(); return; }
-  const { data, error } = await supabase.auth.getSession();
+  loading('Memeriksa sesi petugas.');
+  let sessionTimeout;
+  const { data, error } = await Promise.race([
+    supabase.auth.getSession(),
+    new Promise((_, reject) => {
+      sessionTimeout = setTimeout(() => reject(new Error('Waktu pemeriksaan sesi habis.')), 10000);
+    }),
+  ]).finally(() => clearTimeout(sessionTimeout));
   if (error) { authScreen(error.message); return; }
   if (!data.session) { authScreen(); return; }
   state.user = data.session.user;

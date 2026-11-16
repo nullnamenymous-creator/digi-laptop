@@ -12,6 +12,12 @@
   <body>
     <div id="app"><div class="loading-screen"><img class="brand-mark" src="/store-logo-transparent.png" alt="Logo DIGITAL LAPTOP JOMBANG" /><p>Menyiapkan Digi-Laptop…</p></div></div>
     <script>
+      const fonts = document.createElement('link');
+      fonts.rel = 'stylesheet';
+      fonts.media = 'print';
+      fonts.href = 'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&family=Playball&family=Sora:wght@500;600;700;800&display=swap';
+      fonts.addEventListener('load', () => { fonts.media = 'all'; }, { once: true });
+      document.head.append(fonts);
       setTimeout(() => {
         const loading = document.querySelector('#app > .loading-screen');
         if (!loading || loading.querySelector('button')) return;
