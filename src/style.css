@@ -1435,3 +1435,19 @@ button.storefront-card:hover { border-color: #659477; }
   .storefront-quick-buttons { flex-wrap: nowrap; overflow-x: auto; padding: 3px 3px 6px; }
   .storefront-quick-buttons button { flex: none; white-space: nowrap; min-height: 44px; }
 }
+
+.storefront-hero { min-height: 0; }
+.storefront-hero .storefront-slide { gap: 12px; padding: clamp(16px, 2.8vw, 34px); }
+.storefront-hero h1 { font-size: clamp(25px, 3.8vw, 46px); max-width: 18ch; }
+.storefront-slide-copy > p:first-child { margin-bottom: 6px; }
+.storefront-hero a { margin-top: 6px; padding: 8px 12px; }
+.storefront-quick-row { grid-template-columns: 80px minmax(0, 1fr); }
+.storefront-stock-label { color: #32594a; font-size: 12px; }
+.public-product-availability { display: grid; gap: 4px; margin: 9px 0; font-size: 13px; }
+.public-product-availability select { min-height: 40px; font: inherit; }
+@media (max-width: 680px) {
+  .storefront-hero > .storefront-media { aspect-ratio: 16 / 4; }
+  .storefront-hero .storefront-slide { gap: 8px; padding: 12px 15px; }
+  .storefront-hero h1 { font-size: clamp(23px, 6vw, 32px); }
+  .storefront-quick-row { grid-template-columns: 1fr; }
+}

@@ -2813,6 +2813,29 @@ function catalogProcessorFamily(value) {
   return processor;
 }
 
+const catalogNeeds = [
+  ['study', 'Kuliah & tugas'],
+  ['office', 'Kerja kantoran'],
+  ['design', 'Desain ringan'],
+];
+const catalogBudgets = [
+  ['under-3', '< Rp3 juta', 0, 3000000],
+  ['3-to-5', 'Rp3–5 juta', 3000000, 5000000.01],
+  ['over-5', '> Rp5 juta', 5000000.01, Infinity],
+];
+
+function catalogNeedReason(product, need) {
+  const specs = product.specifications || {};
+  const ram = Number(String(specs.ram || '').match(/(\d+)\s*(?:gb|gib|g)\b/i)?.[1]);
+  const ssd = /\b(?:ssd|nvme)\b/i.test(specs.storage || '');
+  const capableProcessor = /(?:core (?:i[57]|(?:ultra )?[57])|ryzen [57]|apple m[1-5])\b/i
+    .test(catalogProcessorFamily(specs.processor));
+  if (need === 'study' && ram >= 4 && ssd) return `RAM ${ram} GB dan SSD untuk dokumen dan tugas.`;
+  if (need === 'office' && ram >= 8 && ssd) return `RAM ${ram} GB dan SSD untuk aplikasi kerja harian.`;
+  if (need === 'design' && ram >= 8 && ssd && capableProcessor) return 'Spek untuk Canva dan edit foto ringan.';
+  return '';
+}
+
 function customerPortal(tracking) {
   root.innerHTML = `<main class="catalog-page storefront" id="storefront-top">
     <header class="storefront-header">
@@ -2869,8 +2892,13 @@ function customerPortal(tracking) {
   startStorefrontSlides(root.querySelector('.storefront-hero'));
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
-  const sharedProductId = new URLSearchParams(location.search).get('produk');
+  const sharedParams = new URLSearchParams(location.search);
+  const sharedProductId = sharedParams.get('produk') || location.pathname.match(/^\/produk\/([a-f0-9-]+)\/?$/i)?.[1];
+  const sharedPrice = Number(sharedParams.get('harga'));
+
   const loadCatalog = async () => {
+    const storefront = await supabase.rpc('customer_catalog_storefront');
+    if (storefront.error?.code !== 'PGRST202') return storefront;
     const shareable = await supabase.rpc('customer_catalog_share');
     if (shareable.error?.code !== 'PGRST202') return shareable;
     const promotion = await supabase.rpc('customer_catalog_promotions');
@@ -2914,6 +2942,8 @@ function customerPortal(tracking) {
         <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
       </div>
       <div class="storefront-quick">
+        ${quickFilterRow('Kebutuhan', 'need', catalogNeeds)}
+        ${quickFilterRow('Anggaran', 'budget', catalogBudgets)}
         ${quickFilterRow('Merek', 'brand', brands)}
         ${quickFilterRow('Prosesor', 'processor', processors)}
       </div>
@@ -2931,7 +2961,11 @@ function customerPortal(tracking) {
     const processorButtons = [...panel.querySelectorAll('[data-quick-processor]')];
     const promoButton = panel.querySelector('[data-quick-promo]');
     const reset = panel.querySelector('[data-reset-catalog]');
+    const needButtons = [...panel.querySelectorAll('[data-quick-need]')];
+    const budgetButtons = [...panel.querySelectorAll('[data-quick-budget]')];
     let processor = '';
+    let need = '';
+    let budget = '';
     let promoOnly = false;
     const matchesSearch = (product, query) => {
       const text = [product.name, product.brand, product.model, processorByProduct.get(product),
@@ -2940,27 +2974,40 @@ function customerPortal(tracking) {
     };
     const render = () => {
       const query = search.value.trim().toLocaleLowerCase('id');
+      const priceBand = catalogBudgets.find(([id]) => id === budget);
       const results = products.filter((product) =>
         (!brand.value || product.brand?.trim().toLocaleLowerCase('id') === brand.value) &&
         (!processor || processorByProduct.get(product).toLocaleLowerCase('id') === processor) &&
+        (!need || catalogNeedReason(product, need)) &&
+        (!priceBand || (publicRetailPrice(product) >= priceBand[2] && publicRetailPrice(product) < priceBand[3])) &&
         (!promoOnly || hasPromo(product)) &&
         (!query || matchesSearch(product, query)));
       brandButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBrand === brand.value)));
       processorButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickProcessor === processor)));
+      needButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickNeed === need)));
+      budgetButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBudget === budget)));
       promoButton?.setAttribute('aria-pressed', String(promoOnly));
-      reset.hidden = !(query || brand.value || processor || promoOnly || sort.value);
+      reset.hidden = !(query || brand.value || processor || need || budget || promoOnly || sort.value);
       if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
+      else if (sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0) {
+        results.sort((a, b) => Math.abs(publicRetailPrice(a) - sharedPrice) - Math.abs(publicRetailPrice(b) - sharedPrice));
+      }
       count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
       grid.innerHTML = results.map(product => {
         const specs = pamphletSpecs.flatMap(([key, label]) => {
           const value = product.specifications?.[key]?.trim();
           return value && ['processor', 'ram', 'storage', 'display'].includes(key) ? [[label, value]] : [];
         });
+        const reason = need && catalogNeedReason(product, need);
+        const branches = product.available_branches || [];
+        const location = branches.length === 1 ? branches[0] : branches.length ? `Tersedia di ${branches.length} cabang` : '';
         return `<button type="button" class="storefront-card" data-public-product>
           <span class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : '<span>Foto belum tersedia</span>'}</span>
           <span class="storefront-card-body">
             <span class="storefront-product-name">${esc(product.name)}</span>
             ${publicPriceMarkup(product)}
+            ${location ? `<small class="storefront-stock-label">${esc(location)}</small>` : ''}
+            ${reason ? `<small class="storefront-stock-label">${esc(reason)}</small>` : ''}
             ${specs.length ? `<span class="storefront-specs">
               ${specs.map(([label, value]) => `<span><b>${label}</b> ${esc(value)}</span>`).join('')}
             </span>` : ''}
@@ -2979,9 +3026,17 @@ function customerPortal(tracking) {
       processor = processor === button.dataset.quickProcessor ? '' : button.dataset.quickProcessor;
       render();
     }));
+    needButtons.forEach((button) => button.addEventListener('click', () => {
+      need = need === button.dataset.quickNeed ? '' : button.dataset.quickNeed;
+      render();
+    }));
+    budgetButtons.forEach((button) => button.addEventListener('click', () => {
+      budget = budget === button.dataset.quickBudget ? '' : button.dataset.quickBudget;
+      render();
+    }));
     promoButton?.addEventListener('click', () => { promoOnly = !promoOnly; render(); });
     reset.addEventListener('click', () => {
-      search.value = brand.value = sort.value = processor = '';
+      search.value = brand.value = sort.value = processor = need = budget = '';
       promoOnly = false;
       render();
       search.focus();
@@ -2998,8 +3053,8 @@ function customerPortal(tracking) {
 
 function productWhatsAppShareUrl(product) {
   if (!product.product_id) return '';
-  const url = new URL('/catalog', location.origin);
-  url.searchParams.set('produk', product.product_id);
+  const url = new URL(`/produk/${encodeURIComponent(product.product_id)}`, location.origin);
+  url.searchParams.set('harga', publicRetailPrice(product));
   const message = `Lihat ${product.name} di katalog Digital Laptop Jombang: ${url.href}`;
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
@@ -3014,7 +3069,10 @@ function showPublicProduct(product) {
   if (product.model) specs.push(['Tipe', product.model]);
   if (Number(product.warranty_months) > 0) specs.push(['Garansi', `${Number(product.warranty_months)} bulan`]);
   const phone = String(product.phone || '').replace(/\D/g, '').replace(/^0/, '62');
-  const message = encodeURIComponent(`Halo, saya tertarik dengan ${product.name}. Apakah masih tersedia?`);
+  const availableBranches = product.available_branches || [];
+  const inquiryUrl = (branch) => `https://wa.me/${phone}?text=${encodeURIComponent(
+    `Halo, saya tertarik dengan ${product.name} di katalog${branch ? ` di ${branch}` : ''}. Apakah stoknya masih tersedia? Bisa kirim foto kondisi terbaru?`
+  )}`;
   const shareUrl = productWhatsAppShareUrl(product);
   const dialog = document.createElement('dialog');
   dialog.className = 'public-product-dialog';
@@ -3031,6 +3089,10 @@ function showPublicProduct(product) {
       </div>
       <div>
         <div class="public-product-price">${publicPriceMarkup(product)}</div>
+        ${availableBranches.length ? `<div class="public-product-availability">
+          <label for="public-product-branch">Tersedia di cabang</label>
+          <select id="public-product-branch">${availableBranches.map((branch) => `<option>${esc(branch)}</option>`).join('')}</select>
+        </div>` : ''}
         <div class="public-product-tabs" aria-label="Informasi produk">
           <button type="button" data-product-info="specs" aria-pressed="true">Spesifikasi</button>
           <button type="button" data-product-info="description" aria-pressed="false">Deskripsi</button>
@@ -3038,13 +3100,17 @@ function showPublicProduct(product) {
         <section class="public-product-info" data-product-panel="specs" aria-label="Spesifikasi">
           ${specs.length ? `<dl>${specs.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : '<p>Spesifikasi belum tersedia.</p>'}
         </section>
-        <section class="public-product-info" data-product-panel="description" aria-label="Deskripsi" hidden tabindex="0"><p>${esc(product.description?.trim() || 'Deskripsi belum tersedia.')}</p></section>
+        <section class="public-product-info" data-product-panel="description" aria-label="Deskripsi" hidden tabindex="0"><p>${esc(product.description?.trim() || 'Kondisi dan kelengkapan bisa ditanyakan ke toko.')}</p></section>
       </div>
     </div>
     ${phone || shareUrl ? `<footer>
-      ${phone ? `<a class="btn primary" href="https://wa.me/${phone}?text=${message}" target="_blank" rel="noopener noreferrer">Tanya via WhatsApp</a>` : ''}
+      ${phone ? `<a class="btn primary" data-product-inquiry href="${esc(inquiryUrl(availableBranches[0]))}" target="_blank" rel="noopener noreferrer">Tanya stok unit ini</a>` : ''}
       ${shareUrl ? `<a class="btn" href="${esc(shareUrl)}" target="_blank" rel="noopener noreferrer">Bagikan link ke WhatsApp</a>` : ''}
     </footer>` : ''}`;
+  const inquiryLink = dialog.querySelector('[data-product-inquiry]');
+  if (inquiryLink) dialog.querySelector('#public-product-branch')?.addEventListener('change', (event) => {
+    inquiryLink.href = inquiryUrl(event.target.value);
+  });
   dialog.querySelector('header button').addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
   const gallery = dialog.querySelector('.public-product-photos');
@@ -3198,7 +3264,7 @@ async function showServiceReceipt(ticket, kind, technicianName) {
 
 async function start() {
   const route = location.pathname.replace(/\/$/, '');
-  if (route === '' || route === '/catalog' || route === '/lacak-servis') {
+  if (route === '' || route === '/catalog' || /^\/produk\/[a-f0-9-]+$/i.test(route) || route === '/lacak-servis') {
     if (!hasBackendConfig) return configurationScreen();
     return customerPortal(route === '/lacak-servis');
   }
