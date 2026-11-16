@@ -1012,15 +1012,15 @@ function parseCsv(text) { const rows=[];let row=[],value='',quoted=false;for(let
 
 async function inventoryPage(page) {
   const branchId = state.branchId;
-  const [{ products, stock }, openingResult] = await Promise.all([
+  const [{ products, stock }, openingBatches] = await Promise.all([
     fetchInventory(),
     canEditProducts()
-      ? supabase.from('stock_opening_batches').select('id,branch_id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20)
-      : Promise.resolve({ data: [], error: null }),
+      ? fetchAllRows(supabase.from('stock_opening_batches')
+        .select('id,branch_id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category,brand,model)')
+        .eq('branch_id', branchId).order('created_at', { ascending: false }))
+      : Promise.resolve([]),
   ]);
   if (!page.isConnected || state.branchId !== branchId) return;
-  if (openingResult.error) throw openingResult.error;
-  const openingBatches = openingResult.data || [];
   const totals = new Map(); stock.forEach((item) => totals.set(item.product_id, (totals.get(item.product_id) || 0) + (item.status === 'available' ? Number(item.quantity) : 0)));
   const branchProductIds = new Set(stock.map((item) => item.product_id));
   const branchProducts = products.filter((product) => branchProductIds.has(product.id));
@@ -1085,7 +1085,16 @@ async function inventoryPage(page) {
     ${catalogSection}
     <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
-    ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Batch pembukaan inventaris · 20 terbaru di ${esc(branchName(state.branchId))}. Barcode bisa dicetak ulang.</div></div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button> ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">Belum ada batch stok awal di cabang ini.</div></td></tr>'}</tbody></table></div></section>` : ''}
+    ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
+      <div class="panel-head opening-history-tools">
+        <div class="form-grid">
+          <div class="field"><label for="opening-brand">Merek laptop</label><select id="opening-brand"></select></div>
+          <div class="field"><label for="opening-model">Tipe laptop</label><select id="opening-model"></select></div>
+        </div>
+        <button type="button" class="btn danger" id="cancel-opening-group" hidden>Batalkan semua batch tipe ini</button>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr data-opening-row="${batch.id}"><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button> ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('')}<tr data-opening-empty hidden><td colspan="6"><div class="empty">Tidak ada batch yang cocok.</div></td></tr></tbody></table></div>
+      <div class="panel-head"><span data-opening-count role="status"></span><button type="button" class="btn" data-opening-more hidden>Tampilkan lagi</button></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
   const unitSearch = page.querySelector('#unit-search');
   const unitStatus = page.querySelector('#unit-status-filter');
@@ -1245,6 +1254,8 @@ async function inventoryPage(page) {
     if (!printWindow) return toast('Izinkan pop-up untuk membuka pratinjau barcode.', true);
     printBarcode(button.dataset.printBarcode, printWindow);
   }));
+  const openingHistory = page.querySelector('#opening-stock-history');
+  if (openingHistory) bindOpeningHistory(openingHistory, openingBatches, branchId);
   page.querySelectorAll('[data-correct-opening]').forEach((button) => button.addEventListener('click', async () => {
     const batch = openingBatches.find((item) => item.id === button.dataset.correctOpening);
     const product = products.find((item) => item.id === batch?.product_id);
@@ -1280,6 +1291,61 @@ async function inventoryPage(page) {
     } catch (error) { printWindow.close(); toast(error.message || 'Label stok awal gagal dimuat.', true); }
   }));
   page.querySelectorAll('[data-print-warranty-unit]').forEach((button) => button.addEventListener('click', () => { const unit=stock.find((item) => item.id===button.dataset.printWarrantyUnit); if (unit) printWarrantyQr({...unit,products:products.find((product) => product.id===unit.product_id)}); }));
+}
+
+function bindOpeningHistory(panel, batches, branchId) {
+  const brand = panel.querySelector('#opening-brand');
+  const model = panel.querySelector('#opening-model');
+  const bulk = panel.querySelector('#cancel-opening-group');
+  const more = panel.querySelector('[data-opening-more]');
+  const rows = [...panel.querySelectorAll('[data-opening-row]')];
+  const key = (value) => (value || '').trim().toLowerCase();
+  const options = (select, choices, placeholder) => {
+    const labels = new Map(choices.filter(key).map((value) => [key(value), value.trim()]));
+    select.replaceChildren(new Option(placeholder, ''), ...[...labels]
+      .sort((a, b) => a[1].localeCompare(b[1], 'id')).map(([value, label]) => new Option(label, value)));
+  };
+  const laptops = batches.filter((batch) => key(batch.products?.category) === 'laptop');
+  options(brand, laptops.map((batch) => batch.products.brand), 'Semua merek');
+  const brandMatches = () => laptops.filter((batch) => !brand.value || key(batch.products.brand) === brand.value);
+  const matching = () => (!brand.value && !model.value ? batches : brandMatches()
+    .filter((batch) => !model.value || key(batch.products.model) === model.value));
+  let limit = 20;
+  const render = () => {
+    const matches = matching();
+    const visible = new Set(matches.slice(0, limit).map((batch) => batch.id));
+    rows.forEach((row) => { row.hidden = !visible.has(row.dataset.openingRow); });
+    panel.querySelector('[data-opening-empty]').hidden = matches.length > 0;
+    panel.querySelector('[data-opening-count]').textContent = `${visible.size} dari ${matches.length} batch`;
+    more.hidden = visible.size === matches.length;
+    bulk.hidden = !(brand.value && model.value && matches.length);
+  };
+  const updateModels = () => {
+    options(model, brandMatches().map((batch) => batch.products.model), 'Semua tipe');
+    limit = 20;
+    render();
+  };
+  brand.addEventListener('change', updateModels);
+  model.addEventListener('change', () => { limit = 20; render(); });
+  more.addEventListener('click', () => { limit += 20; render(); });
+  bulk.addEventListener('click', () => {
+    if (!canEditProducts() || state.branchId !== branchId || !brand.value || !model.value) return;
+    const matches = matching();
+    const units = matches.reduce((sum, batch) => sum + Number(batch.unit_count), 0);
+    const brandKey = brand.value;
+    const modelKey = model.value;
+    const label = `${brand.selectedOptions[0].text} ${model.selectedOptions[0].text}`;
+    openModal('Batalkan stok awal tipe ini?', 'Unit dan barcode dari batch yang masih utuh akan dihapus.',
+      `<div class="notice"><strong>${esc(label)}</strong><br />${esc(branchName(branchId))} · ${matches.length} batch · ${units} unit.
+      Batch yang sudah dijual, dimutasi, atau dipakai akan dilewati.</div>`, async () => {
+        const result = checkError(await supabase.rpc('bulk_cancel_opening_stock', {
+          _branch_id: branchId, _brand: brandKey, _model: modelKey, _batch_ids: matches.map((batch) => batch.id),
+        }));
+        toast(`${result.cancelled_batches} batch (${result.cancelled_units} unit) dibatalkan. ${result.skipped_batches} batch dilewati.`);
+        if (state.page === 'inventory') await showPage('inventory');
+      }, 'Batalkan batch yang masih utuh');
+  });
+  updateModels();
 }
 
 async function transfersPage(page) {
