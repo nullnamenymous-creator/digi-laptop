@@ -392,7 +392,7 @@ function publicPriceMarkup(product) {
 }
 
 function productPromoField(product) {
-  if (!canManage()) return '';
+  if (!canManage() && !(isCentralAdmin() && product)) return '';
   return `<div class="field"><label for="catalog-discount">Potongan harga (Rp)</label>
     <input id="catalog-discount" name="catalog_discount" type="number" min="0" step="1" value="${esc(product?.catalog_discount ?? 0)}" />
     <small class="field-hint">Berlaku untuk pembeli umum selama produk ditampilkan di katalog. Isi 0 untuk menonaktifkan.</small></div>`;
@@ -401,10 +401,11 @@ function productPromoField(product) {
 function productPromoValues(form, product, retailPrice) {
   if (!form.has('catalog_discount')) return {};
   const discount = Number(form.get('catalog_discount') || 0);
+  if (discount === Number(product?.catalog_discount ?? 0)) return {};
   if (!Number.isSafeInteger(discount) || discount < 0 || (discount > 0 && discount >= retailPrice)) {
     throw new Error('Potongan harus lebih kecil dari harga end user.');
   }
-  return discount || product?.catalog_discount != null ? { catalog_discount: discount } : {};
+  return { catalog_discount: discount };
 }
 
 function productCopyFields(product) {
@@ -1550,7 +1551,7 @@ function productModal(product = null, available = 0) {
     if(Object.values(values).some(value=>typeof value==='number'&&(!Number.isFinite(value)||value<0)))throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
     if (product) {
       const changes = isCentralAdmin()
-        ? { name, brand, model, image_path: imagePath, warranty_months: values.warranty_months, ...productCopyValues(form) }
+        ? { name, brand, model, image_path: imagePath, warranty_months: values.warranty_months, ...productCopyValues(form), ...promo }
         : values;
       checkError(await supabase.from('products').update(changes).eq('id', product.id).select('id').single());
       toast('Detail produk diperbarui.');
