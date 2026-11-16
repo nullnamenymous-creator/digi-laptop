@@ -1140,7 +1140,7 @@ async function inventoryPage(page) {
       <button type="button" class="card unit-summary-button" aria-controls="laptop-unit-rows" aria-pressed="false" data-unit-filter="sold"><span class="card-label">Laptop terjual<span aria-hidden="true">↗</span></span><span class="card-value">${unitCountFor('sold')} <small>unit</small></span><span class="card-sub">QR garansi muncul bila unit bergaransi</span></button>
     </section>
     ${catalogSection}
-    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
+    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" aria-label="Cari kode unit, nomor seri, supplier, atau model" placeholder="Cari kode unit / barcode" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
       <div class="panel-head opening-history-tools">
@@ -1672,14 +1672,34 @@ function productDetailModal(product, available = 0, stock = []) {
     ${product.category === 'Laptop' ? `<section class="product-extra-details"><h3>Pamflet Katalog Modern</h3>
       ${units.length ? `<div class="field"><label for="pamphlet-unit">Kode unit siap jual · ${esc(branchName(branchId))}</label>
         <select id="pamphlet-unit">${units.map(unit => `<option value="${esc(unit.id)}">${esc(unit.barcode)}${unit.serial_number ? ` · SN ${esc(unit.serial_number)}` : ''}</option>`).join('')}</select></div>
-        <div class="pamphlet-actions"><button type="button" class="btn" data-pamphlet="preview">Pratinjau</button>
+        <div class="pamphlet-actions"><button type="button" class="btn" id="copy-pamphlet-unit">Salin kode unit</button><button type="button" class="btn" data-pamphlet="preview">Pratinjau</button>
         <button type="button" class="btn" data-pamphlet="print">Cetak pamflet</button>
         <button type="button" class="btn primary" data-pamphlet="download">Unduh PDF</button></div>
+        <input id="pamphlet-unit-copy" aria-label="Kode unit untuk disalin" readonly hidden />
         <img class="pamphlet-preview" alt="Pratinjau pamflet produk" hidden />` : '<p>Belum ada unit siap jual di cabang ini.</p>'}
     </section>` : ''}`);
   const picker = host.querySelector('#pamphlet-unit');
   const preview = host.querySelector('.pamphlet-preview');
-  picker?.addEventListener('change', () => { preview.hidden = true; });
+  const manualCopy = host.querySelector('#pamphlet-unit-copy');
+  picker?.addEventListener('change', () => {
+    preview.hidden = true;
+    manualCopy.hidden = true;
+  });
+  host.querySelector('#copy-pamphlet-unit')?.addEventListener('click', async () => {
+    const barcode = units.find((unit) => unit.id === picker.value)?.barcode;
+    if (!barcode) return;
+    try {
+      await navigator.clipboard.writeText(barcode);
+      toast('Kode unit disalin.');
+    } catch {
+      if (!manualCopy.isConnected) return;
+      manualCopy.value = barcode;
+      manualCopy.hidden = false;
+      manualCopy.focus();
+      manualCopy.select();
+      toast('Salin kode unit dari kolom yang sudah dipilih.');
+    }
+  });
   const pamphletButtons = [...host.querySelectorAll('[data-pamphlet]')];
   pamphletButtons.forEach((button) => button.addEventListener('click', async () => {
     const action = button.dataset.pamphlet;
