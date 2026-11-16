@@ -34,7 +34,7 @@ const rolePages = () => {
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
-const stockStatusText = { pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
+const stockStatusText = { withdrawn: 'Dikeluarkan lewat koreksi', pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
 const pages = { dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
 
 function toast(message, error = false) {
@@ -1122,7 +1122,8 @@ async function inventoryPage(page) {
   const renderLaptopUnits = (items) => items.map((item) => {
     const product = products.find((row) => row.id === item.product_id);
     const badge = item.status === 'available' ? '' : ['pending_qc','repair_needed','repairing','waiting_parts'].includes(item.status) ? 'warn' : 'gray';
-    return `<tr data-unit-status="${esc(item.status)}"><td data-label="Barcode / unit" class="product-name">${esc(item.barcode)}<div class="field-hint">${esc(product?.name || 'Laptop')}</div></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}</div></td></tr>`;
+    return `<tr data-unit-status="${esc(item.status)}"><td data-label="Barcode / unit" class="product-name">${esc(item.barcode)}<div class="field-hint">${esc(product?.name || 'Laptop')}</div></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}${canEditProducts() && item.status === 'available' && Number(item.quantity) === 1
+      ? `<button type="button" class="small-btn danger" data-withdraw-stock-unit="${esc(item.id)}">Keluarkan unit</button>` : ''}</div></td></tr>`;
   }).join('');
   const renderComponentLots = (items) => items.map((item) => {
     const product = products.find((row) => row.id === item.product_id);
@@ -1139,7 +1140,7 @@ async function inventoryPage(page) {
       <button type="button" class="card unit-summary-button" aria-controls="laptop-unit-rows" aria-pressed="false" data-unit-filter="sold"><span class="card-label">Laptop terjual<span aria-hidden="true">↗</span></span><span class="card-value">${unitCountFor('sold')} <small>unit</small></span><span class="card-sub">QR garansi muncul bila unit bergaransi</span></button>
     </section>
     ${catalogSection}
-    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
+    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
       <div class="panel-head opening-history-tools">
@@ -1172,7 +1173,7 @@ async function inventoryPage(page) {
       const status = row.dataset.unitStatus;
       const matchesStatus = filter === 'all' || status === filter ||
         (filter === 'repair' && repairStatuses.has(status)) ||
-        (filter === 'other' && !repairStatuses.has(status) && !['pending_qc', 'available', 'sold'].includes(status));
+        (filter === 'other' && !repairStatuses.has(status) && !['pending_qc', 'available', 'sold', 'withdrawn'].includes(status));
       return matchesStatus && row.textContent.toLocaleLowerCase('id').includes(query);
     });
     const pageCount = Math.max(1, Math.ceil(matches.length / unitsPerPage));
@@ -1345,6 +1346,24 @@ async function inventoryPage(page) {
       if (!data?.length) throw new Error('Unit untuk batch stok awal ini tidak ditemukan.');
       printBarcodeLabels(data.map((item) => ({ ...item, supplier: item.supplier || 'Stok awal' })), printWindow);
     } catch (error) { printWindow.close(); toast(error.message || 'Label stok awal gagal dimuat.', true); }
+  }));
+  page.querySelectorAll('[data-withdraw-stock-unit]').forEach((button) => button.addEventListener('click', () => {
+    if (!canEditProducts() || state.branchId !== branchId) return;
+    const unit = laptopUnits.find((item) => item.id === button.dataset.withdrawStockUnit);
+    if (!unit) return;
+    const product = products.find((item) => item.id === unit.product_id);
+    openModal('Koreksi stok — Keluarkan unit', 'Unit akan dikeluarkan dari stok tersedia. Riwayat barcode dan mutasi tetap tersimpan.', `
+      <div class="notice"><strong>${esc(product?.name || 'Laptop')}</strong><br />${esc(unit.barcode)} · ${esc(branchName(branchId))}</div>
+      <div class="field"><label for="withdraw-stock-reason">Alasan koreksi</label>
+        <textarea id="withdraw-stock-reason" name="reason" rows="3" minlength="3" maxlength="300" required placeholder="Contoh: Unit ini dicatat untuk uji coba"></textarea>
+      </div>`, async (form) => {
+      if (!canEditProducts() || state.branchId !== branchId) throw new Error('Cabang aktif berubah. Buka kembali daftar unit.');
+      const reason = String(form.get('reason') || '').trim();
+      if (reason.length < 3) throw new Error('Isi alasan koreksi minimal 3 karakter.');
+      checkError(await supabase.rpc('withdraw_stock_unit', { _unit_id: unit.id, _branch_id: branchId, _reason: reason }));
+      toast(`Unit ${unit.barcode} sudah dikeluarkan dari stok.`);
+      if (state.page === 'inventory' && state.branchId === branchId) await showPage('inventory');
+    }, 'Keluarkan unit');
   }));
   page.querySelectorAll('[data-print-warranty-unit]').forEach((button) => button.addEventListener('click', () => { const unit=stock.find((item) => item.id===button.dataset.printWarrantyUnit); if (unit) printWarrantyQr({...unit,products:products.find((product) => product.id===unit.product_id)}); }));
 }
