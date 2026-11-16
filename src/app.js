@@ -2975,8 +2975,8 @@ function customerPortal(tracking) {
       <nav aria-label="Navigasi toko">
         <a href="/" ${tracking ? '' : 'aria-current="page"'}>Katalog</a>
         <a href="/lacak-servis" ${tracking ? 'aria-current="page"' : ''}>Lacak servis</a>
-        <a class="storefront-staff" href="/petugas">Masuk petugas</a>
       </nav>
+      <a class="storefront-staff" href="/petugas">Masuk petugas</a>
     </header>
     ${tracking ? '' : `<section class="storefront-hero" aria-label="Promosi Digital Laptop">
       <div class="storefront-slide">
@@ -3084,18 +3084,23 @@ function customerPortal(tracking) {
     panel.innerHTML = `<h2>Katalog produk</h2>
       ${unavailableNotice}
       <div class="storefront-filter-panel">
-      <div class="storefront-filters">
-        <input type="search" aria-label="Cari laptop" placeholder="Cari nama laptop atau spesifikasi" />
-        <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
-      </div>
-      <div class="storefront-quick">
-        ${quickFilterRow('Merek', 'brand', brands)}
-        ${quickFilterRow('Prosesor', 'processor', processors)}
-      </div>
-      <div class="storefront-quick storefront-quick-secondary">
-        ${quickFilterRow('Kebutuhan', 'need', catalogNeeds)}
-        ${quickFilterRow('Anggaran', 'budget', catalogBudgets)}
-      </div>
+        <div class="storefront-filters">
+          <input type="search" aria-label="Cari laptop" placeholder="Cari laptop atau spek" />
+        </div>
+        <details class="storefront-filter-options" open>
+          <summary>Filter <span data-filter-badge hidden></span></summary>
+          <div class="storefront-sort">
+            <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
+          </div>
+          <div class="storefront-quick">
+            ${quickFilterRow('Merek', 'brand', brands)}
+            ${quickFilterRow('Prosesor', 'processor', processors)}
+          </div>
+          <div class="storefront-quick storefront-quick-secondary">
+            ${quickFilterRow('Kebutuhan', 'need', catalogNeeds)}
+            ${quickFilterRow('Anggaran', 'budget', catalogBudgets)}
+          </div>
+        </details>
       </div>
       <div class="storefront-results-toolbar">
         <p class="storefront-count" role="status"></p>
@@ -3121,7 +3126,11 @@ function customerPortal(tracking) {
     const pagination = panel.querySelector('.storefront-pagination');
     const previous = pagination.querySelector('[data-catalog-prev]');
     const next = pagination.querySelector('[data-catalog-next]');
-    const productsPerPage = 12;
+    const mobileCatalog = matchMedia('(max-width: 760px)');
+    const filterOptions = panel.querySelector('.storefront-filter-options');
+    const filterBadge = filterOptions.querySelector('[data-filter-badge]');
+    filterOptions.open = !mobileCatalog.matches;
+    let productsPerPage = mobileCatalog.matches ? 8 : 12;
     let currentPage = 1;
     let brand = '';
     let processor = '';
@@ -3148,6 +3157,9 @@ function customerPortal(tracking) {
       needButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickNeed === need)));
       budgetButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBudget === budget)));
       promoButton?.setAttribute('aria-pressed', String(promoOnly));
+      const activeFilters = [brand, processor, need, budget, sort.value].filter(Boolean).length;
+      filterBadge.hidden = !activeFilters;
+      filterBadge.textContent = activeFilters;
       reset.hidden = !(query || brand || processor || need || budget || promoOnly || sort.value);
       if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
       else if (sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0) {
@@ -3218,6 +3230,15 @@ function customerPortal(tracking) {
       renderFirstPage();
       search.focus();
     });
+    const viewportListener = new AbortController();
+    mobileCatalog.addEventListener('change', (event) => {
+      if (!panel.isConnected) { viewportListener.abort(); return; }
+      filterOptions.open = !event.matches;
+      const firstVisible = (currentPage - 1) * productsPerPage;
+      productsPerPage = event.matches ? 8 : 12;
+      currentPage = Math.floor(firstVisible / productsPerPage) + 1;
+      render();
+    }, { signal: viewportListener.signal });
     search.addEventListener('input', renderFirstPage);
     sort.addEventListener('change', renderFirstPage);
     renderFirstPage();
