@@ -45,33 +45,46 @@ export async function renderProductPamphlet({ store, name, price, specifications
     },
     () => { ctx.strokeRect(2, 2, 16, 16); line(10, 2, 10, 18); line(2, 10, 18, 10); },
   ];
-  ctx.fillStyle = '#fff';
+  const cream = '#fff7dc';
+  const gold = '#f3d679';
+  const border = '#53795f';
+  ctx.fillStyle = '#edf2eb';
   ctx.fillRect(0, 0, 596, 420);
-  box(15, 15, 566, 390, '#fafbf7', '#c3d4c7');
-  const logoScale = Math.min(38 / logo.naturalWidth, 38 / logo.naturalHeight);
-  ctx.drawImage(logo, 36, 38, logo.naturalWidth * logoScale, logo.naturalHeight * logoScale);
-  text(store, 82, 63, 470, 19, '#173329');
-  text(name, 36, 114, 524, 34, '#173329', 15);
-  box(36, 128, 524, 73, '#dfefe0');
-  text(price, 52, 183, 490, 55, '#155035');
+  box(14, 9, 568, 398, '#154e33', border);
+  const logoScale = Math.min(31 / logo.naturalWidth, 31 / logo.naturalHeight);
+  ctx.drawImage(logo, 40, 31, logo.naturalWidth * logoScale, logo.naturalHeight * logoScale);
+  text(store, 81, 52, 350, 17, cream);
+  ctx.textAlign = 'right';
+  text('ETALASE LAPTOP', 556, 50, 113, 10, gold);
+  ctx.textAlign = 'left';
+  text(name, 40, 105, 516, 32, cream, 15);
+
+  ctx.fillStyle = '#b2252a';
+  ctx.fillRect(40, 119, 516, 70);
+  ctx.fillStyle = gold;
+  ctx.fillRect(40, 119, 7, 70);
+  text(price, 61, 173, 480, 54, cream);
+
   pamphletSpecs.forEach(([key, label], index) => {
-    const x = 36 + (index % 3) * 176;
-    const y = 217 + Math.floor(index / 3) * 58;
-    box(x, y, 171, 51, '#fff', '#c3d4c7');
+    const x = 40 + (index % 3) * 174;
+    const y = 200 + Math.floor(index / 3) * 52;
+    box(x, y, 168, 44, '#153d2c', border);
     ctx.save();
-    ctx.translate(x + 10, y + 16);
-    ctx.strokeStyle = '#286646';
+    ctx.translate(x + 8, y + 11);
+    ctx.strokeStyle = gold;
     ctx.lineWidth = 1.3;
     icons[index]();
     ctx.restore();
-    text(label.toUpperCase(), x + 38, y + 19, 122, 9, '#286646');
-    text(specifications?.[key] || '—', x + 38, y + 38, 122, 14, '#173329');
+    text(label.toUpperCase(), x + 36, y + 17, 123, 9, gold);
+    text(specifications?.[key] || '-', x + 36, y + 33, 123, 13, cream);
   });
-  ctx.strokeStyle = '#c3d4c7';
-  line(36, 345, 560, 345);
-  if (warranty > 0) text(`Garansi ${warranty} bulan`, 36, 379, 145, 14, '#286646');
-  box(206, 357, 354, 33, '#fff', '#c3d4c7');
-  text(`KODE UNIT · ${barcode}`, 218, 379, 329, 15, '#173329');
+
+  if (warranty > 0) text(`Garansi ${warranty} bulan`, 40, 334, 170, 13, gold);
+  const code = `KODE UNIT \u00b7 ${barcode}`;
+  ctx.font = '700 14px Arial';
+  const codeWidth = Math.max(168, Math.min(330, Math.ceil(ctx.measureText(code).width) + 18));
+  box(556 - codeWidth, 316, codeWidth, 30, '#153d2c', border);
+  text(code, 565 - codeWidth, 336, codeWidth - 18, 14, cream);
   return canvas.toDataURL('image/png');
 }
 
