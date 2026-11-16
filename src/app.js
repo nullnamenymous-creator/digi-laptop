@@ -405,10 +405,10 @@ function productPromoField(product) {
 function productPromoValues(form, product, retailPrice) {
   if (!form.has('catalog_discount')) return {};
   const discount = Number(form.get('catalog_discount') || 0);
-  if (discount === Number(product?.catalog_discount ?? 0)) return {};
   if (!Number.isSafeInteger(discount) || discount < 0 || (discount > 0 && discount >= retailPrice)) {
     throw new Error('Potongan harus lebih kecil dari harga end user.');
   }
+  if (discount === Number(product?.catalog_discount ?? 0)) return {};
   return { catalog_discount: discount };
 }
 
@@ -1560,7 +1560,7 @@ function productIdentity(form, product = null, prefix = '') {
 
 function productModal(product = null, available = 0) {
   const v=(key,fallback='')=>esc(product?.[key]??fallback);
-  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice product-form-stock"><strong>${readyStockLabel()} di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category" ${isCentralAdmin() && product ? 'disabled' : ''}>${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" ${isCentralAdmin() && product ? 'readonly' : ''} type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="product-public-toggle"><input type="checkbox" name="is_public" ${isCentralAdmin() ? 'disabled' : ''} ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</label>${productPromoField(product)}${productCopyFields(product)}</div><details class="product-form-photos" ${product ? '' : 'open'}><summary>Foto produk</summary><div class="form-grid">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div></details>`, async (form) => {
+  const host = openModal(product?'Edit produk':'Tambah produk', product?'Perbarui harga, spesifikasi, kategori, garansi, dan foto produk.':'Setiap produk dilengkapi foto dari file, galeri, atau kamera.', `${product ? `<div class="notice product-form-stock"><strong>${readyStockLabel()} di ${esc(branchName(state.branchId))}: ${Number(available).toLocaleString('id-ID')} unit</strong><button type="button" class="small-btn" data-add-opening-stock>＋ Catat stok awal</button></div>` : ''}<div class="form-grid"><div class="field"><label>Merek</label><input name="brand" value="${v('brand')}" /></div><div class="field"><label>Tipe</label><input name="model" value="${v('model')}" /></div><div class="field"><label>Kategori</label><select name="category" ${isCentralAdmin() && product ? 'disabled' : ''}>${['Laptop','Sparepart','Aksesori','Lainnya'].map(x=>`<option ${product?.category===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Garansi (bulan)</label><input name="warranty_months" type="number" min="0" value="${v('warranty_months',1)}" required /></div><div class="field"><label>Modal beli per unit</label><input name="cost_price" type="number" min="0" value="${v('cost_price',0)}" required /></div><div class="field"><label>Harga end user</label><input name="retail_price" ${isCentralAdmin() && !product ? 'readonly' : ''} type="number" min="0" value="${v('retail_price',0)}" required /></div><div class="field"><label>Harga reseller</label><input name="reseller_price" ${isCentralAdmin() && !product ? 'readonly' : ''} type="number" min="0" value="${v('reseller_price',0)}" required /></div><label class="product-public-toggle"><input type="checkbox" name="is_public" ${isCentralAdmin() ? 'disabled' : ''} ${product?.is_public ? 'checked' : ''} /> Tampilkan di katalog publik jika stok tersedia</label>${productPromoField(product)}${productCopyFields(product)}</div><details class="product-form-photos" ${product ? '' : 'open'}><summary>Foto produk</summary><div class="form-grid">${productPhotoPicker(product?.image_path||'')}${product ? '' : galleryFields()}</div></details>`, async (form) => {
     if (!canEditProducts()) throw new Error('Akses perubahan produk ditolak.');
     const { name, sku, brand, model } = productIdentity(form, product);
     const promo = productPromoValues(form, product, Number(form.get('retail_price')));
@@ -1570,7 +1570,10 @@ function productModal(product = null, available = 0) {
     if(Object.values(values).some(value=>typeof value==='number'&&(!Number.isFinite(value)||value<0)))throw new Error('Harga dan masa garansi harus berupa angka nol atau lebih.');
     if (product) {
       const changes = isCentralAdmin()
-        ? { name, brand, model, image_path: imagePath, warranty_months: values.warranty_months, ...productCopyValues(form), ...promo }
+        ? { name, brand, model, image_path: imagePath, warranty_months: values.warranty_months,
+          ...Object.fromEntries(['cost_price', 'retail_price', 'reseller_price']
+            .filter((key) => Number(product[key]) !== values[key]).map((key) => [key, values[key]])),
+          ...productCopyValues(form), ...promo }
         : values;
       checkError(await supabase.from('products').update(changes).eq('id', product.id).select('id').single());
       toast('Detail produk diperbarui.');
