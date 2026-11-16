@@ -2796,6 +2796,23 @@ function startStorefrontSlides(hero) {
   schedule();
 }
 
+function catalogProcessorFamily(value) {
+  const processor = String(value || '').trim();
+  if (!processor) return '';
+  const intelCore = processor.match(/\b(?:intel\s+)?(?:core\s+)?i\s*([3579])(?=\b|[-\d])/i);
+  if (intelCore) return `Intel Core i${intelCore[1]}`;
+  const intelSeries = processor.match(/\bcore\s+(ultra\s+)?([3579])(?=\b|[-\d])/i);
+  if (intelSeries) return `Intel Core ${intelSeries[1] ? 'Ultra ' : ''}${intelSeries[2]}`;
+  const ryzen = processor.match(/\bryzen\s*(?:ai\s*)?([3579])\b/i);
+  if (ryzen) return `AMD Ryzen ${ryzen[1]}`;
+  if (/\bceleron\b/i.test(processor)) return 'Intel Celeron';
+  if (/\bpentium\b/i.test(processor)) return 'Intel Pentium';
+  if (/\bathlon\b/i.test(processor)) return 'AMD Athlon';
+  const apple = processor.match(/\b(?:apple\s+)?(m[1-5])\b/i);
+  if (apple) return `Apple ${apple[1].toUpperCase()}`;
+  return processor;
+}
+
 function customerPortal(tracking) {
   root.innerHTML = `<main class="catalog-page storefront" id="storefront-top">
     <header class="storefront-header">
@@ -2879,23 +2896,59 @@ function customerPortal(tracking) {
       if (unavailableNotice) panel.scrollIntoView();
       return;
     }
-    const brands = [...new Set(products.map(product => product.brand?.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
+    const catalogOptions = (values) => [...new Map(values.filter(Boolean).map((value) =>
+      [value.toLocaleLowerCase('id'), value])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'id', { numeric: true }));
+    const brands = catalogOptions(products.map((product) => product.brand?.trim()));
+    const processorByProduct = new Map(products.map((product) => [product, catalogProcessorFamily(product.specifications?.processor)]));
+    const processors = catalogOptions([...processorByProduct.values()]);
+    const quickFilterRow = (label, group, options) => options.length ? `<div class="storefront-quick-row" role="group" aria-label="${label}">
+      <span>${label}</span><div class="storefront-quick-buttons">
+        ${options.map(([value, name]) => `<button type="button" data-quick-${group}="${esc(value)}" aria-pressed="false">${esc(name)}</button>`).join('')}
+      </div></div>` : '';
+    const hasPromo = (product) => publicRetailPrice(product) < Number(product.retail_price);
     panel.innerHTML = `<h2>Katalog produk</h2>
       ${unavailableNotice}
       <div class="storefront-filters">
-        <input type="search" aria-label="Cari laptop" placeholder="Cari nama, merek, atau model laptop" />
-        <select aria-label="Filter merek"><option value="">Semua merek</option>${brands.map(brand => `<option>${esc(brand)}</option>`).join('')}</select>
+        <input type="search" aria-label="Cari laptop" placeholder="Cari laptop berdasarkan nama atau spek" />
+        <select aria-label="Filter merek"><option value="">Semua merek</option>${brands.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('')}</select>
         <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
       </div>
-      <p class="storefront-count" role="status"></p><div class="storefront-grid"></div>`;
+      <div class="storefront-quick">
+        ${quickFilterRow('Merek', 'brand', brands)}
+        ${quickFilterRow('Prosesor', 'processor', processors)}
+      </div>
+      <div class="storefront-results-toolbar">
+        <p class="storefront-count" role="status"></p>
+        ${products.some(hasPromo) ? '<button type="button" data-quick-promo aria-pressed="false">Sedang promo</button>' : ''}
+        <button type="button" data-reset-catalog hidden>Reset filter</button>
+      </div>
+      <div class="storefront-grid"></div>`;
     const search = panel.querySelector('input');
     const [brand, sort] = panel.querySelectorAll('select');
     const grid = panel.querySelector('.storefront-grid');
     const count = panel.querySelector('.storefront-count');
+    const brandButtons = [...panel.querySelectorAll('[data-quick-brand]')];
+    const processorButtons = [...panel.querySelectorAll('[data-quick-processor]')];
+    const promoButton = panel.querySelector('[data-quick-promo]');
+    const reset = panel.querySelector('[data-reset-catalog]');
+    let processor = '';
+    let promoOnly = false;
+    const matchesSearch = (product, query) => {
+      const text = [product.name, product.brand, product.model, processorByProduct.get(product),
+        ...Object.values(product.specifications || {})].join(' ').toLocaleLowerCase('id');
+      return query.split(/\s+/).every((term) => text.includes(term));
+    };
     const render = () => {
       const query = search.value.trim().toLocaleLowerCase('id');
-      const results = products.filter(product => (!brand.value || product.brand?.trim() === brand.value) &&
-        [product.name, product.brand, product.model].join(' ').toLocaleLowerCase('id').includes(query));
+      const results = products.filter((product) =>
+        (!brand.value || product.brand?.trim().toLocaleLowerCase('id') === brand.value) &&
+        (!processor || processorByProduct.get(product).toLocaleLowerCase('id') === processor) &&
+        (!promoOnly || hasPromo(product)) &&
+        (!query || matchesSearch(product, query)));
+      brandButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBrand === brand.value)));
+      processorButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickProcessor === processor)));
+      promoButton?.setAttribute('aria-pressed', String(promoOnly));
+      reset.hidden = !(query || brand.value || processor || promoOnly || sort.value);
       if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
       count.textContent = results.length ? `${results.length} produk tersedia` : 'Produk yang cocok belum ditemukan.';
       grid.innerHTML = results.map(product => {
@@ -2918,6 +2971,21 @@ function customerPortal(tracking) {
         button.addEventListener('click', () => showPublicProduct(results[index]));
       });
     };
+    brandButtons.forEach((button) => button.addEventListener('click', () => {
+      brand.value = brand.value === button.dataset.quickBrand ? '' : button.dataset.quickBrand;
+      render();
+    }));
+    processorButtons.forEach((button) => button.addEventListener('click', () => {
+      processor = processor === button.dataset.quickProcessor ? '' : button.dataset.quickProcessor;
+      render();
+    }));
+    promoButton?.addEventListener('click', () => { promoOnly = !promoOnly; render(); });
+    reset.addEventListener('click', () => {
+      search.value = brand.value = sort.value = processor = '';
+      promoOnly = false;
+      render();
+      search.focus();
+    });
     search.addEventListener('input', render);
     brand.addEventListener('change', render);
     sort.addEventListener('change', render);

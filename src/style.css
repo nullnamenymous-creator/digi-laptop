@@ -1414,3 +1414,24 @@ button.storefront-card:hover { border-color: #659477; }
 .branch-stock-card[data-stock-color="purple"] { --branch-stock-tint: #f1eaff; --branch-stock-ink: #613e89; }
 .branch-stock-card[data-stock-color="teal"] { --branch-stock-tint: #e2f4f1; --branch-stock-ink: #176358; }
 .branch-stock-card[data-stock-color="rose"] { --branch-stock-tint: #fcebf0; --branch-stock-ink: #893450; }
+
+.storefront-quick { display: grid; gap: 7px; margin-top: 10px; }
+.storefront-quick:empty { display: none; }
+.storefront-quick-row { display: grid; grid-template-columns: 68px minmax(0, 1fr); align-items: center; gap: 8px; }
+.storefront-quick-row > span { color: #294437; font-size: 13px; font-weight: 700; }
+.storefront-quick-buttons, .storefront-results-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.storefront-results-toolbar { margin: 10px 0; }
+.storefront-results-toolbar .storefront-count { margin: 0 auto 0 0; }
+.storefront-quick-buttons button, .storefront-results-toolbar button {
+  min-height: 40px; padding: 6px 13px; border: 1px solid #bccfc1; border-radius: 999px;
+  background: #fff; color: #204739; font: inherit; font-size: 13px; cursor: pointer;
+}
+.storefront-quick-buttons button:hover, .storefront-results-toolbar button:hover { border-color: #27684e; }
+.storefront-quick-buttons button[aria-pressed="true"], .storefront-results-toolbar button[aria-pressed="true"] {
+  background: #144b36; border-color: #144b36; color: #fff;
+}
+@media (max-width: 680px) {
+  .storefront-quick-row { grid-template-columns: 1fr; gap: 3px; }
+  .storefront-quick-buttons { flex-wrap: nowrap; overflow-x: auto; padding: 3px 3px 6px; }
+  .storefront-quick-buttons button { flex: none; white-space: nowrap; min-height: 44px; }
+}
