@@ -51,7 +51,7 @@ export async function renderProductPamphlet({ store, name, price, specifications
   const ink = '#273d33';
   const sage = '#dce9d7';
   const muted = '#476558';
-  const border = '#d5dfd1';
+  const border = '#000000';
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, 596, 420);
@@ -64,8 +64,8 @@ export async function renderProductPamphlet({ store, name, price, specifications
   line(31, 70, 565, 70);
   text(name, 31, 120, 534, 35, ink, 17);
 
-  box(31, 137, 534, 74, sage, null, 11);
-  box(41, 147, 4, 54, '#84a583', null, 2);
+  box(31, 137, 534, 74, sage, border, 11);
+  box(41, 147, 4, 54, border, null, 2);
   text('HARGA JUAL', 57, 157, 126, 10, muted);
 
   // Fit both the digits and the descender of "Rp" inside the price panel.
@@ -107,7 +107,7 @@ export async function renderProductPamphlet({ store, name, price, specifications
   ctx.strokeStyle = border;
   line(31, 337, 565, 337);
   if (warranty > 0) {
-    box(31, 350, 141, 33, sage, null, 16);
+    box(31, 350, 141, 33, sage, border, 16);
     text(`Garansi ${warranty} bulan`, 44, 371, 116, 13, muted);
   }
   text('KODE UNIT', 331, 369, 64, 10, muted);
