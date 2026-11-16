@@ -544,6 +544,19 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'finance') await financePage(page);
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
+    const longTables = {
+      dashboard: 'section .table-wrap',
+      receiving: '[data-intake-history] .table-wrap',
+      inventory: '[data-component-lots] .table-wrap',
+      warranty: '.warranty-history .table-wrap',
+      branches: '.table-panel .table-wrap',
+      reports: '.table-panel .table-wrap',
+    }[name];
+    if (page.isConnected && longTables) {
+      page.querySelectorAll(longTables).forEach((wrap) => {
+        bindRecordPages(wrap, [...wrap.querySelectorAll('tbody > tr')]);
+      });
+    }
   } catch (error) { if (!background) page.innerHTML = `<div class="notice error">${esc(error.message || 'Gagal memuat data.')}</div>`; }
   finally { clearTimeout(loadTimer); if (background) delete page.dataset.refreshing; }
 }
@@ -767,14 +780,12 @@ async function qcResultsPanel() {
 
 function bindQcResultFilter(page) {
   const filter = page.querySelector('#qc-result-status');
-  filter.addEventListener('change', () => {
-    let visible = 0;
-    page.querySelectorAll('[data-qc-result]').forEach((row) => {
-      row.hidden = Boolean(filter.value && row.dataset.qcResult !== filter.value);
-      if (!row.hidden) visible++;
-    });
-    page.querySelector('#qc-result-empty').hidden = visible > 0;
-  });
+  const rows = [...page.querySelectorAll('[data-qc-result]')];
+  const empty = page.querySelector('#qc-result-empty');
+  const render = () => filterPagedRows(empty.closest('tbody'), rows,
+    (row) => !filter.value || row.dataset.qcResult === filter.value, empty);
+  filter.addEventListener('change', render);
+  render();
 }
 
 async function qualityPage(page) {
@@ -826,14 +837,9 @@ async function qualityPage(page) {
     for (const id of ['qc-rows', 'qc-repair-rows']) {
       const table = page.querySelector('#' + id);
       const query = id === 'qc-rows' ? search.value.trim().toLowerCase() : '';
-      let count = 0;
-      table.querySelectorAll('[data-qc-status]').forEach((row) => {
-        const matches = (filter?.table !== id || filter.matches(row.dataset.qcStatus)) &&
-          row.textContent.toLowerCase().includes(query);
-        row.hidden = !matches;
-        if (matches) count++;
-      });
-      table.querySelector('[data-qc-empty]').hidden = count > 0;
+      filterPagedRows(table, [...table.querySelectorAll('[data-qc-status]')], (row) =>
+        (filter?.table !== id || filter.matches(row.dataset.qcStatus)) &&
+        row.textContent.toLowerCase().includes(query), table.querySelector('[data-qc-empty]'));
     }
     cards.forEach((card) => card.setAttribute('aria-pressed', String(card.dataset.qcFilter === selected)));
   };
@@ -928,7 +934,7 @@ async function receivingPage(page) {
   const batchRows = (batches.data || []).map((batch) => `<tr><td class="product-name">${esc(batch.id.slice(0, 8).toUpperCase())}<div class="field-hint">${new Date(batch.created_at).toLocaleString('id-ID')}</div></td><td>${esc(batch.products?.name || 'Barang')}</td><td>${esc(batch.suppliers?.name || batch.supplier || '—')} ${batch.suppliers?.initials ? `<span class="pill blue">${esc(batch.suppliers.initials)}</span>` : ''}<div class="field-hint">${esc(batch.invoice_number || '')}</div></td><td>${batch.unit_count} unit</td><td><span class="pill ${batch.stock_items?.some((item) => item.status === 'pending_qc') ? 'warn' : ''}">${batch.stock_items?.some((item) => item.status === 'pending_qc') ? 'Menunggu QC' : batch.stock_items?.every((item) => item.status === 'available') && batch.stock_items.length ? 'Siap di stok' : 'Lihat Produk & stok'}</span></td><td><button class="small-btn" data-print-batch="${batch.id}">Cetak label</button>${canManage() ? ` <button class="small-btn" data-edit-intake="${batch.id}">Edit</button> <button class="small-btn" data-delete-intake="${batch.id}">Hapus</button>` : ''}</td></tr>`).join('');
   page.innerHTML = `${header('Penerimaan & barcode', 'Catat supplier, jumlah, modal, dan pembayaran barang yang baru datang.', `<button class="btn primary" id="new-intake">＋ Buat penerimaan</button>`)}
     <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">Pindai & cek</div><div class="card-sub">Teknisi mengerjakan halaman QC & repair</div></article></div>
-    <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
+    <section class="panel table-panel" data-intake-history><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari kode unit / barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button>${canManage() ? ` <button type="button" class="small-btn" data-edit-intake-unit="${item.id}">Edit</button> <button type="button" class="small-btn" data-delete-intake-unit="${item.id}">Hapus</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
   page.querySelector('#new-intake').addEventListener('click', () => intakeBatchModal(products, suppliers));
   page.querySelectorAll('[data-edit-intake]').forEach((button) => button.addEventListener('click', () => {
@@ -972,7 +978,15 @@ async function receivingPage(page) {
     if (!printWindow) return toast('Izinkan pop-up untuk mencetak label.', true);
     try { const { data, error } = await supabase.from('stock_items').select('barcode,supplier,suppliers(initials),products(name,sku,category)').eq('id', button.dataset.printOne).single(); if (error) throw error; printBarcodeLabels([data], printWindow); } catch (error) { printWindow.close(); toast(error.message, true); }
   }));
-  page.querySelector('#intake-search').addEventListener('input', (event) => { const query = event.target.value.toLowerCase(); page.querySelectorAll('#intake-rows tr').forEach((row) => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(query))); });
+  const intakeBody = page.querySelector('#intake-rows');
+  const intakeRows = [...intakeBody.querySelectorAll('tr')];
+  const intakeSearch = page.querySelector('#intake-search');
+  const filterIntake = () => {
+    const query = intakeSearch.value.trim().toLowerCase();
+    filterPagedRows(intakeBody, intakeRows, (row) => row.textContent.toLowerCase().includes(query));
+  };
+  intakeSearch.addEventListener('input', filterIntake);
+  filterIntake();
 }
 
 function intakeBatchModal(products, suppliers) {
@@ -1148,7 +1162,7 @@ async function inventoryPage(page) {
     </section>
     ${catalogSection}
     <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" aria-label="Cari kode unit, nomor seri, supplier, atau model" placeholder="Cari kode unit / barcode" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
-    <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
+    <section class="panel table-panel" data-component-lots style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
       <div class="panel-head opening-history-tools">
         <div class="form-grid">
@@ -2020,11 +2034,29 @@ async function cashierPage(page) {
   const matchesCatalog = (product, query) =>
     [product.name, product.sku, product.brand, product.model].join(' ').toLocaleLowerCase('id').includes(query) ||
     stock.some((row) => row.quantity > 0 && row.product_id === product.id && [row.barcode, row.serial_number].join(' ').toLocaleLowerCase('id').includes(query));
+  const catalogPagination = document.createElement('nav');
+  catalogPagination.className = 'finance-table-pages';
+  catalogPagination.setAttribute('aria-label', 'Halaman katalog kasir');
+  catalogPagination.innerHTML = '<button type="button" class="small-btn">Sebelumnya</button><span role="status"></span><button type="button" class="small-btn">Berikutnya</button>';
+  catalog.after(catalogPagination);
+  const [catalogPrevious, catalogNext] = catalogPagination.querySelectorAll('button');
+  const catalogPageSize = 12;
+  let catalogPage = 0;
+  let catalogQuery = '';
   const renderCatalog = () => {
     const query = productSearch.value.trim().toLocaleLowerCase('id');
     const matches = availableProducts.filter((product) => available.get(product.id) > 0 && matchesCatalog(product, query));
+    if (catalogQuery !== query) catalogPage = 0;
+    catalogQuery = query;
+    const pages = Math.max(1, Math.ceil(matches.length / catalogPageSize));
+    catalogPage = Math.min(catalogPage, pages - 1);
+    catalogPagination.hidden = pages === 1;
+    catalogPagination.querySelector('span').textContent = `Halaman ${catalogPage + 1} dari ${pages}`;
+    catalogPrevious.disabled = catalogPage === 0;
+    catalogNext.disabled = catalogPage === pages - 1;
     catalogCount.textContent = matches.length + ' produk';
-    catalog.innerHTML = matches.map((product) => {
+    const first = catalogPage * catalogPageSize;
+    catalog.innerHTML = matches.slice(first, first + catalogPageSize).map((product) => {
       const price = priceFor(product);
       return `<button type="button" class="cashier-product-card" data-cashier-product="${esc(product.id)}" ${price > 0 && remainingFor(product) > 0 && !saving ? '' : 'disabled'}>
         <span class="cashier-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : 'Foto belum tersedia'}</span>
@@ -2032,6 +2064,8 @@ async function cashierPage(page) {
       </button>`;
     }).join('') || '<div class="empty">Tidak ada produk siap jual yang cocok.</div>';
   };
+  catalogPrevious.addEventListener('click', () => { catalogPage--; renderCatalog(); });
+  catalogNext.addEventListener('click', () => { catalogPage++; renderCatalog(); });
   const cartLines = page.querySelector('#cart-lines');
   const renderCart = () => {
     const total = cart.reduce((sum, item) => sum + priceFor(item.product) * item.quantity, 0);
@@ -2219,14 +2253,16 @@ async function servicePage(page) {
   page.querySelectorAll('[data-parts]').forEach((button) => button.addEventListener('click', () => partsModal(button.dataset.parts)));
   const search = page.querySelector('#service-search');
   const status = page.querySelector('#service-status');
+  const serviceBody = page.querySelector('#service-rows');
+  const serviceRows = [...serviceBody.querySelectorAll('[data-service-status]')];
   const filterTickets = () => {
     const query = search.value.trim().toLowerCase();
-    page.querySelectorAll('#service-rows tr[data-service-status]').forEach(row => {
-      row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(query) || Boolean(status.value && row.dataset.serviceStatus !== status.value));
-    });
+    filterPagedRows(serviceBody, serviceRows, (row) => row.textContent.toLowerCase().includes(query)
+      && (!status.value || row.dataset.serviceStatus === status.value));
   };
   search.addEventListener('input', filterTickets);
   status.addEventListener('change', filterTickets);
+  filterTickets();
 }
 
 function technicianServiceModal(ticket) {
@@ -2487,7 +2523,7 @@ async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8
   }
 }
 
-function bindFinanceTablePages(table, rows, pageSize = 8) {
+function bindRecordPages(table, rows, pageSize = 8) {
   if (rows.length <= pageSize) return;
   let current = 0;
   const pages = Math.ceil(rows.length / pageSize);
@@ -2513,6 +2549,17 @@ function financeSummaryCard(key, label, amount, detail) {
     <span class="card-label">${label}<span aria-hidden="true">&rarr;</span></span>
     <span class="card-value">${amount}</span><span class="card-sub">${detail}</span>
   </button>`;
+}
+
+function filterPagedRows(body, rows, predicate, emptyRow) {
+  const wrap = body.closest('.table-wrap');
+  const previousControls = wrap.nextElementSibling;
+  if (previousControls?.matches('.finance-table-pages')) previousControls.remove();
+  const matches = rows.filter(predicate);
+  const visible = new Set(matches);
+  rows.forEach((row) => { row.hidden = !visible.has(row); });
+  if (emptyRow) emptyRow.hidden = matches.length > 0;
+  bindRecordPages(wrap, matches);
 }
 
 async function reportsPage(page) {
@@ -2618,6 +2665,7 @@ async function reportsPage(page) {
     const amounts = [salesTotal, serviceTotal, hppTotal, expenseTotal, netProfit];
     const tables = [...page.querySelectorAll('.table-panel')].map((panel, index) => {
       const copy = panel.querySelector('table').cloneNode(true);
+      copy.querySelectorAll('tr[hidden]').forEach((row) => { row.hidden = false; });
       if (index === 0) {
         for (const row of copy.rows) {
           if (row.cells.length === 1) row.cells[0].colSpan = 7;
@@ -2719,7 +2767,7 @@ function openReportFinanceDetail(title, context, rows, mode, totals = []) {
     ? `<div class="table-wrap finance-detail-table">${reportFinanceTable(rows, mode)}</div>`
     : '<div class="empty">Belum ada catatan untuk pilihan ini.</div>'}`, null);
   const table = host.querySelector('.finance-detail-table');
-  if (table) bindFinanceTablePages(table, [...table.querySelectorAll('tbody tr')]);
+  if (table) bindRecordPages(table, [...table.querySelectorAll('tbody tr')]);
 }
 
 async function teamAdminRequest(payload) {
@@ -2827,7 +2875,18 @@ async function contactsPage(page, type) {
   const totalReceivable = supplierMode ? 0 : receivables.reduce((sum, entry) => sum + entry.remaining, 0);
   page.innerHTML = `${header('Pelanggan & supplier', 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.', `<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${canManage() ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${canManage() ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
   page.querySelectorAll('[data-contact-tab]').forEach((button) => button.addEventListener('click', async () => { state.contactTab = button.dataset.contactTab; await contactsPage(page, state.contactTab); }));
-  page.querySelector('#contact-search').addEventListener('input', (event) => { const query = event.target.value.toLowerCase(); page.querySelectorAll('#contact-rows tr').forEach((row) => row.classList.toggle('hidden', !row.textContent.toLowerCase().includes(query))); });
+  const contactBody = page.querySelector('#contact-rows');
+  const contactRows = [...contactBody.querySelectorAll('tr')];
+  const contactSearch = page.querySelector('#contact-search');
+  const filterContacts = () => {
+    const query = contactSearch.value.trim().toLowerCase();
+    filterPagedRows(contactBody, contactRows, (row) => row.textContent.toLowerCase().includes(query));
+  };
+  contactSearch.addEventListener('input', filterContacts);
+  filterContacts();
+  page.querySelectorAll('.table-panel .table-wrap').forEach((wrap) => {
+    if (!wrap.contains(contactBody)) bindRecordPages(wrap, [...wrap.querySelectorAll('tbody > tr')]);
+  });
   page.querySelectorAll('[data-open-contact]').forEach((button) => button.addEventListener('click', () => {
     const contact = rowsData.find((row) => row.id === button.dataset.openContact);
     if (!contact) return;
@@ -2980,10 +3039,10 @@ async function financePage(page) {
     cashView.querySelector('[data-cash-total]').textContent = direction === 'income' ? `Total masuk ${money(incomes)}`
       : direction === 'expense' ? `Total keluar ${money(expenses)}`
       : `Masuk ${money(incomes)} · Keluar ${money(expenses)} · Bersih ${money(incomes-expenses)}`;
-    bindFinanceTablePages(cashTable, matches);
+    bindRecordPages(cashTable, matches);
   };
   views.filter((view) => view !== cashView).forEach((view) => {
-    bindFinanceTablePages(view.querySelector('.table-wrap'), [...view.querySelectorAll('tbody tr')]);
+    bindRecordPages(view.querySelector('.table-wrap'), [...view.querySelectorAll('tbody tr')]);
   });
   viewTabs.forEach((tab) => tab.addEventListener('click', () => selectView(tab.dataset.financeTab)));
   cashFilters.forEach((button) => button.addEventListener('click', () => selectView('cash', button.dataset.cashFilter)));
