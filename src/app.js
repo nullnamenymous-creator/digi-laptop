@@ -994,8 +994,8 @@ async function inventoryPage(page) {
   const branchId = state.branchId;
   const [{ products, stock }, openingResult] = await Promise.all([
     fetchInventory(),
-    canManage()
-      ? supabase.from('stock_opening_batches').select('id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20)
+    canEditProducts()
+      ? supabase.from('stock_opening_batches').select('id,branch_id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20)
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (!page.isConnected || state.branchId !== branchId) return;
@@ -1038,7 +1038,7 @@ async function inventoryPage(page) {
         </div>
       </div>
     </article>`).join('');
-  const action = canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label><button class="btn" id="open-opening-stock">＋ Stok awal</button><button class="btn primary" id="new-product">＋ Produk baru</button>' : isCentralAdmin() ? '<button class="btn primary" id="new-product">＋ Produk baru</button>' : '';
+  const action = canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label><button class="btn" id="open-opening-stock">＋ Stok awal</button><button class="btn primary" id="new-product">＋ Produk baru</button>' : isCentralAdmin() ? '<button class="btn" id="open-opening-stock">+ Stok awal</button><button class="btn primary" id="new-product">＋ Produk baru</button>' : '';
   const laptopUnits = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category === 'Laptop');
   const componentLots = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category !== 'Laptop');
   const unitCountFor = (status) => laptopUnits.filter((item) => item.status === status).reduce((sum, item) => sum + Number(item.quantity || 1), 0);
@@ -1065,7 +1065,7 @@ async function inventoryPage(page) {
     ${catalogSection}
     <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" placeholder="Cari barcode, serial, supplier, model" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
-    ${canManage() ? `<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Batch pembukaan inventaris · 20 terbaru di ${esc(branchName(state.branchId))}. Barcode bisa dicetak ulang.</div></div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">Belum ada batch stok awal di cabang ini.</div></td></tr>'}</tbody></table></div></section>` : ''}
+    ${canEditProducts() ? `<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Batch pembukaan inventaris · 20 terbaru di ${esc(branchName(state.branchId))}. Barcode bisa dicetak ulang.</div></div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> <button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button> ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">Belum ada batch stok awal di cabang ini.</div></td></tr>'}</tbody></table></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
   const unitSearch = page.querySelector('#unit-search');
   const unitStatus = page.querySelector('#unit-status-filter');
@@ -1208,6 +1208,20 @@ async function inventoryPage(page) {
     const printWindow = window.open('', '_blank', 'width=980,height=820');
     if (!printWindow) return toast('Izinkan pop-up untuk membuka pratinjau barcode.', true);
     printBarcode(button.dataset.printBarcode, printWindow);
+  }));
+  page.querySelectorAll('[data-correct-opening]').forEach((button) => button.addEventListener('click', async () => {
+    const batch = openingBatches.find((item) => item.id === button.dataset.correctOpening);
+    const product = products.find((item) => item.id === batch?.product_id);
+    if (!product || !canEditProducts()) return;
+    try {
+      const items = checkError(await supabase.from('stock_items')
+        .select('serial_number,quantity,status,branch_id').eq('opening_batch_id', batch.id).order('created_at').order('id'));
+      if (items.some((item) => item.status !== 'available' || item.branch_id !== batch.branch_id)
+        || items.reduce((total, item) => total + Number(item.quantity), 0) !== Number(batch.unit_count)) {
+        throw new Error('Koreksi hanya tersedia untuk batch stok awal yang masih utuh dan belum dipakai.');
+      }
+      if (page.isConnected && state.branchId === batch.branch_id) openingStockModal([product], { ...batch, items });
+    } catch (error) { toast(error.message || 'Data stok awal gagal dimuat.', true); }
   }));
   page.querySelectorAll('[data-cancel-opening]').forEach((button) => button.addEventListener('click', () => {
     if (!canManage()) return;
@@ -1382,10 +1396,10 @@ function receiveStockTransferModal(transfer, items) {
   }, 'Konfirmasi serah terima');
 }
 
-function openingStockModal(products) {
-  if (!canManage()) return toast('Stok awal hanya dapat dicatat oleh pemilik.', true);
+function openingStockModal(products, batch = null) {
+  if (!canEditProducts()) return toast('Akses pencatatan stok awal ditolak.', true);
   const productOptions = products.map((product) => `<option value="${product.id}" data-category="${esc(product.category)}" data-cost="${Number(product.cost_price || 0)}">${esc(product.name)} · ${esc(product.sku)} · ${esc(product.category)}</option>`).join('');
-  const host = openModal('Catat stok awal', 'Catat barang lama yang sudah siap jual. Jika produknya belum ada, buat dari form ini dan otomatis masuk ke katalog produk.', `<div class="form-grid">${branchField('branch_id', centralBranch()?.id, true)}<div class="field"><label>Produk</label><select name="product_id" required>${productOptions}<option value="__new__" ${products.length ? '' : 'selected'}>＋ Produk belum ada · buat produk baru</option></select></div><div class="opening-new-product-fields form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" placeholder="Dell, Lenovo, HP..." /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field"><label>Garansi produk (bulan)</label><input name="new_warranty" type="number" min="0" value="1" /></div><div class="field"><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field"><label>Harga reseller</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div>${productPromoField()}${productCopyFields()}</div><div class="opening-product-photo form-grid full" hidden>${productPhotoPicker('')}${galleryFields()}</div><div class="field"><label>Jumlah stok awal</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Laptop mendapat barcode unik per unit. Sparepart dicatat sebagai satu lot.</small></div><div class="field"><label>Modal per unit</label><input name="unit_cost" type="number" min="0" step="1000" value="${Number(products[0]?.cost_price || 0)}" required /><small class="field-hint">Isi 0 jika nilai modal lama tidak diketahui.</small></div><div class="field full opening-serial-field"><label>Nomor seri laptop (opsional, satu per baris)</label><textarea name="serial_numbers" rows="4" placeholder="SN pertama&#10;SN kedua&#10;SN ketiga"></textarea><small class="field-hint">Jika diisi, jumlah nomor seri harus sama dengan jumlah unit.</small></div><div class="field full"><label>Catatan pembukaan stok (opsional)</label><textarea name="notes" rows="2" maxlength="1000" placeholder="Contoh: stok display awal CABANG A"></textarea></div></div><div class="notice" style="margin-top:12px">Stok awal langsung berstatus siap dijual. Pakai fitur ini hanya untuk unit yang sudah lolos pemeriksaan. Laptop baru datang dan belum QC harus dicatat lewat Penerimaan & barcode.</div>`, async (form) => {
+  const host = openModal(batch ? 'Koreksi stok awal' : 'Catat stok awal', batch ? 'Barcode batch lama akan diganti. Cetak ulang label setelah menyimpan.' : 'Catat barang lama yang sudah siap jual. Jika produknya belum ada, buat dari form ini dan otomatis masuk ke katalog produk.', `<div class="form-grid">${batch ? `<div class="field"><label>Cabang</label><input value="${esc(branchName(batch.branch_id))}" readonly /></div>` : branchField('branch_id', centralBranch()?.id, true)}<div class="field"><label>Produk</label><select name="product_id" required>${productOptions}${batch ? '' : `<option value="__new__" ${products.length ? '' : 'selected'}>＋ Produk belum ada · buat produk baru</option>`}</select></div><div class="opening-new-product-fields form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" placeholder="Dell, Lenovo, HP..." /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field"><label>Garansi produk (bulan)</label><input name="new_warranty" type="number" min="0" value="1" /></div><div class="field"><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field"><label>Harga reseller</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div>${productPromoField()}${productCopyFields()}</div><div class="opening-product-photo form-grid full" hidden>${productPhotoPicker('')}${galleryFields()}</div><div class="field"><label>Jumlah stok awal</label><input name="quantity" type="number" min="1" max="500" value="${Number(batch?.unit_count ?? 1)}" required /><small class="field-hint">Laptop mendapat barcode unik per unit. Sparepart dicatat sebagai satu lot.</small></div><div class="field"><label>Modal per unit</label><input name="unit_cost" type="number" min="0" step="0.01" value="${Number(batch?.unit_cost ?? products[0]?.cost_price ?? 0)}" required /><small class="field-hint">Isi 0 jika nilai modal lama tidak diketahui.</small></div><div class="field full opening-serial-field"><label>Nomor seri laptop (opsional, satu per baris)</label><textarea name="serial_numbers" rows="4" placeholder="SN pertama&#10;SN kedua&#10;SN ketiga">${esc(batch?.items.map((item) => item.serial_number).filter(Boolean).join('\n') || '')}</textarea><small class="field-hint">Jika diisi, jumlah nomor seri harus sama dengan jumlah unit.</small></div><div class="field full"><label>Catatan pembukaan stok (opsional)</label><textarea name="notes" rows="2" maxlength="1000" placeholder="Contoh: stok display awal CABANG A">${esc(batch?.notes || '')}</textarea></div></div><div class="notice" style="margin-top:12px">Stok awal langsung berstatus siap dijual. Pakai fitur ini hanya untuk unit yang sudah lolos pemeriksaan. Laptop baru datang dan belum QC harus dicatat lewat Penerimaan & barcode.</div>`, async (form) => {
     const isNewProduct = form.get('product_id') === '__new__';
     let product = products.find((item) => item.id === String(form.get('product_id')));
     const category = String(isNewProduct ? form.get('new_category') : product?.category || '').toLowerCase();
@@ -1422,9 +1436,9 @@ function openingStockModal(products) {
     }
     if (!product) throw new Error('Pilih produk yang valid.');
     const printWindow = window.open('', '_blank', 'width=980,height=820');
-    const { data, error } = await supabase.rpc('record_opening_stock', {
-      _branch_id: String(form.get('branch_id')),
-      _product_id: product.id,
+    const stockTarget = batch ? { _batch_id: batch.id } : { _branch_id: String(form.get('branch_id')), _product_id: product.id };
+    const { data, error } = await supabase.rpc(batch ? 'correct_unused_opening_stock' : 'record_opening_stock', {
+      ...stockTarget,
       _quantity: quantity,
       _unit_cost: Number(form.get('unit_cost')),
       _unit_details: serials.length ? serials.map((serial_number) => ({ serial_number })) : [],
@@ -1433,7 +1447,8 @@ function openingStockModal(products) {
     if (error) { printWindow?.close(); throw new Error(isNewProduct ? `Produk berhasil ditambahkan ke katalog, tetapi pencatatan stok awal gagal: ${error.message}` : error.message); }
     const labels = (data?.items || []).map((item) => ({ ...item, supplier: 'Stok awal', products: product }));
     if (printWindow) printBarcodeLabels(labels, printWindow);
-    toast(product.category.toLowerCase() === 'laptop'
+    if (batch) toast('Koreksi stok awal tersimpan. Gunakan barcode baru untuk batch ini.');
+    else toast(product.category.toLowerCase() === 'laptop'
       ? `${labels.length} unit stok awal tercatat siap jual${printWindow ? ' · pratinjau barcode dibuka' : ' · izinkan pop-up untuk cetak barcode'}.`
       : `${quantity} unit stok awal tercatat siap dijual${printWindow ? ' · pratinjau barcode lot dibuka' : ' · barcode bisa dicetak dari tabel stok'}.`);
     if (isNewProduct) toast('Produk baru otomatis tersimpan di katalog Produk & stok.');
@@ -1444,7 +1459,7 @@ function openingStockModal(products) {
     const isNew = form.product_id.value === '__new__';
     form.querySelector('.opening-new-product-fields').hidden = !isNew;
     form.querySelector('.opening-product-photo').hidden = !isNew;
-    if (!isNew) form.unit_cost.value = form.product_id.selectedOptions[0]?.dataset.cost || 0;
+    if (!isNew && !batch) form.unit_cost.value = form.product_id.selectedOptions[0]?.dataset.cost || 0;
   };
   const syncProduct = () => {
     const isNew = form.product_id.value === '__new__';
