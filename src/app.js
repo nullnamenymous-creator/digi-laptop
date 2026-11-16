@@ -654,7 +654,7 @@ async function dashboardPage(page) {
   const laptopUnitCount = [...laptopBrandCounts.values()].reduce((sum,value) => sum+value,0);
   const finderStock = new Map();
   inventoryData.stock.forEach((item) => { const rows = finderStock.get(item.product_id) || []; rows.push(item); finderStock.set(item.product_id, rows); });
-  const finderProducts = inventoryData.products.map((product) => {
+  const finderProducts = inventoryData.products.filter((product) => !product.archived_at).map((product) => {
     const rows = finderStock.get(product.id) || [];
     const available = rows.filter((item) => item.status === 'available').reduce((sum,item) => sum + Number(item.quantity || 0), 0);
     const searchableCodes = rows.flatMap((item) => [item.barcode, item.supplier_barcode, item.serial_number]).filter(Boolean).join(' ');
@@ -918,7 +918,7 @@ async function fetchInventory() {
 async function receivingPage(page) {
   if (!canIntake()) throw new Error('Halaman ini hanya untuk pemilik dan operator penerimaan.');
   const [products, batches, queue, suppliers] = await Promise.all([
-    fetchAllRows(supabase.from('products').select('id,name,sku,category,cost_price,image_path').order('name')),
+    fetchAllRows(supabase.from('products').select('*').order('name')).then((rows) => rows.filter((product) => !product.archived_at)),
     supabase.from('intake_batches').select('id,product_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,unit_count,created_at,products(name,sku,category),suppliers(name,initials),stock_items(status)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20),
     fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,supplier_barcode,product_id,intake_batch_id,created_at,products(name)').eq('branch_id', state.branchId).eq('status', 'pending_qc').order('created_at', { ascending: false })),
     fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone').order('name')),
@@ -1216,7 +1216,7 @@ async function inventoryPage(page) {
   }));
   filterUnits();
   page.querySelector('#new-product')?.addEventListener('click', () => productModal());
-  page.querySelector('#open-opening-stock')?.addEventListener('click', () => openingStockModal(products));
+  page.querySelector('#open-opening-stock')?.addEventListener('click', () => openingStockModal(products.filter((product) => !product.archived_at)));
   page.querySelector('#export-products')?.addEventListener('click', () => downloadCsv('digi-laptop-produk.csv', products.map(({name,sku,brand,model,category,cost_price,retail_price,reseller_price,warranty_months,image_path}) => ({name,sku,brand,model,category,cost_price,retail_price,reseller_price,warranty_months,image_path}))));
   page.querySelector('#import-products')?.addEventListener('change', async (event) => { const file=event.target.files?.[0]; if(!file)return; try { const rows=parseCsv(await file.text()); const required=['name','sku','category']; if(!rows.length||required.some((key)=>!(key in rows[0]))) throw new Error('CSV wajib punya kolom name, sku, category. Gunakan Ekspor CSV sebagai contoh format.'); const seen=new Set();const productsToImport=rows.map((row)=>{const sku=String(row.sku||'').trim()||`DL-${crypto.randomUUID().slice(0,8).toUpperCase()}`;if(seen.has(sku))throw new Error(`SKU ${sku} muncul lebih dari sekali di file.`);seen.add(sku);return {id:products.find(p=>p.sku===sku)?.id||crypto.randomUUID(),organization_id:state.organization.id,name:String(row.name||'').trim(),sku,brand:row.brand||'',model:row.model||'',category:row.category||'Lainnya',cost_price:Number(row.cost_price||0),retail_price:Number(row.retail_price||0),reseller_price:Number(row.reseller_price||0),warranty_months:Number(row.warranty_months||0),image_path:row.image_path||products.find(p=>p.sku===sku)?.image_path||''}}); if(productsToImport.some((x)=>!x.name||![x.cost_price,x.retail_price,x.reseller_price,x.warranty_months].every(Number.isFinite)||[x.cost_price,x.retail_price,x.reseller_price,x.warranty_months].some(v=>v<0))) throw new Error('Nama produk atau nominal di CSV tidak valid.'); const result=await supabase.from('products').upsert(productsToImport,{onConflict:'id'}); if(result.error)throw result.error; toast(`${productsToImport.length} produk berhasil diimpor.`); await showPage('inventory'); } catch(error){toast(error.message||'CSV gagal diimpor.',true)} finally{event.target.value=''} });
   const productsPerPage = 8;
@@ -1228,6 +1228,7 @@ async function inventoryPage(page) {
   const applyProductFilters = () => {
     const category = page.querySelector('#inventory-category').value; const brand = page.querySelector('#inventory-brand').value; const stockFilter = page.querySelector('#inventory-stock').value; const sort = page.querySelector('#inventory-sort').value; const query = page.querySelector('#inventory-search').value.trim().toLowerCase(); const minPrice = Number(page.querySelector('#inventory-min-price').value || 0); const maxInput = page.querySelector('#inventory-max-price').value; const maxPrice = maxInput === '' ? Infinity : Number(maxInput);
     let filtered = (canEditProducts() ? products : branchProducts).filter((product) => {
+      if (product.archived_at) return false;
       const items = stockByProduct.get(product.id) || [];
       const availableCount = totals.get(product.id) || 0;
       const hasStatus = (status) => items.some((item) => item.status === status);
@@ -1286,9 +1287,10 @@ async function inventoryPage(page) {
       const organizationId = state.organization.id;
       const host = openModal('Hapus produk?', 'Produk akan dihapus dari katalog toko di semua cabang.', `<div class="notice"><strong>${esc(product.name)}</strong><br />Produk hanya bisa dihapus jika belum terhubung dengan stok atau riwayat transaksi.</div>
         <details class="product-form-photos">
-          <summary>Cara menghapus data uji coba</summary>
+          <summary>Jika produk sudah punya riwayat</summary>
           <p>Jika unit tes berasal dari stok awal dan batch masih utuh, buka <strong>Riwayat stok awal</strong> di cabang tempat batch dicatat. Pilih batch produk ini, klik <strong>Batalkan stok awal</strong>, lalu coba hapus produk lagi.</p>
-          <p>Jika unit pernah dijual, dimutasi, atau dipakai, riwayatnya perlu diperiksa sebelum data tes bisa dibersihkan. Untuk menyembunyikan produk dari katalog publik, buka <strong>Edit produk</strong> lalu matikan <strong>Tampilkan di katalog publik</strong>.</p>
+          <p>Jika produk sudah punya riwayat dan tidak ada stok tersisa atau mutasi berjalan, pilih <strong>Arsipkan produk</strong> untuk menyembunyikannya dari daftar aktif sambil menyimpan riwayat.</p>
+          <button type="button" class="btn" data-archive-product>Arsipkan produk</button>
           <button type="button" class="btn" data-view-opening-history>Lihat riwayat stok awal</button>
           <button type="button" class="btn" data-edit-from-delete>Edit produk</button>
         </details>`, async () => {
@@ -1297,13 +1299,22 @@ async function inventoryPage(page) {
           .eq('id', product.id).eq('organization_id', organizationId).select('id');
         if (error?.code === '23503') {
           host.querySelector('details').open = true;
-          throw new Error('Produk masih terhubung dengan stok atau transaksi. Ikuti langkah di atas untuk meninjau data uji coba.');
+          throw new Error('Produk masih terhubung dengan riwayat stok atau transaksi. Gunakan Arsipkan produk jika stok sudah kosong.');
         }
         if (error) throw error;
         if (!data?.length) throw new Error('Produk tidak ditemukan atau akses hapus ditolak.');
         toast('Produk berhasil dihapus.');
         if (state.page === 'inventory') await showPage('inventory');
       }, 'Hapus produk');
+      host.querySelector('[data-archive-product]').addEventListener('click', () => {
+        openModal('Arsipkan produk?', 'Produk akan hilang dari daftar aktif semua cabang. Riwayatnya tetap tersimpan.',
+          `<div class="notice"><strong>${esc(product.name)}</strong><br />${esc(product.sku || '-')}</div>`, async () => {
+            if (!canManage() || state.organization?.id !== organizationId) throw new Error('Akses arsip ditolak.');
+            checkError(await supabase.rpc('archive_inactive_product', { _product_id: product.id }));
+            toast('Produk diarsipkan.');
+            if (state.page === 'inventory') await showPage('inventory');
+          }, 'Arsipkan produk');
+      });
       host.querySelector('[data-view-opening-history]').addEventListener('click', () => {
         host.querySelector('[data-close-modal]').click();
         page.querySelector('#opening-stock-history')?.scrollIntoView({ block: 'center' });
