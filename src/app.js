@@ -614,20 +614,22 @@ function normalizeCustomerPhone(phone) {
 }
 
 function saleReferralSummary(sales, title, subtitle, dashboard = false) {
-  const totals = new Map();
+  const totals = new Map(dashboard
+    ? [...saleReferralLabels.keys()].map(source => [source, { count: 0, revenue: 0 }]) : []);
   for (const sale of sales) {
     const source = sale.referral_source || '';
+    if (dashboard && !saleReferralLabels.has(source)) continue;
     const entry = totals.get(source) || { count: 0, revenue: 0 };
     entry.count++;
     entry.revenue += Number(sale.total);
     totals.set(source, entry);
   }
   const rows = [...totals].sort((a, b) => b[1].count - a[1].count || b[1].revenue - a[1].revenue);
-  if (dashboard && rows.length) {
+  if (dashboard) {
     const symbols = { facebook: 'f', tiktok: '♪', recommendation: '★', walk_in: '⌂', other: '…' };
     return `<section class="panel referral-dashboard"><div class="panel-head"><div><div class="panel-title">${title}</div>
       <div class="panel-sub">${subtitle}</div></div></div>
-      <ol class="referral-cards">${rows.map(([source, entry], index) => `<li class="referral-card${index < 3 ? ' referral-card-top' : ''}">
+      <ol class="referral-cards">${rows.map(([source, entry], index) => `<li class="referral-card${index < 3 && entry.count > 0 ? ' referral-card-top' : ''}">
         <span class="referral-icon" data-referral-icon="${esc(saleReferralLabels.has(source) ? source : 'other')}" aria-hidden="true"><i>${symbols[source] || ''}</i></span>
         <div><strong>${esc(saleReferralLabels.get(source) || 'Belum dicatat')}</strong><small>${entry.count} transaksi · ${money(entry.revenue)}</small></div>
       </li>`).join('')}</ol></section>`;
