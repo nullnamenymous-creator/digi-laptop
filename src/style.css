@@ -1742,3 +1742,4 @@ button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offse
   }
   .warranty-history-table td[data-label="Aksi"]::before { content: none; }
 }
+.cashier-payment .commission-fields[hidden] { display: none; }

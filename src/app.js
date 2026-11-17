@@ -2383,6 +2383,7 @@ function saleReceiptDetails(sale) {
   const branch = sale.branches?.name || branchName(sale.branch_id);
   const paid = Number(sale.paid_amount || 0);
   const total = Number(sale.total || 0);
+  const discount = Number(sale.discount_amount || 0);
   const method = { cash: 'Tunai', transfer: 'Transfer', qris: 'QRIS', debit: 'Kartu debit', other: 'Lainnya' };
   return {
     phone,
@@ -2402,12 +2403,13 @@ function saleReceiptDetails(sale) {
       const barcode = line.unit_barcode ?? line.stock_items?.barcode;
       return {
         name: `${line.product_name || 'Barang'} × ${Number(line.quantity)}`,
-        price: money(line.line_total ?? Number(line.unit_price) * Number(line.quantity)),
+        price: money(discount ? Number(line.unit_price) * Number(line.quantity) : line.line_total ?? Number(line.unit_price) * Number(line.quantity)),
         detail: [barcode ? `Barcode ${barcode}` : '', details.length
           ? `${line.specifications == null ? 'Spek katalog saat ini · ' : ''}${details.join(' · ')}` : ''].filter(Boolean),
       };
     }),
     totals: [
+      ...(discount ? [['Subtotal', money(total + discount)], ['Potongan harga', '-' + money(discount)]] : []),
       ['Total', money(total)], ['Dibayar', money(paid)],
       ...(paid < total ? [['Sisa piutang', money(total - paid)]] : []),
       ['Metode', method[sale.payment_method] || sale.payment_method || '—'],
@@ -2528,7 +2530,7 @@ async function syncPendingOfflineSales() {
     for(const row of rows){
       if(row.status!=='queued'||row.organization_id!==state.organization.id||row.branch_id!==state.profile?.branch_id)continue;
       try{
-        const {data,error}=await supabase.rpc('create_sale_with_receipt',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date});
+        const {data,error}=await supabase.rpc('create_cashier_sale_with_commission',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date,_discount:row.discount_amount ?? 0,_commission:row.commission ?? null});
         if(error)throw error;
         const sale=checkError(await supabase.from('sales').select('receipt_number').eq('id',data).single());row.status='synced';row.receipt_number=sale.receipt_number;row.sale_id=data;row.synced_at=new Date().toISOString();row.error='';submitted++;changed=true;anyChanged=true;
       }catch(error){
@@ -2552,7 +2554,7 @@ async function cashierPage(page) {
   const availableProducts=products.filter(product=>(available.get(product.id)||0)>0);
   const queueKey=`digi-sale-outbox:${state.organization.id}:${branchId}`,readQueue=()=>JSON.parse(localStorage.getItem(queueKey)||'[]'),saveQueue=(q)=>localStorage.setItem(queueKey,JSON.stringify(q));
   let cart=[];
-  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
+  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="field"><label for="cashier-discount">Potongan harga (Rp)</label><input id="cashier-discount" name="discount_amount" type="number" min="0" step="1" placeholder="0" aria-describedby="cashier-discount-hint" /><div id="cashier-discount-hint" class="field-hint" aria-live="polite"></div></div><div class="field"><label for="commission-mode">Komisi mediator</label><select id="commission-mode" name="commission_method"><option value="">Tanpa mediator</option><option value="cashier">Kasir langsung bayar komisi</option><option value="retained">Mediator potong dari setoran</option><option value="pending">Komisi dibayar nanti</option></select></div><fieldset class="commission-fields form-grid full" hidden disabled><legend>Rincian mediator</legend><div class="field"><label for="mediator-name">Nama mediator</label><input id="mediator-name" name="mediator_name" maxlength="120" required /></div><div class="field"><label for="commission-amount">Komisi (Rp)</label><input id="commission-amount" name="commission_amount" type="number" min="1" step="1" required /></div><div class="field-hint full" id="commission-cash" aria-live="polite"></div></fieldset><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total setelah potongan <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
   const form = page.querySelector('#sale-form');
   const productSearch = page.querySelector('#sale-product-search');
   const priceFor = product => form.customer_type.value === 'reseller' ? Number(product.reseller_price) : publicRetailPrice(product);
@@ -2597,15 +2599,27 @@ async function cashierPage(page) {
   catalogPrevious.addEventListener('click', () => { catalogPage--; renderCatalog(); });
   catalogNext.addEventListener('click', () => { catalogPage++; renderCatalog(); });
   const cartLines = page.querySelector('#cart-lines');
+  const checkoutAmounts = () => {
+    const subtotal = Math.round(cart.reduce((sum, item) => sum + priceFor(item.product) * item.quantity, 0) * 100) / 100;
+    const discount = Number(form.discount_amount.value || 0);
+    const validDiscount = !form.discount_amount.validity.badInput && Number.isSafeInteger(discount)
+      && discount >= 0 && (discount === 0 || discount < subtotal);
+    return { subtotal, discount, validDiscount, total: Math.round((subtotal - discount) * 100) / 100 };
+  };
   const renderCart = () => {
-    const total = cart.reduce((sum, item) => sum + priceFor(item.product) * item.quantity, 0);
+    const { subtotal, total, validDiscount } = checkoutAmounts();
     const units = cart.reduce((sum, item) => sum + item.quantity, 0);
     page.querySelector('#cart-count').textContent = units ? units + ' unit' : 'Belum ada barang';
-    page.querySelector('#cart-total').textContent = money(total);
-    page.querySelector('#checkout-total').textContent = money(total);
-    form.querySelector('[type="submit"]').disabled = saving || !units || cart.some(item => !(priceFor(item.product) > 0));
-    form.paid_amount.max = String(total);
-    if (Number(form.paid_amount.value) > total) form.paid_amount.value = String(total);
+    page.querySelector('#cart-total').textContent = money(subtotal);
+    page.querySelector('#checkout-total').textContent = validDiscount ? money(total) : '-';
+    page.querySelector('#cashier-discount-hint').textContent = validDiscount
+      ? '' : 'Masukkan rupiah bulat yang lebih kecil dari subtotal.';
+    form.querySelector('[type="submit"]').disabled = saving || !units || !validDiscount
+      || cart.some(item => !(priceFor(item.product) > 0));
+    if (validDiscount) {
+      form.paid_amount.max = String(total);
+      if (Number(form.paid_amount.value) > total) form.paid_amount.value = String(total);
+    }
     cartLines.innerHTML = cart.map(({product, quantity}, index) => `
       <li class="cashier-cart-line">
         <div class="cashier-cart-product">
@@ -2621,6 +2635,7 @@ async function cashierPage(page) {
         </div>
       </li>`).join('') || '<li class="empty">Klik produk untuk menambahkannya ke keranjang.</li>';
     renderCatalog();
+    renderCommissionCash();
   };
   const addProduct = (product) => {
     if (saving || !product || !remainingFor(product) || !(priceFor(product) > 0)) return;
@@ -2662,12 +2677,29 @@ async function cashierPage(page) {
     renderCart();
   });
   form.customer_type.addEventListener('change', renderCart);
+  form.discount_amount.addEventListener('input', renderCart);
   form.payment_mode.addEventListener('change', () => {
     const credit = form.payment_mode.value === 'credit';
     form.querySelector('.credit-fields').hidden = !credit;
     form.paid_amount.required = credit;
     form.due_date.required = credit;
   });
+  const commissionFields = form.querySelector('.commission-fields');
+  const renderCommissionCash = () => {
+    const { total, validDiscount } = checkoutAmounts();
+    const paid = form.payment_mode.value === 'full' ? total : Number(form.paid_amount.value);
+    const amount = Number(form.commission_amount.value);
+    const method = form.commission_method.value;
+    page.querySelector('#commission-cash').textContent = validDiscount && amount > 0
+      ? method === 'pending' ? `Kas masuk ${money(paid)} · Komisi terutang ${money(amount)}`
+        : `Kas bersih transaksi ${money(paid - amount)}` : '';
+  };
+  form.commission_method.addEventListener('change', () => {
+    commissionFields.hidden = commissionFields.disabled = !form.commission_method.value;
+    renderCommissionCash();
+  });
+  form.addEventListener('input', renderCommissionCash);
+  form.addEventListener('change', renderCommissionCash);
   page.querySelectorAll('[data-print-sale]').forEach(button => button.addEventListener('click', () => {
     openSaleReceipt(button.dataset.printSale, button);
   }));
@@ -2678,18 +2710,28 @@ async function cashierPage(page) {
     if (state.branchId !== branchId) return toast('Cabang telah berubah. Buka ulang kasir.', true);
     if (!cart.length) return toast('Keranjang masih kosong.', true);
     if (cart.some((item) => !(priceFor(item.product) > 0))) return toast('Ada produk yang belum memiliki harga untuk tipe pelanggan ini.', true);
-    const total = cart.reduce((sum,item)=>sum+priceFor(item.product)*item.quantity,0);
+    const { total, discount, validDiscount } = checkoutAmounts();
+    if (!validDiscount) return toast('Potongan harus lebih kecil dari subtotal dan dalam rupiah bulat.', true);
     const paid = form.payment_mode.value === 'full' ? total : Number(form.paid_amount.value);
     if (!Number.isFinite(paid) || paid < 0 || paid > total) return toast('Nominal pembayaran tidak valid.', true);
     if (paid < total && !String(form.customer_name.value || '').trim()) return toast('Nama pembeli wajib diisi untuk transaksi piutang.', true);
     if (paid < total && !form.due_date.value) return toast('Tanggal jatuh tempo wajib untuk piutang.', true);
+    const method = form.commission_method.value;
+    const commission = method ? {
+      method, name: form.mediator_name.value.trim(), amount: Number(form.commission_amount.value)
+    } : null;
+    if (commission && (!commission.name || !Number.isSafeInteger(commission.amount)
+      || commission.amount <= 0 || commission.amount >= total)) {
+      return toast('Isi nama mediator dan komisi dalam rupiah bulat yang lebih kecil dari total nota.', true);
+    }
+    if (method === 'retained' && commission.amount > paid) return toast('Komisi melebihi pembayaran pelanggan.', true);
     const payload = {
       request_id: crypto.randomUUID(), organization_id: state.organization.id, branch_id: branchId,
       customer_name: customers.find(customer=>customer.id===form.customer_id.value)?.name || String(form.customer_name.value).trim(), customer_id: form.customer_id.value || null,
       customer_phone: form.customer_phone.value.trim(),
       customer_type: form.customer_type.value, payment_method: form.payment_method.value,
       lines: cart.map(item=>({product_id:item.product.id,quantity:item.quantity,expected_price:priceFor(item.product)})),
-      paid_amount: paid, due_date: paid < total ? form.due_date.value : null,
+      discount_amount: discount, commission, paid_amount: paid, due_date: paid < total ? form.due_date.value : null,
       created_at: new Date().toISOString(), status: 'queued'
     };
     saving = true;
@@ -2697,18 +2739,21 @@ async function cashierPage(page) {
     renderCart();
     try {
       if (!navigator.onLine) {
-        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; renderCart();
+        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; form.discount_amount.value = ''; form.commission_method.value = '';
+        form.mediator_name.value = ''; form.commission_amount.value = '';
+        commissionFields.hidden = commissionFields.disabled = true; renderCart();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
-      const {data,error}=await supabase.rpc('create_sale_with_receipt',{
+      const {data,error}=await supabase.rpc('create_cashier_sale_with_commission',{
         _customer_phone:payload.customer_phone || null, _request_id:payload.request_id,_branch_id:payload.branch_id,_customer_name:payload.customer_name,
         _customer_type:payload.customer_type,_payment_method:payload.payment_method,_lines:payload.lines,
-        _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date
+        _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date,_discount:payload.discount_amount,_commission:payload.commission
       });
       if(error) throw error;
       committed = true;
       cart = [];
-      toast(`Transaksi tersimpan. ${money(paid)} masuk ke kas.`);
+      const cashReceived = method === 'retained' ? paid - commission.amount : paid;
+      toast(`Transaksi tersimpan. ${money(cashReceived)} masuk ke kas.`);
       if (state.branchId !== branchId || state.page !== 'cashier') return;
       await showPage('cashier');
       if (state.branchId !== branchId || state.page !== 'cashier') return;
@@ -2735,7 +2780,7 @@ async function cashierPage(page) {
     const q=readQueue().filter(x=>x.status!=='cancelled'),host=form.parentElement?.querySelector('#offline-queue');
     if (!host || !form.isConnected) return;
     if(!q.length){host.innerHTML='';return;}
-    host.innerHTML=`<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Antrean perangkat</div><div class="panel-sub">${q.filter(x=>x.status==='queued').length} menunggu sinkron · ${q.filter(x=>x.status==='attention').length} perlu diperiksa</div></div>${navigator.onLine?'<button class="small-btn" id="sync-queue">Sinkronkan sekarang</button>':''}</div><div class="table-wrap"><table><thead><tr><th>WAKTU</th><th>ITEM</th><th>TOTAL PERKIRAAN</th><th>STATUS</th><th></th></tr></thead><tbody>${q.slice().reverse().map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('id-ID')}</td><td>${x.lines.length} produk · ${x.lines.reduce((n,l)=>n+l.quantity,0)} unit</td><td>${money(x.lines.reduce((sum,line)=>sum+Number(line.expected_price)*line.quantity,0))}</td><td><span class="pill ${x.status==='attention'?'warn':x.status==='synced'?'':'gray'}">${x.status==='synced'?`Tersinkron · ${esc(x.receipt_number||'')}`:x.status==='attention'?`Perlu ditinjau · ${esc(x.error||'')}`:'Menunggu jaringan'}</span></td><td>${x.status==='attention'?`<button class="small-btn" data-retry-offline="${x.request_id}">Coba lagi</button>`:''}${x.status!=='synced'?` <button class="small-btn" data-discard-offline="${x.request_id}">Batalkan antrean</button>`:''}</td></tr>`).join('')}</tbody></table></div></section>`;
+    host.innerHTML=`<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Antrean perangkat</div><div class="panel-sub">${q.filter(x=>x.status==='queued').length} menunggu sinkron · ${q.filter(x=>x.status==='attention').length} perlu diperiksa</div></div>${navigator.onLine?'<button class="small-btn" id="sync-queue">Sinkronkan sekarang</button>':''}</div><div class="table-wrap"><table><thead><tr><th>WAKTU</th><th>ITEM</th><th>TOTAL PERKIRAAN</th><th>STATUS</th><th></th></tr></thead><tbody>${q.slice().reverse().map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('id-ID')}</td><td>${x.lines.length} produk · ${x.lines.reduce((n,l)=>n+l.quantity,0)} unit</td><td>${money(x.lines.reduce((sum,line)=>sum+Number(line.expected_price)*line.quantity,0) - Number(x.discount_amount || 0))}</td><td><span class="pill ${x.status==='attention'?'warn':x.status==='synced'?'':'gray'}">${x.status==='synced'?`Tersinkron · ${esc(x.receipt_number||'')}`:x.status==='attention'?`Perlu ditinjau · ${esc(x.error||'')}`:'Menunggu jaringan'}</span></td><td>${x.status==='attention'?`<button class="small-btn" data-retry-offline="${x.request_id}">Coba lagi</button>`:''}${x.status!=='synced'?` <button class="small-btn" data-discard-offline="${x.request_id}">Batalkan antrean</button>`:''}</td></tr>`).join('')}</tbody></table></div></section>`;
     host.querySelector('#sync-queue')?.addEventListener('click',syncPendingOfflineSales);
     host.querySelectorAll('[data-discard-offline]').forEach(btn=>btn.addEventListener('click',()=>{if(!confirm('Batalkan transaksi yang belum tersinkron?'))return;const rows=readQueue(),item=rows.find(x=>x.request_id===btn.dataset.discardOffline);if(item){item.status='cancelled';saveQueue(rows);const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(cached){for(const line of item.lines){const stockRow=cached.stock.find(x=>x.product_id===line.product_id);if(stockRow)stockRow.quantity=Number(stockRow.quantity)+Number(line.quantity);else cached.stock.push({product_id:line.product_id,quantity:Number(line.quantity)});available.set(line.product_id,(available.get(line.product_id)||0)+Number(line.quantity))}localStorage.setItem(cacheKey,JSON.stringify(cached))}renderOfflineQueue();toast('Antrean dibatalkan dan estimasi stok lokal dipulihkan.')}}));
     host.querySelectorAll('[data-retry-offline]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -3127,7 +3172,7 @@ async function reportsPage(page) {
   else if (range === 'monthly') { start.setMonth(start.getMonth() - 11, 1); start.setHours(0,0,0,0); }
   else { start.setFullYear(start.getFullYear() - 4, 0, 1); start.setHours(0,0,0,0); }
 
-  let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,branches(name),sale_items(quantity,unit_price,line_total,products(cost_price),stock_items(acquisition_cost,stock_repairs(status,labor_cost,stock_repair_parts(cost))))').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
+  let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,discount_amount,paid_amount,payment_method,created_at,branches(name),sale_commissions(mediator_name,amount,settlement_method),sale_items(quantity,unit_price,line_total,products(cost_price),stock_items(acquisition_cost,stock_repairs(status,labor_cost,stock_repair_parts(cost))))').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let cashQuery = supabase.from('cash_transactions').select('id,branch_id,direction,category,amount,description,source_type,created_at,branches(name)').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,ticket_number,customer_name,final_cost,handed_over_at,branches(name),service_parts(cost)').eq('status','handed_over').gte('handed_over_at', start.toISOString()).order('handed_over_at', { ascending: false });
   if (canSelectBranches() && state.reportBranch && state.reportBranch !== 'all') {
@@ -3148,7 +3193,9 @@ async function reportsPage(page) {
       const repairCost = (stock?.stock_repairs || []).filter(repair => repair.status === 'completed').reduce((sum,repair) => sum + Number(repair.labor_cost || 0) + (repair.stock_repair_parts || []).reduce((partSum,part) => partSum + Number(part.cost || 0),0),0);
       cost += unitCost * Number(line.quantity || 0) + repairCost;
     }
-    return { id:sale.id, branch_id:sale.branch_id, branch:sale.branches?.name, date:sale.created_at, kind:'Penjualan produk', label:sale.receipt_number, value:Number(sale.total), cost, profitImpact:Number(sale.total)-cost, direction:'income' };
+    const commission = sale.sale_commissions;
+    const commissionAmount = Number(commission?.amount || 0);
+    return { commission, commissionAmount, id:sale.id, branch_id:sale.branch_id, branch:sale.branches?.name, date:sale.created_at, kind:'Penjualan produk', label:sale.receipt_number, value:Number(sale.total), discount:Number(sale.discount_amount || 0), cost, profitImpact:Number(sale.total)-cost-commissionAmount, direction:'income' };
   });
   const serviceRows = services.map((ticket) => {
     const cost = (ticket.service_parts || []).reduce((sum,part) => sum + Number(part.cost || 0),0);
@@ -3159,8 +3206,9 @@ async function reportsPage(page) {
   const cashRows = cash.map((entry) => {
     const purchasePayment = entry.direction === 'expense' && (excludedPurchasePayments.has(entry.category) || ['stock_repair_external_part','stock_repair'].includes(entry.source_type));
     const otherIncome = entry.direction === 'income' && entry.category === otherIncomeCategory;
-    const operatingExpense = entry.direction === 'expense' && !purchasePayment;
-    return { id:entry.id, branch_id:entry.branch_id, branch:entry.branches?.name, date:entry.created_at, kind:entry.category, label:entry.description || entry.category, value:Number(entry.amount), cost:0, profitImpact:otherIncome ? Number(entry.amount) : operatingExpense ? -Number(entry.amount) : 0, direction:entry.direction, purchasePayment };
+    const commissionPayment = entry.source_type === 'sale_commission';
+    const operatingExpense = entry.direction === 'expense' && !purchasePayment && !commissionPayment;
+    return { id:entry.id, branch_id:entry.branch_id, branch:entry.branches?.name, date:entry.created_at, kind:entry.category, label:entry.description || entry.category, value:Number(entry.amount), cost:0, profitImpact:otherIncome ? Number(entry.amount) : operatingExpense ? -Number(entry.amount) : 0, direction:entry.direction, purchasePayment, commissionPayment };
   });
   const allRows = [...saleRows, ...serviceRows, ...cashRows];
   const periodKey = (dateValue) => {
@@ -3178,10 +3226,10 @@ async function reportsPage(page) {
   const buckets = new Map();
   for (const row of allRows) {
     const key = periodKey(row.date), bucket = buckets.get(key) || {key, sales:0, services:0, hpp:0, serviceCost:0, otherIncome:0, operatingExpense:0, cashIn:0, cashOut:0, count:0, rows:[]};
-    if (row.kind === 'Penjualan produk') { bucket.sales += row.value; bucket.hpp += row.cost; }
+    if (row.kind === 'Penjualan produk') { bucket.sales += row.value; bucket.hpp += row.cost; bucket.operatingExpense += row.commissionAmount; }
     else if (row.kind === 'Servis selesai') { bucket.services += row.value; bucket.serviceCost += row.cost; }
     else if (row.direction === 'income') { bucket.cashIn += row.value; if (row.kind === otherIncomeCategory) bucket.otherIncome += row.value; }
-    else { bucket.cashOut += row.value; if (!row.purchasePayment) bucket.operatingExpense += row.value; }
+    else { bucket.cashOut += row.value; if (!row.purchasePayment && !row.commissionPayment) bucket.operatingExpense += row.value; }
     bucket.count++; bucket.rows.push(row); buckets.set(key,bucket);
   }
   const sum = (key) => [...buckets.values()].reduce((total,bucket) => total + bucket[key],0);
@@ -3208,7 +3256,7 @@ async function reportsPage(page) {
       ${financeSummaryCard('gross', 'Laba kotor', money(grossProfit), 'Sebelum biaya operasional')}
     </div>
     <details class="panel profit-note finance-profit-note"><summary>Perhitungan laba ${estimatedCostLines || missingCostLines ? '<span class="profit-warning">· Ada modal estimasi atau kosong</span>' : ''}</summary>
-      <span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional. Pembelian stok dan pembayaran hutang supplier tidak dihitung sebagai biaya sampai barangnya terjual.</span>
+      <span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional (termasuk komisi mediator). Pembelian stok dan pembayaran hutang supplier tidak dihitung sebagai biaya sampai barangnya terjual.</span>
       ${estimatedCostLines || missingCostLines ? `<span class="profit-warning">${estimatedCostLines} baris memakai perkiraan modal katalog. ${missingCostLines} baris belum memiliki data modal.</span>` : '<span class="profit-ok">Seluruh barang terjual memiliki modal tercatat.</span>'}
     </details>
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Rekap ${range==='daily'?'per hari':range==='weekly'?'per minggu':range==='monthly'?'per bulan':'per tahun'}</div><div class="panel-sub">Pilih periode untuk membuka transaksi, HPP, dan dampak labanya.</div></div></div><div class="table-wrap"><table><thead><tr><th>PERIODE</th><th>CATATAN</th><th>OMZET PRODUK</th><th>OMZET SERVIS</th><th>HPP</th><th>BIAYA OPERASIONAL</th><th>LABA OPERASIONAL</th><th>DETAIL</th></tr></thead><tbody>${[...buckets.values()].sort((a,b)=>b.key.localeCompare(a.key)).map(bucket=>`<tr><td class="product-name">${esc(bucket.key)}</td><td>${bucket.count}</td><td>${money(bucket.sales)}</td><td>${money(bucket.services)}</td><td>${money(bucket.hpp+bucket.serviceCost)}</td><td>${money(bucket.operatingExpense)}</td><td><b>${money(bucket.sales+bucket.services-bucket.hpp-bucket.serviceCost+bucket.otherIncome-bucket.operatingExpense)}</b></td><td><button class="small-btn" data-report-detail="${esc(bucket.key)}">Lihat detail</button></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Belum ada transaksi pada periode ini.</div></td></tr>'}</tbody></table></div></section>`;
@@ -3331,6 +3379,8 @@ function reportFinanceTable(rows, mode, tableClass = '') {
     <tbody>${ordered.map((row) => `<tr><td>${new Date(row.date).toLocaleString('id-ID')}</td><td>${esc(row.kind)}</td>
       <td>${esc(row.label || '-')}${!tableClass && row.kind === 'Penjualan produk' && (canSelectBranches() || state.profile?.role === 'operator')
         ? `<div><button type="button" class="small-btn" data-report-sale-receipt="${esc(row.id)}">Detail nota</button></div>` : ''}
+      ${row.commission ? `<div class="field-hint">Komisi ${money(row.commissionAmount)} · ${esc(row.commission.mediator_name)} · ${row.commission.settlement_method === 'pending' ? 'Belum dibayar' : row.commission.settlement_method === 'retained' ? 'Dipotong dari setoran' : 'Sudah dibayar'}</div>` : ''}
+      ${row.discount ? `<div class="field-hint">Potongan ${money(row.discount)}</div>` : ''}
       ${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
       ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Pembayaran stok tidak dihitung sebagai biaya laba.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
       ${showValue ? `<td>${money(row.value)}</td>` : ''}${showCost ? `<td>${money(row.cost)}</td>` : ''}
@@ -3568,12 +3618,20 @@ async function financePage(page) {
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,ticket_number,customer_name,final_cost,paid_amount,due_date,created_at,branches(name)').eq('status','handed_over').order('created_at', { ascending: false });
   let purchasesQuery = supabase.from('intake_batches').select('id,branch_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,created_at,suppliers(name),branches(name)').order('created_at', { ascending: false });
   if (filter !== 'all') { cashQuery = cashQuery.eq('branch_id', filter); salesQuery = salesQuery.eq('branch_id', filter); serviceQuery = serviceQuery.eq('branch_id', filter); purchasesQuery = purchasesQuery.eq('branch_id', filter); }
-  const [cash,sales,services,purchases] = await Promise.all([fetchAllRows(cashQuery),fetchAllRows(salesQuery),fetchAllRows(serviceQuery),fetchAllRows(purchasesQuery)]);
+  let commissionQuery = supabase.from('sale_commissions')
+    .select('sale_id,branch_id,mediator_name,amount,sales(receipt_number)').is('settled_at', null)
+    .order('sale_id');
+  if (filter !== 'all') commissionQuery = commissionQuery.eq('branch_id', filter);
+  const [cash,sales,services,purchases,commissions] = await Promise.all([
+    fetchAllRows(cashQuery),fetchAllRows(salesQuery),fetchAllRows(serviceQuery),fetchAllRows(purchasesQuery),
+    fetchAllRows(commissionQuery)
+  ]);
   const incomes = cash.filter((entry) => entry.direction === 'income').reduce((sum, entry) => sum + Number(entry.amount), 0);
   const expenses = cash.filter((entry) => entry.direction === 'expense').reduce((sum, entry) => sum + Number(entry.amount), 0);
   const receivables = [...sales.filter((sale) => Number(sale.total) > Number(sale.paid_amount)).map((sale) => ({ ...sale, source_type: 'sale', label: sale.receipt_number, total_due: Number(sale.total), paid: Number(sale.paid_amount) })), ...services.filter((ticket) => Number(ticket.final_cost) > Number(ticket.paid_amount)).map((ticket) => ({ ...ticket, source_type: 'service_ticket', label: ticket.ticket_number, total_due: Number(ticket.final_cost), paid: Number(ticket.paid_amount) }))].map((entry) => ({ ...entry, remaining: entry.total_due-entry.paid }));
   const payables = purchases.filter((purchase) => Number(purchase.total_amount) > Number(purchase.amount_paid)).map((purchase) => ({ ...purchase, remaining: Number(purchase.total_amount)-Number(purchase.amount_paid) }));
   const receivableTotal = receivables.reduce((sum,item)=>sum+item.remaining,0); const payableTotal = payables.reduce((sum,item)=>sum+item.remaining,0);
+  const commissionTotal = commissions.reduce((sum,item)=>sum+Number(item.amount),0);
   const branchTotals = new Map((filter === 'all' ? state.branches : []).map((branch) => [branch.id,{ name: branch.name, income: 0, expense: 0 }]));
   cash.forEach((entry) => { const id = entry.branch_id; const row = branchTotals.get(id) || { name: entry.branches?.name || branchName(id), income: 0, expense: 0 }; row[entry.direction] += Number(entry.amount); branchTotals.set(id,row); });
   const options = `<option value="all" ${filter === 'all' ? 'selected' : ''}>Semua cabang</option>${state.branches.map((branch) => `<option value="${branch.id}" ${filter === branch.id ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}`;
@@ -3584,17 +3642,23 @@ async function financePage(page) {
       ${financeSummaryCard('income', 'Kas masuk bulan ini', money(incomes), 'Penjualan dibayar, cicilan, dan pemasukan lain')}
       ${financeSummaryCard('expense', 'Kas keluar bulan ini', money(expenses), 'Pembelian, hutang supplier, dan operasional')}
       ${financeSummaryCard('balance', 'Sisa kas bersih', money(incomes-expenses), 'Kas masuk dikurangi kas keluar')}
-      ${financeSummaryCard('debt', 'Piutang / hutang terbuka', `${money(receivableTotal)} / ${money(payableTotal)}`, `${receivables.length} piutang · ${payables.length} hutang`)}
+      ${financeSummaryCard('debt', 'Piutang / hutang terbuka', `${money(receivableTotal)} / ${money(payableTotal + commissionTotal)}`, `${receivables.length} piutang · ${payables.length} hutang supplier · ${commissions.length} komisi`)}
     </div>
     <div class="finance-view-tabs" role="group" aria-label="Rincian keuangan">
       ${filter === 'all' ? '<button type="button" class="btn" data-finance-tab="branches">Ringkasan cabang</button>' : ''}
       <button type="button" class="btn" data-finance-tab="cash">Arus kas</button>
       <button type="button" class="btn" data-finance-tab="receivables">Piutang pelanggan</button>
       <button type="button" class="btn" data-finance-tab="payables">Hutang supplier</button>
+      <button type="button" class="btn" data-finance-tab="commissions">Komisi mediator</button>
     </div>
     ${filter === 'all' ? `<section class="panel table-panel" data-finance-view="branches"><div class="panel-head"><div><div class="panel-title">Ringkasan per cabang</div><div class="panel-sub">Angka bulan ini untuk semua cabang toko</div></div></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>KAS MASUK</th><th>KAS KELUAR</th><th>BERSIH</th></tr></thead><tbody>${[...branchTotals.entries()].map(([id,row]) => `<tr><td class="product-name">${esc(row.name)}</td><td>${money(row.income)}</td><td>${money(row.expense)}</td><td>${money(row.income-row.expense)}</td></tr>`).join('') || '<tr><td colspan="4">Belum ada transaksi bulan ini.</td></tr>'}</tbody></table></div></section>` : ''}
     <section class="panel table-panel" data-finance-view="receivables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / STRUK</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect="${entry.id}" data-source="${entry.source_type}">Terima pembayaran</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" data-finance-view="payables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa pembayaran untuk batch barang masuk</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay="${batch.id}">Bayar supplier</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>
+    <section class="panel table-panel" data-finance-view="commissions" style="margin-top:14px">
+      <div class="panel-head"><div><div class="panel-title">Komisi belum dibayar</div><div class="panel-sub">Total ${money(commissionTotal)}</div></div></div>
+      <div class="table-wrap"><table><thead><tr><th>MEDIATOR</th><th>NOTA</th><th>CABANG</th><th>KOMISI</th><th></th></tr></thead>
+      <tbody>${commissions.map(entry => `<tr><td>${esc(entry.mediator_name)}</td><td>${esc(entry.sales?.receipt_number || '-')}</td><td>${esc(branchName(entry.branch_id))}</td><td>${money(entry.amount)}</td><td><button class="small-btn" data-settle-commission="${entry.sale_id}">Catat pembayaran</button></td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada komisi belum dibayar.</div></td></tr>'}</tbody></table></div>
+    </section>
     <section class="panel table-panel" data-finance-view="cash" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Arus kas bulan ini</div><div class="panel-sub" data-cash-total></div></div><div class="finance-cash-filter" role="group" aria-label="Arah arus kas">
       <button type="button" class="small-btn" data-cash-filter="all">Semua</button><button type="button" class="small-btn" data-cash-filter="income">Masuk</button><button type="button" class="small-btn" data-cash-filter="expense">Keluar</button>
     </div></div><div class="table-wrap"><table><thead><tr><th>TANGGAL / CABANG</th><th>KATEGORI</th><th>KETERANGAN</th><th>ARAH</th><th>NOMINAL</th></tr></thead><tbody>${activityRows}<tr data-cash-empty hidden><td colspan="5"><div class="empty">Belum ada catatan kas untuk pilihan ini.</div></td></tr></tbody></table></div></section>`;
@@ -3627,7 +3691,7 @@ async function financePage(page) {
   cashFilters.forEach((button) => button.addEventListener('click', () => selectView('cash', button.dataset.cashFilter)));
   page.querySelectorAll('[data-finance-metric]').forEach((card) => card.addEventListener('click', () => {
     const metric = card.dataset.financeMetric;
-    if (metric === 'debt') selectView(receivables.length || !payables.length ? 'receivables' : 'payables');
+    if (metric === 'debt') selectView(receivables.length ? 'receivables' : payables.length ? 'payables' : 'commissions');
     else selectView('cash', metric === 'balance' ? 'all' : metric);
   }));
   const initialView = views.some((view) => view.dataset.financeView === cachedView?.name)
@@ -3637,6 +3701,19 @@ async function financePage(page) {
   page.querySelector('#add-expense').addEventListener('click', () => cashEntryModal('expense'));
   page.querySelector('#add-income').addEventListener('click', () => cashEntryModal('income'));
   page.querySelectorAll('[data-collect]').forEach((button) => button.addEventListener('click', () => { const entry = receivables.find((item) => item.id === button.dataset.collect); partyPaymentModal(button.dataset.source, entry, entry.remaining); }));
+  page.querySelectorAll('[data-settle-commission]').forEach((button) => button.addEventListener('click', async () => {
+    const entry = commissions.find(item => item.sale_id === button.dataset.settleCommission);
+    if (!window.confirm(`Catat pembayaran ${money(entry.amount)} kepada ${entry.mediator_name}?`)) return;
+    button.disabled = true;
+    try {
+      checkError(await supabase.rpc('settle_sale_commission', {_sale_id: entry.sale_id}));
+      toast('Pembayaran komisi tercatat.');
+      if (state.page === 'finance') await showPage('finance');
+    } catch (error) {
+      toast(error.message, true);
+      button.disabled = false;
+    }
+  }));
   page.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => partyPaymentModal('intake_batch', payables.find((batch) => batch.id === button.dataset.pay), payables.find((batch) => batch.id === button.dataset.pay).remaining)));
 }
 
