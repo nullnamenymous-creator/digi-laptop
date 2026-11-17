@@ -748,6 +748,10 @@ body { font-size: 14px; line-height: 1.5; }
 .laptop-unit-table .actions-cell { flex-wrap: wrap; }
 .laptop-unit-table .small-btn { max-width: 100%; white-space: normal; }
 .laptop-unit-table td::before { display: none; }
+.unit-label-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.unit-label-tools label, .unit-barcode-choice { display: flex; align-items: baseline; gap: 8px; }
+.unit-label-tools input, .unit-barcode-choice input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--green-700); align-self: center; }
+.unit-barcode-choice .field-hint { display: block; }
 
 @media (max-width: 780px) {
   .laptop-unit-table, .laptop-unit-table tbody { display: block; }

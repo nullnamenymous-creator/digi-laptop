@@ -1214,7 +1214,7 @@ async function inventoryPage(page) {
   const renderLaptopUnits = (items) => items.map((item) => {
     const product = products.find((row) => row.id === item.product_id);
     const badge = item.status === 'available' ? '' : ['pending_qc','repair_needed','repairing','waiting_parts'].includes(item.status) ? 'warn' : 'gray';
-    return `<tr data-unit-status="${esc(item.status)}"><td data-label="Barcode / unit" class="product-name">${esc(item.barcode)}<div class="field-hint">${esc(product?.name || 'Laptop')}</div></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}${canEditProducts() && item.status === 'available' && Number(item.quantity) === 1
+    return `<tr data-unit-status="${esc(item.status)}"><td data-label="Barcode / unit" class="product-name"><label class="unit-barcode-choice"><input type="checkbox" data-unit-label-id="${esc(item.id)}" aria-label="Pilih barcode ${esc(item.barcode)} untuk dicetak" /><span>${esc(item.barcode)}<span class="field-hint">${esc(product?.name || 'Laptop')}</span></span></label></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}${canEditProducts() && item.status === 'available' && Number(item.quantity) === 1
       ? `<button type="button" class="small-btn danger" data-withdraw-stock-unit="${esc(item.id)}">Keluarkan unit</button>` : ''}</div></td></tr>`;
   }).join('');
   const renderComponentLots = (items) => items.map((item) => {
@@ -1232,7 +1232,7 @@ async function inventoryPage(page) {
       <button type="button" class="card unit-summary-button" aria-controls="laptop-unit-rows" aria-pressed="false" data-unit-filter="sold"><span class="card-label">Laptop terjual<span aria-hidden="true">↗</span></span><span class="card-value">${unitCountFor('sold')} <small>unit</small></span><span class="card-sub">QR garansi muncul bila unit bergaransi</span></button>
     </section>
     ${catalogSection}
-    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" aria-label="Cari kode unit, nomor seri, supplier, atau model" placeholder="Cari kode unit / barcode" /></div></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
+    <section class="panel table-panel stock-unit-panel"><div class="panel-head inventory-panel-head"><div><div class="panel-title">Unit laptop · ${inventoryBranchName}</div><div class="panel-sub">Setiap laptop tercatat sendiri berdasarkan barcode, mulai dari diterima sampai terjual.</div></div><div class="inventory-controls"><select id="unit-status-filter" aria-label="Filter status unit"><option value="all">Semua status</option><option value="pending_qc">Menunggu QC</option><option value="available">${readyStockLabel()}</option><option value="repair">Semua repair</option><option value="repair_needed">Perlu repair</option><option value="repairing">Sedang repair</option><option value="waiting_parts">Menunggu sparepart</option><option value="sold">Terjual</option><option value="withdrawn">Dikeluarkan lewat koreksi</option><option value="other">Scrap / retur / lainnya</option></select><input class="search" id="unit-search" aria-label="Cari kode unit, nomor seri, supplier, atau model" placeholder="Cari kode unit / barcode" /></div></div><div class="unit-label-tools"><label><input type="checkbox" id="unit-label-page" /> Pilih semua di halaman ini</label><span id="unit-label-count" role="status"></span><button type="button" class="small-btn" id="unit-label-clear" disabled>Hapus pilihan</button><button type="button" class="btn primary" id="unit-label-print" disabled>Cetak barcode terpilih</button></div><div class="table-wrap"><table class="laptop-unit-table" role="table"><thead><tr><th>BARCODE / UNIT</th><th>SERIAL / SUPPLIER</th><th>STATUS UNIT</th><th>MODAL PER UNIT</th><th>GARANSI</th><th>AKSI</th></tr></thead><tbody id="laptop-unit-rows">${renderLaptopUnits(laptopUnits)}<tr id="unit-filter-empty" hidden><td colspan="6"><div class="empty">Tidak ada unit laptop yang cocok dengan filter ini.</div></td></tr></tbody></table></div><nav class="inventory-pagination" id="unit-pagination" aria-label="Halaman unit laptop" hidden><button type="button" class="btn" id="unit-previous">Sebelumnya</button><span id="unit-page-status" aria-live="polite"></span><button type="button" class="btn" id="unit-next">Berikutnya</button></nav></section>
     <section class="panel table-panel" data-component-lots style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
       <div class="panel-head opening-history-tools">
@@ -1254,6 +1254,69 @@ async function inventoryPage(page) {
   const unitSearch = page.querySelector('#unit-search');
   const unitStatus = page.querySelector('#unit-status-filter');
   const unitRows = [...page.querySelectorAll('#laptop-unit-rows tr[data-unit-status]')];
+  const unitLabelChecks = unitRows.map(row => row.querySelector('[data-unit-label-id]'));
+  const unitLabelPage = page.querySelector('#unit-label-page');
+  const unitLabelCount = page.querySelector('#unit-label-count');
+  const unitLabelClear = page.querySelector('#unit-label-clear');
+  const unitLabelPrint = page.querySelector('#unit-label-print');
+  const previousSelection = state.inventoryLabelSelection;
+  const selectedLabels = new Set(unitLabelChecks.map(input => input.dataset.unitLabelId)
+    .filter(id => previousSelection?.branchId === branchId && previousSelection.ids.has(id)));
+  state.inventoryLabelSelection = { branchId, ids: selectedLabels };
+  let visibleLabelChecks = [];
+  let loadingLabels = false;
+  const updateLabelSelection = () => {
+    unitLabelChecks.forEach(input => { input.checked = selectedLabels.has(input.dataset.unitLabelId); });
+    const visibleSelected = visibleLabelChecks.filter(input => input.checked).length;
+    unitLabelPage.checked = Boolean(visibleLabelChecks.length && visibleSelected === visibleLabelChecks.length);
+    unitLabelPage.indeterminate = visibleSelected > 0 && !unitLabelPage.checked;
+    unitLabelPage.disabled = !visibleLabelChecks.length;
+    unitLabelClear.disabled = !selectedLabels.size;
+    unitLabelPrint.disabled = loadingLabels || !selectedLabels.size;
+    unitLabelCount.textContent = `${selectedLabels.size} unit dipilih`;
+  };
+  const setLabelSelected = (input, selected) => {
+    if (selected) selectedLabels.add(input.dataset.unitLabelId);
+    else selectedLabels.delete(input.dataset.unitLabelId);
+  };
+  unitLabelChecks.forEach(input => input.addEventListener('change', () => {
+    setLabelSelected(input, input.checked);
+    updateLabelSelection();
+  }));
+  unitLabelPage.addEventListener('change', () => {
+    visibleLabelChecks.forEach(input => setLabelSelected(input, unitLabelPage.checked));
+    updateLabelSelection();
+  });
+  unitLabelClear.addEventListener('click', () => {
+    selectedLabels.clear();
+    updateLabelSelection();
+  });
+  unitLabelPrint.addEventListener('click', async () => {
+    if (loadingLabels || !selectedLabels.size || state.branchId !== branchId) return;
+    const printable = window.open('', '_blank', 'width=980,height=820');
+    if (!printable) return toast('Izinkan pop-up untuk membuka pratinjau barcode.', true);
+    const ids = unitLabelChecks.map(input => input.dataset.unitLabelId).filter(id => selectedLabels.has(id));
+    loadingLabels = true;
+    updateLabelSelection();
+    try {
+      const byId = new Map();
+      for (let i = 0; i < ids.length; i += 100) {
+        const rows = checkError(await supabase.from('stock_items')
+          .select('id,barcode,supplier,suppliers(initials),quantity,products(name,sku,category)')
+          .eq('branch_id', branchId).in('id', ids.slice(i, i + 100)));
+        rows.forEach(row => byId.set(row.id, row));
+      }
+      if (state.branchId !== branchId || !page.isConnected) throw new Error('Halaman berubah. Pilih unit lagi untuk mencetak.');
+      if (byId.size !== ids.length) throw new Error('Sebagian unit sudah tidak ada di cabang ini. Muat ulang daftar unit.');
+      await printBarcodeLabels(ids.map(id => byId.get(id)), printable);
+    } catch (error) {
+      printable.close();
+      toast(error.message || 'Barcode terpilih gagal dimuat.', true);
+    } finally {
+      loadingLabels = false;
+      updateLabelSelection();
+    }
+  });
   const unitSummaryButtons = [...page.querySelectorAll('[data-unit-filter]')];
   const unitPagination = page.querySelector('#unit-pagination');
   const unitPrevious = page.querySelector('#unit-previous');
@@ -1279,6 +1342,8 @@ async function inventoryPage(page) {
     const start = (unitPage - 1) * unitsPerPage;
     const visible = new Set(matches.slice(start, start + unitsPerPage));
     unitRows.forEach(row => row.classList.toggle('hidden', !visible.has(row)));
+    visibleLabelChecks = [...visible].map(row => row.querySelector('[data-unit-label-id]'));
+    updateLabelSelection();
     page.querySelector('#unit-filter-empty').hidden = matches.length > 0;
     unitPagination.hidden = pageCount === 1;
     unitPrevious.disabled = unitPage === 1;
