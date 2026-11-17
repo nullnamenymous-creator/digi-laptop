@@ -631,22 +631,60 @@ function saleReferralSummary(sales, title, subtitle) {
     </tbody></table></div></section>`;
 }
 
-async function ownerReferralDashboard() {
-  if (!canManage()) return '';
+const ownerReferralSection = '<div data-owner-referrals><p class="field-hint" role="status">Memuat referensi penjualan.</p></div>';
+
+async function showOwnerReferrals(panel) {
+  if (!panel || !canManage()) return;
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
-  const sales = await fetchAllRows(supabase.from('sales').select('referral_source,total')
-    .eq('organization_id', state.organization.id).not('referral_source', 'is', null)
-    .gte('created_at', start.toISOString()).order('id'));
-  return saleReferralSummary(sales, 'Referensi penjualan terbanyak',
-    'Semua cabang bulan ini · diurutkan menurut jumlah transaksi');
+  try {
+    const sales = await fetchAllRows(supabase.from('sales').select('referral_source,total')
+      .eq('organization_id', state.organization.id).not('referral_source', 'is', null)
+      .gte('created_at', start.toISOString()).abortSignal(AbortSignal.timeout(10000)));
+    if (!panel.isConnected || !canManage()) return;
+    panel.innerHTML = saleReferralSummary(sales, 'Referensi penjualan terbanyak',
+      'Semua cabang bulan ini · diurutkan menurut jumlah transaksi');
+  } catch {
+    if (panel.isConnected) panel.querySelector('[role="status"]').textContent = 'Referensi penjualan belum bisa dimuat.';
+  }
+}
+
+const bestSellingSection = `<section class="panel insight-panel" data-best-selling>
+  <div class="panel-head"><div><div class="panel-title">Produk terlaris</div>
+    <div class="panel-sub">Laptop paling banyak terjual bulan ini</div></div><span class="insight-tag">TOP 5</span></div>
+  <div class="rank-list" aria-live="polite">Memuat produk terlaris.</div>
+</section>`;
+
+async function showBestSellingProducts(panel) {
+  if (!panel) return;
+  const list = panel.querySelector('.rank-list');
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  let bestSellingQuery = supabase.from('sale_items').select('product_name,quantity,line_total,products(category),sales!inner(branch_id,created_at)').gte('sales.created_at', monthStart.toISOString());
+  if (!canManage()) bestSellingQuery = bestSellingQuery.eq('sales.branch_id', state.branchId);
+  try {
+    const bestSelling = await fetchAllRows(bestSellingQuery.abortSignal(AbortSignal.timeout(10000)));
+    if (!panel.isConnected) return;
+    const topProductsMap = new Map();
+    for (const line of bestSelling) {
+      if (line.products?.category !== 'Laptop') continue;
+      const row = topProductsMap.get(line.product_name) || { name: line.product_name, quantity: 0, revenue: 0 };
+      row.quantity += Number(line.quantity || 0);
+      row.revenue += Number(line.line_total || 0);
+      topProductsMap.set(line.product_name, row);
+    }
+    const topProducts = [...topProductsMap.values()].sort((a,b) => b.quantity-a.quantity || b.revenue-a.revenue).slice(0,5);
+    const topMax = Math.max(1, ...topProducts.map((item) => item.quantity));
+    const topProductRows = topProducts.map((item,index) => `<div class="rank-row"><span class="rank-number">${String(index+1).padStart(2,'0')}</span><div class="rank-body"><div class="rank-label"><b>${esc(item.name)}</b><span>${item.quantity} unit</span></div><div class="rank-track"><i style="width:${Math.max(4,item.quantity/topMax*100)}%"></i></div></div><strong>${money(item.revenue)}</strong></div>`).join('');
+    list.innerHTML = topProductRows || '<div class="empty"><b>Belum ada penjualan laptop bulan ini</b></div>';
+  } catch {
+    if (panel.isConnected) list.textContent = 'Produk terlaris belum bisa dimuat.';
+  }
 }
 
 async function centralDashboardPage(page) {
   const branchId = state.branchId;
-  const [referralDashboard, stock, intake, transfers] = await Promise.all([
-    ownerReferralDashboard(),
+  const [stock, intake, transfers] = await Promise.all([
     fetchAllRows(supabase.from('stock_items').select('status,quantity').eq('branch_id', branchId)
       .in('status', ['pending_qc','repair_needed','repairing','waiting_parts','available'])),
     fetchAllRows(supabase.from('intake_batches').select('unit_count').eq('branch_id', branchId).gte('created_at', dayStart())),
@@ -671,10 +709,13 @@ async function centralDashboardPage(page) {
   page.innerHTML = `${header('Operasional Cabang Pusat', 'Penerimaan, pemeriksaan, dan distribusi stok ke cabang penjualan.', '<button class="btn primary" data-open-transfer>Kirim ke cabang</button>')}
     <section class="cards laptop-unit-summary">${cards.map(([label, count, action]) => `<button type="button" class="card unit-summary-button" data-central-page="${action}"><span class="card-label">${label}</span><span class="card-value">${count} <small>unit</small></span></button>`).join('')}</section>
     ${canSelectBranches() ? branchStockSection : ''}
-    ${referralDashboard}
+    ${canManage() ? bestSellingSection : ''}
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Distribusi per cabang</div><div class="panel-sub">Jumlah pengiriman dari Cabang Pusat</div></div></div><div class="table-wrap"><table><thead><tr><th>Cabang tujuan</th><th>Menunggu diterima</th><th>Sudah diterima</th></tr></thead><tbody>${state.branches.filter(branch => !branch.is_central).map(branch => `<tr><td>${esc(branch.name)}</td><td>${pending.filter(row => row.destination_branch_id === branch.id).length}</td><td>${received.get(branch.id) || 0}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Mutasi menunggu diterima</div></div><div class="table-wrap"><table><thead><tr><th>Nomor mutasi</th><th>Tujuan</th><th>Jumlah unit</th><th>Tanggal kirim</th></tr></thead><tbody>${pending.map(row => `<tr><td>${esc(row.transfer_number)}</td><td>${esc(branchName(row.destination_branch_id))}</td><td>${unitCount(row)}</td><td>${new Date(row.created_at).toLocaleString('id-ID')}</td></tr>`).join('') || '<tr><td colspan="4">Tidak ada mutasi dalam perjalanan.</td></tr>'}</tbody></table></div></section>`;
+  if (canManage()) page.insertAdjacentHTML('beforeend', ownerReferralSection);
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
+  showOwnerReferrals(page.querySelector('[data-owner-referrals]'));
+  showBestSellingProducts(page.querySelector('[data-best-selling]'));
   page.querySelector('[data-open-transfer]').addEventListener('click', transferModal);
   page.querySelectorAll('[data-central-page]').forEach(button => button.addEventListener('click', () => showPage(button.dataset.centralPage)));
 }
@@ -687,14 +728,10 @@ async function dashboardPage(page) {
   const ownerView = state.profile.role === 'owner';
   let salesQuery = supabase.from('sales').select('total,branch_id,receipt_number,branches(name)').gte('created_at', dayStart());
   if (!ownerView) salesQuery = salesQuery.eq('branch_id', state.branchId);
-  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-  let bestSellingQuery = supabase.from('sale_items').select('product_name,quantity,line_total,products(category),sales!inner(branch_id,created_at)').gte('sales.created_at', monthStart.toISOString());
-  if (!ownerView) bestSellingQuery = bestSellingQuery.eq('sales.branch_id', state.branchId);
   let recentSalesQuery = supabase.from('sales').select('receipt_number,customer_name,total,created_at,branch_id,branches(name)').order('created_at', { ascending: false }).limit(ownerView ? 12 : 4);
   if (!ownerView) recentSalesQuery = recentSalesQuery.eq('branch_id', state.branchId);
-  const [referralDashboard, stock, laptopStock, services, sales, bestSelling, recentServices, recentSales, inventoryData] = await Promise.all([
-    ownerReferralDashboard(),
-    fetchAllRows(stockQuery), fetchAllRows(laptopStockQuery), fetchAllRows(serviceQuery), fetchAllRows(salesQuery), fetchAllRows(bestSellingQuery),
+  const [stock, laptopStock, services, sales, recentServices, recentSales, inventoryData] = await Promise.all([
+    fetchAllRows(stockQuery), fetchAllRows(laptopStockQuery), fetchAllRows(serviceQuery), fetchAllRows(salesQuery),
     supabase.from('service_tickets').select('ticket_number,customer_name,device_name,status,created_at').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(4),
     recentSalesQuery,
     fetchInventory(),
@@ -705,10 +742,6 @@ async function dashboardPage(page) {
   const branchSales = new Map();
   sales.forEach((row) => { const id = row.branch_id; const item = branchSales.get(id) || { name: row.branches?.name || branchName(id), total: 0, count: 0 }; item.total += Number(row.total || 0); item.count += 1; branchSales.set(id, item); });
   const readyCount = services.filter((row) => row.status === 'ready').length || 0;
-  const topProductsMap = new Map();
-  bestSelling.filter((line) => line.products?.category === 'Laptop').forEach((line) => { const row = topProductsMap.get(line.product_name) || { name: line.product_name, quantity: 0, revenue: 0 }; row.quantity += Number(line.quantity || 0); row.revenue += Number(line.line_total || 0); topProductsMap.set(line.product_name, row); });
-  const topProducts = [...topProductsMap.values()].sort((a,b) => b.quantity-a.quantity || b.revenue-a.revenue).slice(0,5);
-  const topMax = Math.max(1, ...topProducts.map((item) => item.quantity));
   const laptopBrandCounts = new Map();
   laptopStock.forEach((row) => { const brand = row.products?.brand || 'Lainnya'; laptopBrandCounts.set(brand, (laptopBrandCounts.get(brand) || 0) + Number(row.quantity || 0)); });
   const laptopUnitCount = [...laptopBrandCounts.values()].reduce((sum,value) => sum+value,0);
@@ -720,7 +753,6 @@ async function dashboardPage(page) {
     const searchableCodes = rows.flatMap((item) => [item.barcode, item.supplier_barcode, item.serial_number]).filter(Boolean).join(' ');
     return { ...product, available, searchableCodes };
   });
-  const topProductRows = topProducts.map((item,index) => `<div class="rank-row"><span class="rank-number">${String(index+1).padStart(2,'0')}</span><div class="rank-body"><div class="rank-label"><b>${esc(item.name)}</b><span>${item.quantity} unit</span></div><div class="rank-track"><i style="width:${Math.max(4,item.quantity/topMax*100)}%"></i></div></div><strong>${money(item.revenue)}</strong></div>`).join('');
   const laptopBrandRows = [...laptopBrandCounts.entries()].sort((a,b) => b[1]-a[1]).slice(0,6).map(([brand,count]) => `<div class="brand-stock-row"><span>${esc(brand)}</span><b>${count}<small> unit</small></b></div>`).join('');
   const recent = [
     ...(recentSales.data || []).map((row) => ({ date: row.created_at, icon: '▣', title: `Penjualan · ${row.receipt_number}${ownerView ? ` · ${row.branches?.name || branchName(row.branch_id)}` : ''}`, detail: `${row.customer_name || 'Pelanggan'} · ${money(row.total)}` })),
@@ -732,10 +764,12 @@ async function dashboardPage(page) {
         <div class="cards"><button type="button" class="card dashboard-summary-button" data-dashboard-card="sales"><span class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></span><span class="card-value">${money(salesTotal)}</span><span class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="stock"><span class="card-label">Total unit siap jual<span class="card-icon">▤</span></span><span class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></span><span class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="service"><span class="card-label">Servis berjalan<span class="card-icon">⌁</span></span><span class="card-value">${activeServices}</span><span class="card-sub">${readyCount} siap diserahkan</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="branches"><span class="card-label">Jumlah cabang<span class="card-icon">⌂</span></span><span class="card-value">${state.branches.length}</span><span class="card-sub">Terhubung ke database pusat</span></button></div>
     ${canSelectBranches() ? branchStockSection : ''}
     ${ownerBranchSales}
-    ${referralDashboard}
-    <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
+    <div class="dashboard-insights">${bestSellingSection}<section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).filter(([key]) => rolePages().includes(key)).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
+  if (canManage()) page.insertAdjacentHTML('beforeend', ownerReferralSection);
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
+  showOwnerReferrals(page.querySelector('[data-owner-referrals]'));
+  showBestSellingProducts(page.querySelector('[data-best-selling]'));
   page.querySelector('[data-dashboard-card="sales"]').addEventListener('click', () => {
     if (ownerView) {
       page.querySelector('.owner-branch-sales').scrollIntoView({ block: 'start' });
