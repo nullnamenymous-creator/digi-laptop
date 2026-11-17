@@ -1,4 +1,4 @@
-const CACHE_NAME = 'digi-laptop-v26';
+const CACHE_NAME = 'digi-laptop-v27';
 const APP_FILES = ['/', '/index.html', '/manifest.webmanifest', '/store-logo-transparent.png', '/login-laptops.webp', '/icon-192.png', '/icon-512.png', '/store-qris.svg'];
 
 self.addEventListener('install', (event) => {
@@ -18,6 +18,7 @@ self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
   if (/^\/showroom-[0-2]\.mp4$/.test(requestUrl.pathname) || requestUrl.pathname === '/foto-produk') return;
+  if (requestUrl.pathname.startsWith('/api/')) return;
   if (requestUrl.pathname.startsWith('/rest/') || requestUrl.pathname.startsWith('/auth/') || requestUrl.pathname.startsWith('/storage/')) return;
   if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/@vite/') || requestUrl.pathname.startsWith('/node_modules/') || requestUrl.pathname.startsWith('/@id/') || requestUrl.pathname.startsWith('/@fs/')) return;
   if (event.request.mode === 'navigate') {

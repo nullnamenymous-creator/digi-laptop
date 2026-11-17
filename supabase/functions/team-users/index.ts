@@ -36,6 +36,13 @@ Deno.serve(async (req: Request) => {
       return reply({ error: "Hanya pemilik toko yang boleh mengelola akun." }, 403);
     }
 
+    const actor = createClient(url, serviceKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: sessionError } = await actor.rpc("guardian_check_session");
+    if (sessionError) return reply({ error: "Sesi dicabut atau autentikator perlu diverifikasi." }, 403);
+
     const body = await req.json();
     const action = String(body?.action || "");
     const organizationId = ownerProfile.organization_id;
@@ -66,12 +73,14 @@ Deno.serve(async (req: Request) => {
     const branchId = String(body?.branch_id || "");
     if (action !== "delete") {
       const { data: branch, error: branchError } = await admin.from("branches")
-        .select("id").eq("id", branchId).eq("organization_id", organizationId).maybeSingle();
+        .select("id,is_central").eq("id", branchId).eq("organization_id", organizationId).eq("is_active", true).maybeSingle();
       if (branchError) throw branchError;
       if (!branch) return reply({ error: "Pilih cabang toko yang valid." }, 400);
+      if (body?.role === "central_admin" && !branch.is_central) return reply({ error: "Admin Pusat wajib ditugaskan ke Cabang Pusat." }, 400);
+      if (body?.role === "operator" && branch.is_central) return reply({ error: "Pilih Admin Pusat untuk petugas Cabang Pusat." }, 400);
     }
 
-    const allowedRole = (role: unknown) => role === "operator" || role === "technician" || role === "investor";
+    const allowedRole = (role: unknown) => role === "central_admin" || role === "operator" || role === "technician" || role === "investor";
     const fullName = String(body?.full_name || "").trim();
     const email = String(body?.email || "").trim().toLowerCase();
     const password = typeof body?.password === "string" ? body.password : "";
@@ -79,7 +88,7 @@ Deno.serve(async (req: Request) => {
       if (fullName.length < 2 || fullName.length > 120) return reply({ error: "Nama harus 2–120 karakter." }, 400);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
       if (password.length < 8 || password.length > 128) return reply({ error: "Password harus 8–128 karakter." }, 400);
-      if (!allowedRole(body?.role)) return reply({ error: "Pilih role Operator, Teknisi, atau Investor." }, 400);
+      if (!allowedRole(body?.role)) return reply({ error: "Pilih role yang tersedia." }, 400);
 
       // Remove an old invite first so its auth trigger cannot create a duplicate profile.
       const { error: inviteCleanupError } = await admin.from("team_invites").delete()
@@ -110,7 +119,7 @@ Deno.serve(async (req: Request) => {
     if (action === "update") {
       if (fullName.length < 2 || fullName.length > 120) return reply({ error: "Nama harus 2–120 karakter." }, 400);
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Format email tidak valid." }, 400);
-      if (!allowedRole(body?.role)) return reply({ error: "Pilih role Operator, Teknisi, atau Investor." }, 400);
+      if (!allowedRole(body?.role)) return reply({ error: "Pilih role yang tersedia." }, 400);
       if (password && (password.length < 8 || password.length > 128)) return reply({ error: "Password baru harus 8–128 karakter." }, 400);
 
       const authUpdates: { email?: string; password?: string; email_confirm?: boolean; user_metadata?: Record<string, unknown> } = {

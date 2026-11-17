@@ -1865,3 +1865,110 @@ body:has(.modal-backdrop, dialog[open]) .prayer-widget { visibility: hidden; }
   .referral-card-top .referral-icon, .prayer-moon { animation: none; }
 }
 @media print { .prayer-widget { display: none; } }
+
+.guardian-widget {
+  position: fixed;
+  z-index: 6;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+.guardian-widget > * { pointer-events: auto; }
+.guardian-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #448477;
+  border-radius: 15px;
+  background: radial-gradient(circle at 20% 0, #347b71, #173c42 70%);
+  box-shadow: inset 0 1px 1px #ffffff45, 0 5px 14px #102f3e40;
+  cursor: pointer;
+}
+.guardian-orbit {
+  position: absolute;
+  inset: 5px;
+  display: grid;
+  place-items: center;
+  perspective: 80px;
+}
+.guardian-orbit::before {
+  content: '';
+  position: absolute;
+  inset: 7px 0;
+  border: 1px solid #68e9f283;
+  border-radius: 50%;
+  transform: rotate(-26deg);
+}
+.guardian-shield {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 25px;
+  background: linear-gradient(135deg, #ddfffb 2%, #69ded4 25%, #248789 51%, #4ecdc0 55%, #1c696c 84%);
+  clip-path: polygon(50% 0, 97% 17%, 90% 66%, 75% 85%, 50% 100%, 25% 85%, 10% 66%, 3% 17%);
+  animation: guardian-float 4s ease-in-out infinite;
+}
+.guardian-shield i {
+  position: relative;
+  width: 9px;
+  height: 7px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: #f1fff7;
+  box-shadow: 0 2px 3px #123d4f85;
+}
+.guardian-shield i::before {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 6px;
+  border: 1.5px solid #f1fff7;
+  border-radius: 5px 5px 0 0;
+  left: 1px;
+  bottom: 5px;
+}
+.guardian-dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #173c42;
+  border-radius: 50%;
+  background: #77dbb0;
+}
+.guardian-widget[data-network="offline"] .guardian-dot { background: #f1b85a; }
+.guardian-panel {
+  width: min(252px, calc(100vw - 24px));
+  padding: 10px;
+  background: #f5fbf9;
+  color: #173c3b;
+  border: 1px solid #a9c6bc;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px #123d4f30;
+}
+.guardian-panel header, .guardian-panel dl div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.guardian-panel .small-btn { min-height: 28px; }
+.guardian-panel dl { margin: 7px 0; font-size: 12px; }
+.guardian-panel dl div { padding: 4px 0; }
+.guardian-panel dd { margin: 0; font-weight: 700; }
+.guardian-panel .field-hint { margin: 0; }
+body:has(.modal-backdrop, dialog[open], .prayer-panel:not([hidden])) .guardian-widget { visibility: hidden; }
+@keyframes guardian-float {
+  0%, 100% { transform: translateY(0) rotateY(-16deg); }
+  50% { transform: translateY(-2px) rotateY(16deg); }
+}
+@media (max-width: 740px) {
+  body:has(.staff-bottom-nav) .guardian-widget { bottom: calc(108px + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guardian-shield { animation: none; }
+}
+@media print { .guardian-widget { display: none; } }

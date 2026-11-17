@@ -1,6 +1,9 @@
 import { pamphletSpecs, renderProductPamphlet, downloadProductPamphlet } from './product-pamphlet.js';
 import { hasBackendConfig, supabase } from './supabase.js';
 import { mountPrayerReminder } from './prayer-reminder.js';
+import { mountGuardian } from './guardian.js';
+import { clearCashierCache } from './guardian-cache.js';
+import { verifyExistingMfa, setupGuardianMfa } from './guardian-mfa.js';
 import './style.css';
 
 const root = document.querySelector('#app');
@@ -170,6 +173,7 @@ function ownerSetupScreen(message = '') {
 
 async function afterAuth({ preferCentral = false } = {}) {
   loading();
+  if (navigator.onLine) await verifyExistingMfa(supabase);
   const sessionCacheKey=`digi-offline-session:${state.user.id}`;
   const deadline = AbortSignal.timeout(10000);
   const [{ data: profile, error }, { data: branches, error: branchError }] = await Promise.all([
@@ -242,12 +246,15 @@ function showShell() {
   root.querySelector('#print-settings').addEventListener('click', printerSettings);
   const logoutButtons = root.querySelectorAll('[data-logout]');
   const logout = async () => {
+    const userId = state.user?.id;
+    const organizationId = state.organization?.id;
     logoutButtons.forEach((button) => { button.disabled = true; });
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (error) {
       logoutButtons.forEach((button) => { button.disabled = false; });
       throw new Error(error.message || 'Gagal keluar. Coba lagi.');
     }
+    clearCashierCache(localStorage, userId, organizationId);
     clearTimeout(state.refreshTimer);
     const channel = state.realtimeChannel;
     state.realtimeChannel = null;
@@ -4775,7 +4782,13 @@ async function start() {
   state.user = data.session.user;
   await afterAuth();
   supabase.auth.onAuthStateChange((_event, session) => {
-    if (!session) { state.profile = null; state.user = null; authScreen(); }
+    if (!session) {
+      try { clearCashierCache(localStorage, state.user?.id, state.organization?.id); }
+      catch { toast('Cache kasir belum bisa dibersihkan pada perangkat ini.', true); }
+      state.profile = null;
+      state.user = null;
+      authScreen();
+    }
   });
 }
 
@@ -4788,4 +4801,51 @@ start().catch((error) => {
   loading.querySelector('button').addEventListener('click', () => location.reload());
 });
 mountPrayerReminder();
+mountGuardian({
+  canManage,
+  onSetupMfa: () => setupGuardianMfa(supabase, openModal, toast).catch(error => toast(error.message, true)),
+  onStaffAccess: async () => {
+    if (!canManage()) return;
+    try {
+      const {users = []} = await teamAdminRequest({action:'list'});
+      const staff = users.filter(user => user.role !== 'owner');
+      const host = openModal('Akses staf', 'Cabut sesi meminta staf masuk kembali. Nonaktifkan menutup akses sampai diaktifkan lagi.',
+        `<div class="table-wrap"><table><thead><tr><th>STAF</th><th>AKSI</th></tr></thead><tbody>
+        ${staff.map(user => `<tr><td>${esc(user.full_name)}<small>${esc(user.role)}</small></td><td>
+          <button class="small-btn" type="button" data-staff-action="revoke" data-user="${user.id}">Cabut sesi</button>
+          <button class="small-btn" type="button" data-staff-action="disable" data-user="${user.id}">Nonaktifkan</button>
+          <button class="small-btn" type="button" data-staff-action="enable" data-user="${user.id}">Aktifkan akses</button></td></tr>`).join('') ||
+          '<tr><td colspan="2">Belum ada akun staf.</td></tr>'}</tbody></table></div>`, null);
+      host.querySelectorAll('[data-staff-action]').forEach(button => button.addEventListener('click', async () => {
+        const action = button.dataset.staffAction;
+        const user = staff.find(item => item.id === button.dataset.user);
+        if (!window.confirm(`${button.textContent} untuk ${user.full_name}?`)) return;
+        button.disabled = true;
+        try {
+          checkError(await supabase.rpc('guardian_set_staff_access', {
+            _user_id: user.id, _disabled: action === 'disable' ? true : action === 'enable' ? false : null,
+          }));
+          toast('Akses diperbarui. Sesi sebelumnya sudah dicabut.');
+        } catch (error) { toast(error.message, true); }
+        finally { button.disabled = false; }
+      }));
+    } catch (error) { toast(error.message, true); }
+  },
+  onAudit: async () => {
+    if (!canManage()) return;
+    try {
+      const events = checkError(await supabase.from('guardian_audit_events')
+        .select('id,actor_name,actor_role,table_name,operation,record_id,before_values,after_values,created_at')
+        .eq('organization_id', state.organization.id).order('id', {ascending:false}).limit(50));
+      openModal('Jejak perubahan Guardian', '50 perubahan terbaru yang tercatat sejak Guardian diaktifkan.',
+        `<div class="table-wrap"><table><thead><tr><th>WAKTU</th><th>PELAKU</th><th>PERUBAHAN</th></tr></thead><tbody>
+        ${events.map(event => `<tr><td>${new Date(event.created_at).toLocaleString('id-ID')}</td>
+          <td>${esc(event.actor_name || 'Sistem')}<small>${esc(event.actor_role)}</small></td>
+          <td><details><summary>${esc(event.table_name)} · ${esc(event.operation)}</summary>
+          <div>Kode ${esc(event.record_id)}</div>
+          <pre>${esc(JSON.stringify({sebelum:event.before_values,sesudah:event.after_values},null,2))}</pre></details></td></tr>`).join('') ||
+          '<tr><td colspan="3">Belum ada perubahan tercatat.</td></tr>'}</tbody></table></div>`, null);
+    } catch (error) { toast(error.message, true); }
+  },
+});
 window.setTimeout(showMobileInstall, 1800);
