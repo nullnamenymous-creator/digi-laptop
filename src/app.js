@@ -3944,9 +3944,12 @@ async function financePage(page) {
       ${financeSummaryCard('income', 'Kas masuk bulan ini', money(incomes), 'Penjualan dibayar, cicilan, dan pemasukan lain')}
       ${financeSummaryCard('expense', 'Kas keluar bulan ini', money(expenses), 'Pembelian, hutang supplier, dan operasional')}
       ${financeSummaryCard('balance', 'Sisa kas bersih', money(incomes-expenses), 'Kas masuk dikurangi kas keluar')}
-      ${financeSummaryCard('debt', 'Piutang / hutang terbuka', `${money(receivableTotal)} / ${money(payableTotal + commissionTotal)}`, `${receivables.length} piutang · ${payables.length} hutang supplier · ${commissions.length} komisi`)}
+      ${financeSummaryCard('receivables', 'Piutang pelanggan', money(receivableTotal), `${receivables.length} tagihan belum lunas · semua periode`)}
+      ${financeSummaryCard('payables', 'Hutang supplier', money(payableTotal), `${payables.length} tagihan belum lunas · semua periode`)}
+      ${financeSummaryCard('commissions', 'Komisi belum dibayar', money(commissionTotal), `${commissions.length} komisi mediator · semua periode`)}
     </div>
     <div class="finance-view-tabs" role="group" aria-label="Rincian keuangan">
+      <button type="button" class="btn" data-finance-tab="all">Semua rincian</button>
       ${filter === 'all' ? '<button type="button" class="btn" data-finance-tab="branches">Ringkasan cabang</button>' : ''}
       <button type="button" class="btn" data-finance-tab="cash">Arus kas</button>
       <button type="button" class="btn" data-finance-tab="receivables">Piutang pelanggan</button>
@@ -3973,9 +3976,9 @@ async function financePage(page) {
   const cachedView = state.financeView;
   const selectView = (name, direction = 'all') => {
     state.financeView = { name, direction };
-    views.forEach((view) => { view.hidden = view.dataset.financeView !== name; });
+    views.forEach((view) => { view.hidden = name !== 'all' && view.dataset.financeView !== name; });
     viewTabs.forEach((tab) => tab.setAttribute('aria-pressed', String(tab.dataset.financeTab === name)));
-    if (name !== 'cash') return;
+    if (name !== 'cash' && name !== 'all') return;
     cashView.querySelector('.finance-table-pages')?.remove();
     const matches = cashTableRows.filter((row) => direction === 'all' || row.dataset.cashDirection === direction);
     cashTableRows.forEach((row) => { row.hidden = direction !== 'all' && row.dataset.cashDirection !== direction; });
@@ -3993,11 +3996,11 @@ async function financePage(page) {
   cashFilters.forEach((button) => button.addEventListener('click', () => selectView('cash', button.dataset.cashFilter)));
   page.querySelectorAll('[data-finance-metric]').forEach((card) => card.addEventListener('click', () => {
     const metric = card.dataset.financeMetric;
-    if (metric === 'debt') selectView(receivables.length ? 'receivables' : payables.length ? 'payables' : 'commissions');
+    if (['receivables', 'payables', 'commissions'].includes(metric)) selectView(metric);
     else selectView('cash', metric === 'balance' ? 'all' : metric);
   }));
-  const initialView = views.some((view) => view.dataset.financeView === cachedView?.name)
-    ? cachedView.name : views[0].dataset.financeView;
+  const initialView = viewTabs.some((tab) => tab.dataset.financeTab === cachedView?.name)
+    ? cachedView.name : 'all';
   selectView(initialView, cachedView?.direction);
   page.querySelector('#finance-branch')?.addEventListener('change', async (event) => { state.financeBranch = event.target.value; await showPage('finance'); });
   page.querySelector('#add-expense').addEventListener('click', () => cashEntryModal('expense'));
