@@ -1166,6 +1166,7 @@ async function inventoryPage(page) {
     <section class="panel table-panel" data-component-lots style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Stok sparepart & barang lot</div><div class="panel-sub">Kuantitas sparepart dicatat per lot dan berkurang saat dipakai servis atau dijual. ${componentLots.length} lot di cabang ini.</div></div></div><div class="table-wrap"><table><thead><tr><th>BARANG / BARCODE LOT</th><th>SUPPLIER</th><th>JUMLAH</th><th>STATUS</th><th>MODAL / UNIT</th><th>AKSI</th></tr></thead><tbody>${renderComponentLots(componentLots)||'<tr><td colspan="6"><div class="empty">Belum ada stok sparepart atau barang lot di cabang ini.</div></td></tr>'}</tbody></table></div></section>
     ${canEditProducts() ? `<section class="panel table-panel" id="opening-stock-history" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Riwayat stok awal</div><div class="panel-sub">Cabang ${esc(branchName(branchId))}</div></div></div>
       <div class="panel-head opening-history-tools">
+        <div class="notice" data-opening-product-filter hidden>Produk: <span></span> <button class="small-btn" type="button">Hapus filter produk</button></div>
         <div class="form-grid">
           <div class="field"><label for="opening-brand">Merek laptop</label><select id="opening-brand"></select></div>
           <div class="field"><label for="opening-model">Tipe laptop</label><select id="opening-model"></select></div>
@@ -1304,7 +1305,8 @@ async function inventoryPage(page) {
       const product = products.find((item) => item.id === deleteButton.dataset.deleteProduct);
       if (!product) return;
       const organizationId = state.organization.id;
-      const host = openModal('Hapus produk?', 'Produk akan dihapus dari katalog toko di semua cabang.', `<div class="notice"><strong>${esc(product.name)}</strong><br />Produk hanya bisa dihapus jika belum terhubung dengan stok atau riwayat transaksi.</div>
+      const host = openModal('Hapus produk?', 'Tinjau unit dan riwayat sebelum menghapus produk.', `<div class="notice"><strong>${esc(product.name)}</strong><br />Produk hanya bisa dihapus jika belum terhubung dengan stok atau riwayat transaksi.</div>
+        <div data-product-unit-history aria-live="polite"></div>
         <details class="product-form-photos">
           <summary>Jika produk sudah punya riwayat</summary>
           <p>Jika unit tes berasal dari stok awal dan batch masih utuh, buka <strong>Riwayat stok awal</strong> di cabang tempat batch dicatat. Pilih batch produk ini, klik <strong>Batalkan stok awal</strong>, lalu coba hapus produk lagi.</p>
@@ -1325,18 +1327,13 @@ async function inventoryPage(page) {
         toast('Produk berhasil dihapus.');
         if (state.page === 'inventory') await showPage('inventory');
       }, 'Hapus produk');
+      loadProductUnitHistory(host.querySelector('[data-product-unit-history]'), product);
       host.querySelector('[data-archive-product]').addEventListener('click', () => {
-        openModal('Arsipkan produk?', 'Produk akan hilang dari daftar aktif semua cabang. Riwayatnya tetap tersimpan.',
-          `<div class="notice"><strong>${esc(product.name)}</strong><br />${esc(product.sku || '-')}</div>`, async () => {
-            if (!canManage() || state.organization?.id !== organizationId) throw new Error('Akses arsip ditolak.');
-            checkError(await supabase.rpc('archive_inactive_product', { _product_id: product.id }));
-            toast('Produk diarsipkan.');
-            if (state.page === 'inventory') await showPage('inventory');
-          }, 'Arsipkan produk');
+        archiveProductModal(product);
       });
       host.querySelector('[data-view-opening-history]').addEventListener('click', () => {
         host.querySelector('[data-close-modal]').click();
-        page.querySelector('#opening-stock-history')?.scrollIntoView({ block: 'center' });
+        showProductOpeningHistory(product);
       });
       host.querySelector('[data-edit-from-delete]').addEventListener('click', () => productModal(product, totals.get(product.id) || 0));
       return;
@@ -1416,6 +1413,8 @@ async function inventoryPage(page) {
 }
 
 function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
+  let activeProductId = '';
+  const productFilter = panel.querySelector('[data-opening-product-filter]');
   const unitSearch = panel.querySelector('#opening-unit-search');
   const scanButton = panel.querySelector('#opening-scan-button');
   const scanner = panel.querySelector('#opening-scanner');
@@ -1441,7 +1440,8 @@ function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
   const matching = () => {
     const candidates = !brand.value && !model.value ? batches : brandMatches()
       .filter((batch) => !model.value || key(batch.products.model) === model.value);
-    return candidates.filter((batch) => !key(unitSearch.value) || batch.stock_items?.some((unit) => matchesBarcode(unit.barcode)));
+    return candidates.filter((batch) => (!activeProductId || batch.product_id === activeProductId)
+      && (!key(unitSearch.value) || batch.stock_items?.some((unit) => matchesBarcode(unit.barcode))));
   };
   let limit = 20;
   const render = () => {
@@ -1451,7 +1451,7 @@ function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
     panel.querySelector('[data-opening-empty]').hidden = matches.length > 0;
     panel.querySelector('[data-opening-count]').textContent = `${visible.size} dari ${matches.length} batch`;
     more.hidden = visible.size === matches.length;
-    bulk.hidden = !(canManageOpeningStock() && brand.value && model.value && matches.length && !key(unitSearch.value));
+    bulk.hidden = !(canManageOpeningStock() && brand.value && model.value && matches.length && !key(unitSearch.value) && !activeProductId);
   };
   const updateModels = () => {
     options(model, brandMatches().map((batch) => batch.products.model), 'Semua tipe');
@@ -1459,6 +1459,21 @@ function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
     render();
   };
   brand.addEventListener('change', updateModels);
+  panel.addEventListener('filter-opening-product', (event) => {
+    activeProductId = event.detail.id;
+    productFilter.hidden = false;
+    productFilter.querySelector('span').textContent = event.detail.name;
+    unitSearch.value = '';
+    exactBarcode = false;
+    brand.value = '';
+    updateModels();
+  });
+  productFilter.querySelector('button').addEventListener('click', () => {
+    activeProductId = '';
+    productFilter.hidden = true;
+    limit = 20;
+    render();
+  });
   const searchBarcode = () => {
     if (!key(unitSearch.value)) return;
     exactBarcode = true;
@@ -1488,7 +1503,7 @@ function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
   model.addEventListener('change', () => { limit = 20; render(); });
   more.addEventListener('click', () => { limit += 20; render(); });
   bulk.addEventListener('click', () => {
-    if (!canManageOpeningStock() || state.branchId !== branchId || !brand.value || !model.value || key(unitSearch.value)) return;
+    if (!canManageOpeningStock() || state.branchId !== branchId || !brand.value || !model.value || key(unitSearch.value) || activeProductId) return;
     const matches = matching();
     const units = matches.reduce((sum, batch) => sum + Number(batch.unit_count), 0);
     const brandKey = brand.value;
@@ -1796,6 +1811,78 @@ function openingStockModal(products, batch = null) {
   syncProduct();
 }
 
+function showProductOpeningHistory(product) {
+  const panel = document.querySelector('#opening-stock-history');
+  if (!panel) return toast('Riwayat stok awal tidak tersedia di cabang ini.', true);
+  panel.dispatchEvent(new CustomEvent('filter-opening-product', { detail: product }));
+  panel.scrollIntoView({ block: 'start' });
+}
+
+function archiveProductModal(product) {
+  openModal('Arsipkan produk?', 'Produk akan hilang dari daftar aktif semua cabang. Riwayatnya tetap tersimpan.',
+    `<div class="notice"><strong>${esc(product.name)}</strong><br />${esc(product.sku || '-')}</div>`, async () => {
+      if (!canManage()) throw new Error('Akses arsip ditolak.');
+      checkError(await supabase.rpc('archive_inactive_product', { _product_id: product.id }));
+      toast('Produk diarsipkan.');
+      if (state.page === 'inventory') await showPage('inventory');
+    }, 'Arsipkan produk');
+}
+
+async function loadProductUnitHistory(container, product) {
+  container.textContent = 'Memuat barcode dan status unit…';
+  const query = supabase.from('stock_items')
+    .select('id,barcode,branch_id,status,quantity,qc_at,opening_batch_id,intake_batch_id,intake_batches(amount_paid)')
+    .eq('product_id', product.id).order('quantity', { ascending: false }).order('created_at', { ascending: false });
+  if (!canSelectBranches()) query.eq('branch_id', state.branchId);
+  try {
+    const units = await fetchAllRows(query);
+    if (!container.isConnected) return;
+    container.innerHTML = units.length ? `<div class="product-unit-history"><ul>${units.map(unit => {
+      const origin = unit.intake_batch_id ? 'Penerimaan' : unit.opening_batch_id ? 'Stok awal' : 'Inventaris';
+      const pending = unit.status === 'pending_qc';
+      const paid = Number(unit.intake_batches?.amount_paid) > 0;
+      return `<li><div><strong>${esc(unit.barcode)}</strong> · ${esc(stockStatusText[unit.status] || unit.status)}
+        <div class="field-hint">${esc(branchName(unit.branch_id))} · ${origin} · ${Number(unit.quantity)} unit
+        ${paid ? ` · Penerimaan sudah dibayar ${money(unit.intake_batches.amount_paid)}` : ''}${pending && unit.qc_at ? ' · Ada riwayat QC' : ''}</div></div>
+        <div class="actions-cell">
+          ${pending && canStockQc() && unit.branch_id === state.branchId ? `<button type="button" class="small-btn" data-product-qc="${esc(unit.barcode)}">Buka antrean QC</button>` : ''}
+          ${canManage() && product.category === 'Laptop' && Number(unit.quantity) === 1 && ['available','pending_qc','not_sellable','scrap'].includes(unit.status)
+            ? `<button type="button" class="small-btn danger" data-product-withdraw="${esc(unit.id)}">Keluarkan dari stok</button>` : ''}
+        </div>
+      </li>`;
+    }).join('')}</ul></div>` : '<p class="field-hint">Tidak ada barcode unit yang tercatat untuk produk ini.</p>';
+    container.querySelectorAll('[data-product-qc]').forEach(button => button.addEventListener('click', async () => {
+      const barcode = button.dataset.productQc;
+      button.closest('.modal')?.querySelector('[data-close-modal], [data-detail-close]')?.click();
+      await showPage('quality');
+      const search = document.querySelector('#qc-search');
+      if (!search || state.page !== 'quality') return;
+      search.value = barcode;
+      search.dispatchEvent(new Event('input'));
+      search.scrollIntoView({ block: 'center' });
+    }));
+    container.querySelectorAll('[data-product-withdraw]').forEach(button => button.addEventListener('click', () => {
+      const unit = units.find(item => item.id === button.dataset.productWithdraw);
+      if (!unit || !canManage()) return;
+      openModal('Keluarkan unit dari stok?', 'QC untuk unit ini dihentikan. Pembelian, pembayaran supplier, dan riwayat unit tetap tercatat.',
+        `<div class="notice"><strong>${esc(product.name)}</strong><br>${esc(unit.barcode)} · ${esc(branchName(unit.branch_id))}</div>
+         <div class="field"><label for="product-withdraw-reason">Alasan pengeluaran</label>
+         <textarea id="product-withdraw-reason" name="reason" minlength="3" maxlength="300" rows="3" required></textarea></div>
+         <label><input type="checkbox" required /> Saya sudah memastikan unit ini memang harus dikeluarkan dari stok.</label>`,
+        async form => {
+          checkError(await supabase.rpc('withdraw_stock_unit', { _unit_id: unit.id, _branch_id: unit.branch_id, _reason: form.get('reason') }));
+          toast(`Unit ${unit.barcode} sudah dikeluarkan dari stok.`);
+          if (state.page === 'inventory') {
+            await showPage('inventory');
+            archiveProductModal(product);
+          }
+        }, 'Keluarkan unit');
+    }));
+  } catch (error) {
+    if (container.isConnected) container.textContent = error.message || 'Barcode unit gagal dimuat.';
+  }
+}
+
 function productDetailModal(product, available = 0, stock = []) {
   if (!product) return;
   const host=document.querySelector('#modal-root');
@@ -1810,6 +1897,10 @@ function productDetailModal(product, available = 0, stock = []) {
   const specs = pamphletSpecs.filter(([key]) => product.specifications?.[key]);
   const actions = host.querySelector('.modal-actions');
   actions.insertAdjacentHTML('beforebegin', `
+    <section class="product-extra-details"><h3>Barcode dan status unit</h3>
+      <div data-product-unit-history aria-live="polite"></div>
+      ${canEditProducts() ? '<button class="small-btn" type="button" data-detail-opening-history>Lihat riwayat stok awal produk</button>' : ''}
+    </section>
     ${photos.length ? `<div class="product-gallery">${photos.map((photo, i) => `<a href="${esc(productImageUrl(photo))}" target="_blank" rel="noopener noreferrer"><img class="product-gallery-thumb" src="${esc(productImageUrl(photo))}" alt="Foto produk ${i + 2}" /></a>`).join('')}</div>` : ''}
     <section class="product-extra-details"><h3>Deskripsi produk</h3><p>${esc(product.description || 'Deskripsi belum diisi.')}</p>
       ${specs.length ? `<dl>${specs.map(([key, label]) => `<div><dt>${esc(label)}</dt><dd>${esc(product.specifications[key])}</dd></div>`).join('')}</dl>` : ''}
@@ -1823,6 +1914,11 @@ function productDetailModal(product, available = 0, stock = []) {
         <input id="pamphlet-unit-copy" aria-label="Kode unit untuk disalin" readonly hidden />
         <img class="pamphlet-preview" alt="Pratinjau pamflet produk" hidden />` : '<p>Belum ada unit siap jual di cabang ini.</p>'}
     </section>` : ''}`);
+  loadProductUnitHistory(host.querySelector('[data-product-unit-history]'), product);
+  host.querySelector('[data-detail-opening-history]')?.addEventListener('click', () => {
+    host.innerHTML = '';
+    showProductOpeningHistory(product);
+  });
   const picker = host.querySelector('#pamphlet-unit');
   const preview = host.querySelector('.pamphlet-preview');
   const manualCopy = host.querySelector('#pamphlet-unit-copy');
