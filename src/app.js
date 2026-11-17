@@ -3457,7 +3457,7 @@ function productWhatsAppShareUrl(product) {
 }
 
 function publicProductPhotoUrl(path) {
-  return `/foto-produk?${new URLSearchParams({ path })}`;
+  return `/foto-produk?${new URLSearchParams({ path, v: '2' })}`;
 }
 
 function showPublicProduct(product) {

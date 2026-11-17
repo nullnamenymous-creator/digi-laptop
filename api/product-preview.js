@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       .format(Number(product.retail_price) - Number(product.catalog_discount || 0))
     : 'Lihat ketersediaan laptop dan pilihan lainnya di katalog.';
   const image = product?.image_path
-    ? `${storefront}/foto-produk?${new URLSearchParams({ path: product.image_path })}`
+    ? `${storefront}/foto-produk?${new URLSearchParams({ path: product.image_path, v: '2' })}`
     : `${storefront}/login-laptops.webp`;
   const details = destination.pathname + destination.search;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

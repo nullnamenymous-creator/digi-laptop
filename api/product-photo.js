@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { storeWatermarkHeight, storeWatermarkPath, storeWatermarkWidth } from '../src/store-watermark.js';
 
 const maxSourceBytes = 10 * 1024 * 1024;
 
@@ -37,12 +38,11 @@ export async function serveProductPhoto(req, res, backend) {
       .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
       .toBuffer({ resolveWithObject: true });
     const { width, height } = info;
-    const fontSize = Math.min(width * 0.047, height * 0.13);
+    const scale = Math.min(width * 0.83 / storeWatermarkWidth, height * 0.09 / storeWatermarkHeight);
     const watermark = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-      <g transform="translate(${width / 2} ${height * 0.60}) rotate(-14)">
-        <text x="0" y="0" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-weight="bold"
-          font-size="${fontSize}" fill="#fff" stroke="#102b21" stroke-width="${fontSize * 0.055}"
-          paint-order="stroke" opacity="0.62">DIGITAL LAPTOP JOMBANG</text>
+      <g transform="translate(${width / 2} ${height * 0.60}) rotate(-14) scale(${scale})">
+        <path d="${storeWatermarkPath}" transform="translate(${-storeWatermarkWidth / 2} ${-storeWatermarkHeight / 2})"
+          fill="#fff" stroke="#102b21" stroke-width="1.3" stroke-linejoin="round" paint-order="stroke" opacity="0.82" />
       </g>
     </svg>`);
     const photo = await sharp(data).composite([{ input: watermark }]).jpeg({ quality: 84 }).toBuffer();
