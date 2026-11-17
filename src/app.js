@@ -28,17 +28,17 @@ const canEditProducts = () => canManage() || isCentralAdmin();
 const readyStockLabel = () => atCentral() ? 'Siap didistribusikan' : 'Siap jual';
 const rolePages = () => {
   const role = state.profile?.role;
-  if (role === 'central_admin') return ['dashboard', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality'] : [])];
+  if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality'] : [])];
   if (role === 'investor') return ['reports'];
   if (role === 'technician') return canStockQc() ? ['quality','service'] : ['service'];
-  if (role === 'owner') return ['dashboard','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
+  if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
   if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','reports'];
-  return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['cashier'] : []), 'service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
+  return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
-const stockStatusText = { withdrawn: 'Dikeluarkan lewat koreksi', pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
-const pages = { dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
+const stockStatusText = { reserved_online: 'Dipesan online', withdrawn: 'Dikeluarkan lewat koreksi', pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
+const pages = { orders: ['Pesanan online', '▣'], dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
 
 function toast(message, error = false) {
   const old = document.querySelector('.toast');
@@ -538,6 +538,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'inventory') await inventoryPage(page);
     else if (name === 'transfers') await transfersPage(page);
     else if (name === 'cashier') await cashierPage(page);
+    else if (name === 'orders') await catalogOrdersPage(page);
     else if (name === 'service') await servicePage(page);
     else if (name === 'warranty') await warrantyPage(page);
     else if (name === 'contacts') await contactsPage(page, state.contactTab || 'suppliers');
@@ -2031,6 +2032,13 @@ function printerSettings() {
 
 const receiptSaleItems = 'sale_items(*,products(specifications))';
 
+function saleReceiptQris(balance) {
+  const payable = balance > 0 && balance <= 10000000;
+  return `<section class="receipt-qris"><b>${payable ? 'Bayar sisa tagihan via QRIS' : 'QRIS Digital Laptop'}</b>
+    <img src="${esc(new URL('/store-qris.svg', location.origin).href)}" alt="QRIS Digital Laptop" />
+    <div>${payable ? `${money(balance)} · Kirim bukti ke petugas toko.` : balance > 0 ? 'Hubungi petugas untuk pembayaran sisa tagihan.' : 'Nota lunas.'}</div></section>`;
+}
+
 function printSaleReceipt(sale) {
   const format = printPreferences().receipt;
   const thermal = format === '58' || format === '80';
@@ -2049,16 +2057,17 @@ function printSaleReceipt(sale) {
       ${details.length ? `<tr><td colspan="2" class="item-specs">${line.specifications == null ? '<b>Spek katalog saat ini</b><br>' : ''}${details.join(' · ')}</td></tr>` : ''}`;
   }).join('');
   const paid = Number(sale.paid_amount || 0), total = Number(sale.total || 0);
+  const qris = saleReceiptQris(total - paid);
   win.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Struk ${esc(sale.receipt_number || '')}</title><style>
     @page{size:${paper};margin:${thermal ? 4 : 10}mm}*{box-sizing:border-box}body{max-width:${width};margin:0 auto;color:#111;font:12px/1.45 Arial,sans-serif}
     h1{margin:0 0 3px;text-align:center;font-size:15px}p{margin:2px 0;text-align:center}.meta{margin:10px 0;border-top:1px dashed #555;border-bottom:1px dashed #555;padding:6px 0}
     table{width:100%;border-collapse:collapse}td{padding:3px 0;vertical-align:top}td:last-child{text-align:right;white-space:nowrap}.totals{margin-top:7px;border-top:1px dashed #555;padding-top:6px}
     td.item-specs{text-align:left;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:1.35;padding:0 0 5px}
-    .thanks{text-align:center;margin-top:12px}@media print{body{width:auto}}
+    .receipt-qris{text-align:center;break-inside:avoid;margin-top:8px}.receipt-qris img{display:block;width:36mm;max-width:100%;height:auto;margin:4px auto}.thanks{text-align:center;margin-top:12px}@media print{body{width:auto}}
     ${printControlsStyle}
   </style></head><body>${mobile ? printControls() : ''}<h1>${esc(state.organization.name || 'DIGITAL LAPTOP JOMBANG')}</h1><p>${esc(state.organization.phone || '')}</p><p>${esc(state.organization.address || '')}</p>
     <div class="meta">No: ${esc(sale.receipt_number || 'Transaksi')}<br>Waktu: ${new Date(sale.created_at || Date.now()).toLocaleString('id-ID')}<br>Pembeli: ${esc(sale.customer_name || 'Pembeli umum')}</div>
-    <table>${lines || '<tr><td>Detail produk tidak tersedia</td></tr>'}</table><div class="totals">Total: <b>${money(total)}</b><br>Dibayar: ${money(paid)}${paid < total ? `<br>Sisa piutang: ${money(total - paid)}` : ''}<br>Metode: ${esc(sale.payment_method || '—')}</div><p class="thanks">Terima kasih telah berbelanja.</p>
+    <table>${lines || '<tr><td>Detail produk tidak tersedia</td></tr>'}</table><div class="totals">Total: <b>${money(total)}</b><br>Dibayar: ${money(paid)}${paid < total ? `<br>Sisa piutang: ${money(total - paid)}` : ''}<br>Metode: ${esc(sale.payment_method || '—')}</div>${qris}<p class="thanks">Terima kasih telah berbelanja.</p>
     ${mobile ? '' : `<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150))<\/script>`}</body></html>`);
   win.document.close();
 }
@@ -3304,6 +3313,8 @@ function customerPortal(tracking) {
     return;
   }
   startStorefrontSlides(root.querySelector('.storefront-hero'));
+  const orderToken = new URLSearchParams(location.hash.slice(1)).get('pesanan');
+  if (orderToken && /^[a-f0-9-]{36}$/i.test(orderToken)) openCatalogCheckout({ token: orderToken });
   panel.id = 'produk';
   panel.innerHTML = '<h2>Katalog produk</h2><p role="status">Memuat produk…</p>';
   const sharedParams = new URLSearchParams(location.search);
@@ -3534,6 +3545,188 @@ function publicProductPhotoUrl(path) {
   return `/foto-produk?${new URLSearchParams({ path, v: '2' })}`;
 }
 
+const catalogOrderStatus = {
+  awaiting_payment: 'Menunggu pembayaran', review: 'Menunggu verifikasi', expired: 'Reservasi berakhir',
+  late: 'Bukti terlambat · perlu ditangani petugas', paid: 'Lunas', rejected: 'Verifikasi ditolak',
+};
+
+async function catalogProofBase64(file) {
+  if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+    throw new Error('Pilih gambar JPG, PNG, atau WebP maksimal 10 MB.');
+  }
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  try {
+    const scale = Math.min(1, 1400 / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const [, encoded] = canvas.toDataURL('image/jpeg', .75).split(',');
+    if (!encoded || encoded.length > 480000) throw new Error('Bukti pembayaran terlalu besar. Coba tangkapan layar yang lebih kecil.');
+    return encoded;
+  } finally {
+    bitmap.close();
+  }
+}
+
+function openCatalogCheckout({ product, branch, token = crypto.randomUUID() }) {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'public-product-dialog catalog-checkout';
+  dialog.setAttribute('aria-labelledby', 'checkout-title');
+  dialog.innerHTML = `<header><h2 id="checkout-title">Pesanan QRIS</h2><button type="button" aria-label="Tutup">×</button></header>
+    <div class="catalog-checkout-body"><div data-checkout-content></div><p role="status" data-checkout-message></p></div>`;
+  let expiryTimer;
+  dialog.querySelector('header button').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => { clearTimeout(expiryTimer); dialog.remove(); }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  const content = dialog.querySelector('[data-checkout-content]');
+  const message = dialog.querySelector('[data-checkout-message]');
+  const run = async (button, action) => {
+    if (button) button.disabled = true;
+    message.textContent = 'Memproses…';
+    try {
+      await action();
+      message.textContent = '';
+    } catch (error) {
+      message.textContent = error.message || 'Pesanan belum bisa diproses. Coba lagi.';
+    } finally {
+      if (button) button.disabled = false;
+    }
+  };
+  const refresh = async () => {
+    const order = checkError(await supabase.rpc('catalog_order_status', { _token: token }));
+    if (!order) throw new Error('Pesanan tidak ditemukan.');
+    render(order);
+  };
+  const render = (order) => {
+    if (!dialog.isConnected) return;
+    clearTimeout(expiryTimer);
+    const awaiting = order.status === 'awaiting_payment';
+    const expired = order.status === 'expired';
+    if (awaiting) expiryTimer = setTimeout(() => {
+      const payment = content.querySelector('.catalog-qris');
+      if (payment) payment.hidden = true;
+      // Keep a proof already selected in the form intact.
+      message.textContent = 'Waktu bayar habis. Jika telanjur membayar, kirim bukti untuk ditinjau petugas.';
+    }, Math.max(0, new Date(order.expires_at).getTime() - Date.now()));
+    const link = new URL('/catalog', location.origin);
+    link.hash = new URLSearchParams({ pesanan: token });
+    content.innerHTML = `<p><strong>${esc(order.product)}</strong> · ${esc(order.branch)}</p>
+      <p class="catalog-order-number">${esc(order.number)}</p>
+      <p><strong>${money(order.amount)}</strong> · ${esc(catalogOrderStatus[order.status] || order.status)}</p>
+      ${order.note ? `<p>${esc(order.note)}</p>` : ''}
+      ${awaiting ? `<p>Bayar sebelum ${new Date(order.expires_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}. Masukkan nominal persis seperti di atas.</p>
+        <div class="catalog-qris"><img src="/store-qris.svg" alt="QRIS Digital Laptop" /><a href="/store-qris.svg" download>Unduh QRIS toko</a></div>` : ''}
+      ${expired ? '<p>Waktu pembayaran sudah habis. Jika telanjur membayar, kirim bukti agar petugas bisa menindaklanjuti.</p>' : ''}
+      ${awaiting || expired ? `<details class="catalog-proof"><summary>${awaiting ? 'Saya sudah bayar' : 'Saya telanjur membayar'}</summary>
+        <form><div class="field"><label for="catalog-proof-file">Bukti pembayaran</label>
+        <input id="catalog-proof-file" name="proof" type="file" accept="image/jpeg,image/png,image/webp" required /></div>
+        <button type="submit" class="btn primary">Kirim bukti bayar</button></form></details>` : ''}
+      <div class="catalog-order-tools"><button type="button" class="btn" data-order-refresh>Perbarui status</button>
+        <button type="button" class="btn" data-order-link>Salin tautan pesanan</button></div>
+      <input data-order-link-copy aria-label="Tautan pesanan" value="${esc(link.href)}" readonly hidden />`;
+    content.querySelector('[data-order-refresh]').addEventListener('click', (event) => run(event.currentTarget, refresh));
+    content.querySelector('[data-order-link]').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(link.href);
+        message.textContent = 'Tautan pesanan disalin.';
+      } catch {
+        const field = content.querySelector('[data-order-link-copy]');
+        field.hidden = false;
+        field.select();
+      }
+    });
+    content.querySelector('.catalog-proof form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      run(form.querySelector('button'), async () => {
+        const proof = await catalogProofBase64(form.elements.proof.files[0]);
+        render(checkError(await supabase.rpc('submit_catalog_proof', { _token: token, _proof: proof })));
+      });
+    });
+  };
+  if (!product) {
+    content.innerHTML = '<button type="button" class="btn" data-retry-order>Coba muat status</button>';
+    const retry = content.querySelector('button');
+    retry.addEventListener('click', () => run(retry, refresh));
+    run(retry, refresh);
+    return;
+  }
+  content.innerHTML = `<p><strong>${esc(product.name)}</strong> · ${esc(branch)}</p>
+    <form class="catalog-checkout-form">
+      <div class="field"><label for="catalog-order-name">Nama pelanggan</label><input id="catalog-order-name" name="customer" autocomplete="name" required minlength="2" maxlength="100" /></div>
+      <div class="field"><label for="catalog-order-phone">Nomor WhatsApp</label><input id="catalog-order-phone" name="phone" type="tel" autocomplete="tel" required maxlength="24" /></div>
+      <button type="submit" class="btn primary">Buat pesanan &amp; lihat QRIS</button>
+    </form>`;
+  content.querySelector('form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    run(form.querySelector('button'), async () => {
+      const order = checkError(await supabase.rpc('create_catalog_order', {
+        _token: token, _product: product.product_id, _branch: branch, _name: data.get('customer'), _phone: data.get('phone'),
+      }));
+      const url = new URL(location.href);
+      url.hash = new URLSearchParams({ pesanan: token });
+      history.replaceState(null, '', url);
+      render(order);
+    });
+  });
+}
+
+async function catalogOrdersPage(page) {
+  const orders = checkError(await supabase.rpc('catalog_orders_dashboard')) || [];
+  if (!page.isConnected) return;
+  page.innerHTML = `${header('Pesanan online', 'Pembayaran QRIS dicocokkan dengan transaksi masuk di aplikasi merchant.',
+    '<button type="button" class="btn" data-refresh-orders>Perbarui pesanan</button>')}
+    <section class="panel"><div class="table-wrap"><table><thead><tr><th>Pesanan</th><th>Cabang</th><th>Pelanggan</th>
+    <th>Total</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${orders.map(order => `<tr>
+      <td><b>${esc(order.product_name)}</b><div class="field-hint catalog-order-number">${esc(order.number)}</div>
+        ${order.barcode ? `<div class="field-hint">Barcode unit: ${esc(order.barcode)}</div>` : ''}
+        <small>${new Date(order.created_at).toLocaleString('id-ID')}</small></td>
+      <td>${esc(order.branch)}</td><td>${esc(order.customer_name)}<br><a href="https://wa.me/${esc(order.phone)}" target="_blank" rel="noopener noreferrer">${esc(order.phone)}</a></td>
+      <td>${money(order.amount)}</td><td>${esc(catalogOrderStatus[order.status] || order.status)}
+        ${order.payment_reference || order.review_note ? `<div class="field-hint">${esc(order.payment_reference || order.review_note)}</div>` : ''}</td>
+      <td><div class="actions-cell">${order.has_proof ? `<button type="button" class="small-btn" data-order-proof="${esc(order.id)}">Lihat bukti</button>` : ''}
+        ${canSelectBranches() && order.status === 'review' ? `<button type="button" class="small-btn" data-approve-order="${esc(order.id)}">Verifikasi lunas</button>` : ''}
+        ${canSelectBranches() && ['review','late'].includes(order.status) ? `<button type="button" class="small-btn danger" data-reject-order="${esc(order.id)}">Tolak bukti</button>` : ''}</div></td>
+    </tr>`).join('') || '<tr><td colspan="6">Belum ada pesanan online.</td></tr>'}</tbody></table></div></section>`;
+  page.querySelector('[data-refresh-orders]').addEventListener('click', () => showPage('orders'));
+  page.querySelectorAll('[data-order-proof]').forEach(button => button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const proof = checkError(await supabase.rpc('catalog_order_proof', { _id: button.dataset.orderProof }));
+      if (!proof) throw new Error('Bukti pembayaran tidak tersedia.');
+      if (button.isConnected && state.page === 'orders') openModal('Bukti pembayaran QRIS', '',
+        `<img class="catalog-proof-image" alt="Bukti pembayaran pelanggan" src="data:image/jpeg;base64,${esc(proof.replace(/\s/g, ''))}" />`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }));
+  page.querySelectorAll('[data-approve-order], [data-reject-order]').forEach(button => button.addEventListener('click', () => {
+    const approve = Boolean(button.dataset.approveOrder);
+    const order = orders.find(item => item.id === (button.dataset.approveOrder || button.dataset.rejectOrder));
+    if (!order || !canSelectBranches()) return;
+    const label = approve ? 'Referensi transaksi merchant' : 'Alasan penolakan untuk pelanggan';
+    openModal(approve ? 'Verifikasi pembayaran QRIS' : 'Tolak bukti pembayaran',
+      approve ? 'Cocokkan nominal dan referensi dengan transaksi masuk di aplikasi merchant.' : 'Alasan penolakan akan tampil di status pesanan pelanggan.',
+      `<div class="notice"><b>${esc(order.product_name)}</b> · ${esc(order.branch)} · ${money(order.amount)}</div>
+      <div class="field"><label for="catalog-review-value">${label}</label><input id="catalog-review-value" name="value" required minlength="3" maxlength="250" /></div>
+      ${approve ? '<label><input type="checkbox" required /> Uang dengan nominal ini sudah masuk ke akun merchant.</label>' : ''}`,
+      async form => {
+        checkError(await supabase.rpc('review_catalog_order', { _id: order.id, _approve: approve, _value: form.get('value') }));
+        toast(approve ? 'Pembayaran diverifikasi dan penjualan dicatat.' : 'Bukti pembayaran ditolak.');
+        if (state.page === 'orders') await showPage('orders');
+      }, approve ? 'Konfirmasi lunas' : 'Tolak bukti');
+  }));
+}
+
 function showPublicProduct(product) {
   const photos = [...new Set([product.image_path, ...(product.gallery_paths || [])].filter(Boolean))].slice(0, 4);
   const specs = pamphletSpecs.flatMap(([key, label]) => {
@@ -3578,10 +3771,16 @@ function showPublicProduct(product) {
         <section class="public-product-info" data-product-panel="description" aria-label="Deskripsi" hidden tabindex="0"><p>${esc(product.description?.trim() || 'Kondisi dan kelengkapan bisa ditanyakan ke toko.')}</p></section>
       </div>
     </div>
-    ${phone || shareUrl ? `<footer>
+    ${phone || shareUrl || availableBranches.length ? `<footer>
+      ${availableBranches.length ? '<button type="button" class="btn primary" data-order-product>Pesan &amp; bayar QRIS</button>' : ''}
       ${phone ? `<a class="btn primary" data-product-inquiry href="${esc(inquiryUrl(availableBranches[0]))}" target="_blank" rel="noopener noreferrer">Tanya stok unit ini</a>` : ''}
       ${shareUrl ? `<a class="btn" href="${esc(shareUrl)}" target="_blank" rel="noopener noreferrer">Bagikan link ke WhatsApp</a>` : ''}
     </footer>` : ''}`;
+  dialog.querySelector('[data-order-product]')?.addEventListener('click', () => {
+    const branch = dialog.querySelector('#public-product-branch').value;
+    dialog.close();
+    openCatalogCheckout({ product, branch });
+  });
   const inquiryLink = dialog.querySelector('[data-product-inquiry]');
   if (inquiryLink) dialog.querySelector('#public-product-branch')?.addEventListener('change', (event) => {
     inquiryLink.href = inquiryUrl(event.target.value);

@@ -1353,6 +1353,16 @@ button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offse
 .public-product-info p { margin: 0; white-space: pre-wrap; }
 .public-product-dialog > footer { display: flex; flex-wrap: wrap; gap: 8px; bottom: 0; border-top: 1px solid #e0ebe2; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 .public-product-dialog > footer a { flex: 1 1 180px; display: grid; place-items: center; min-height: 44px; text-decoration: none; }
+.public-product-dialog > footer [data-order-product] { flex: 1 1 180px; min-height: 44px; }
+.catalog-checkout { max-width: min(460px, 100%); }
+.catalog-checkout-body { padding: 14px 16px; }
+.catalog-checkout-form, .catalog-proof form { display: grid; gap: 10px; }
+.catalog-qris { text-align: center; margin: 12px 0; }
+.catalog-qris img { display: block; width: min(100%, 248px); height: auto; margin: 0 auto 6px; background: #fff; }
+.catalog-order-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.catalog-order-number { overflow-wrap: anywhere; }
+.catalog-proof summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.catalog-proof-image { display: block; max-width: 100%; max-height: 66vh; margin: 0 auto; }
 @media (max-width: 640px) {
   .public-product-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border: 0; border-radius: 0; }
   .public-product-layout { grid-template-columns: minmax(0,1fr); gap: 12px; padding: 10px 14px; }
