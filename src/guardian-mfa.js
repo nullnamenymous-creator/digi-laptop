@@ -6,8 +6,12 @@ export async function verifyExistingMfa(supabase) {
   if (factors.error) throw factors.error;
   const factor = factors.data.totp.find(item => item.status === 'verified');
   if (!factor) throw new Error('Autentikator akun belum tersedia.');
-  const host = document.querySelector('#modal-root');
-  await new Promise((resolve, reject) => {
+  // Login replaces the app shell with a loading screen, so its modal host may not exist yet.
+  const existingHost = document.querySelector('#modal-root');
+  const host = existingHost || document.createElement('div');
+  if (!existingHost) { host.id = 'guardian-login-modal'; document.body.append(host); }
+  try {
+    await new Promise((resolve, reject) => {
     host.innerHTML = '<div class="modal-backdrop"><form class="modal"><div class="modal-head"><h2>Verifikasi keamanan</h2></div><p>Masukkan kode dari aplikasi autentikator.</p><div class="field"><label for="guardian-code">Kode 6 digit</label><input id="guardian-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /></div><p role="alert"></p><div class="modal-actions"><button class="btn" type="button" data-cancel>Keluar</button><button class="btn primary" type="submit">Verifikasi</button></div></form></div>';
     const form = host.querySelector('form');
     form.querySelector('input').focus();
@@ -30,7 +34,10 @@ export async function verifyExistingMfa(supabase) {
         buttons.forEach(button => {button.disabled = false;});
       }
     });
-  });
+    });
+  } finally {
+    if (!existingHost) host.remove();
+  }
 }
 
 export async function setupGuardianMfa(supabase, openModal, toast) {
