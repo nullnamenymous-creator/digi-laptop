@@ -1159,6 +1159,7 @@ function downloadCsv(filename, rows) { const keys=Object.keys(rows[0]||{name:'',
 function parseCsv(text) { const rows=[];let row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}else if(c==='"')quoted=true;else if(c===','){row.push(value);value=''}else if(c==='\n'){row.push(value.replace(/\r$/,''));rows.push(row);row=[];value=''}else value+=c}if(value||row.length){row.push(value.replace(/\r$/,''));rows.push(row)}const headers=(rows.shift()||[]).map((h)=>h.trim().replace(/^\ufeff/,''));return rows.filter((r)=>r.some((v)=>v.trim())).map((r)=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||''])));}
 
 async function inventoryPage(page) {
+  if (canManage() && state.inventoryArchiveOpen) return inventoryArchivePage(page);
   const branchId = state.branchId;
   const [{ products, stock }, openingBatches] = await Promise.all([
     fetchInventory(),
@@ -1215,7 +1216,8 @@ async function inventoryPage(page) {
     const product = products.find((row) => row.id === item.product_id);
     const badge = item.status === 'available' ? '' : ['pending_qc','repair_needed','repairing','waiting_parts'].includes(item.status) ? 'warn' : 'gray';
     return `<tr data-unit-status="${esc(item.status)}"><td data-label="Barcode / unit" class="product-name"><label class="unit-barcode-choice"><input type="checkbox" data-unit-label-id="${esc(item.id)}" aria-label="Pilih barcode ${esc(item.barcode)} untuk dicetak" /><span>${esc(item.barcode)}<span class="field-hint">${esc(product?.name || 'Laptop')}</span></span></label></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}${canEditProducts() && item.status === 'available' && Number(item.quantity) === 1
-      ? `<button type="button" class="small-btn danger" data-withdraw-stock-unit="${esc(item.id)}">Keluarkan unit</button>` : ''}</div></td></tr>`;
+      ? `<button type="button" class="small-btn danger" data-withdraw-stock-unit="${esc(item.id)}">Keluarkan unit</button>` : ''}
+      ${canManage() && item.status === 'withdrawn' ? restoreUnitButton(item.id) : ''}</div></td></tr>`;
   }).join('');
   const renderComponentLots = (items) => items.map((item) => {
     const product = products.find((row) => row.id === item.product_id);
@@ -1252,6 +1254,15 @@ async function inventoryPage(page) {
       <div class="panel-head"><span data-opening-count role="status"></span><button type="button" class="btn" data-opening-more hidden>Tampilkan lagi</button></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
   const unitSearch = page.querySelector('#unit-search');
+  if (canManage()) {
+    const archive = document.createElement('button');
+    archive.className = 'btn';
+    archive.type = 'button';
+    archive.textContent = 'Arsip produk & unit';
+    archive.addEventListener('click', () => { state.inventoryArchiveOpen = true; showPage('inventory'); });
+    page.querySelector('.head-actions').append(archive);
+    bindRestoreUnitButtons(page, laptopUnits, products);
+  }
   const unitStatus = page.querySelector('#unit-status-filter');
   const unitRows = [...page.querySelectorAll('#laptop-unit-rows tr[data-unit-status]')];
   const unitLabelChecks = unitRows.map(row => row.querySelector('[data-unit-label-id]'));
@@ -1545,6 +1556,102 @@ async function inventoryPage(page) {
     }, 'Keluarkan unit');
   }));
   page.querySelectorAll('[data-print-warranty-unit]').forEach((button) => button.addEventListener('click', () => { const unit=stock.find((item) => item.id===button.dataset.printWarrantyUnit); if (unit) printWarrantyQr({...unit,products:products.find((product) => product.id===unit.product_id)}); }));
+}
+
+function restoreUnitButton(id) {
+  return `<button type="button" class="small-btn" data-restore-stock-unit="${esc(id)}">Kembalikan ke stok</button>`;
+}
+
+function bindRestoreUnitButtons(page, units, products) {
+  page.querySelectorAll('[data-restore-stock-unit]').forEach(button => button.addEventListener('click', async () => {
+    if (!canManage() || button.disabled) return;
+    const unit = units.find(item => item.id === button.dataset.restoreStockUnit);
+    const product = products.find(item => item.id === unit?.product_id);
+    if (!unit || !product) return;
+    button.disabled = true;
+    try {
+      const current = checkError(await supabase.from('stock_items')
+        .select('withdrawn_from_status').eq('id', unit.id).eq('status', 'withdrawn').single());
+      if (!button.isConnected || !canManage()) return;
+      const prior = current.withdrawn_from_status;
+      const central = state.branches.some(branch => branch.id === unit.branch_id && branch.is_central);
+      openModal('Kembalikan unit ke stok?', 'Satu unit akan dikembalikan dengan kode dan modal yang sama.',
+        `<div class="notice"><strong>${esc(product.name)}</strong><br>${esc(unit.barcode)} · ${esc(branchName(unit.branch_id))} · ${money(unit.acquisition_cost)}
+        ${product.archived_at ? '<br>Produk juga akan diaktifkan kembali di inventaris.' : ''}</div>
+        ${prior ? `<p>Status setelah dipulihkan <strong>${esc(stockStatusText[prior] || prior)}</strong></p>` : `
+          <div class="field"><label for="restore-legacy-status">Status unit untuk koreksi lama</label>
+          <select id="restore-legacy-status" name="legacy" required><option value="">Pilih setelah memeriksa unit</option>
+          ${central ? '<option value="pending_qc">Menunggu QC</option>' : ''}<option value="available">Tersedia · sudah diperiksa</option></select></div>`}
+        <div class="field"><label for="restore-stock-reason">Alasan pemulihan</label>
+        <textarea id="restore-stock-reason" name="reason" minlength="3" maxlength="300" rows="3" required></textarea></div>
+        <label><input type="checkbox" required /> Barang fisik ada di cabang ini dan statusnya sudah saya periksa.</label>`,
+        async form => {
+          const status = checkError(await supabase.rpc('restore_withdrawn_stock', {
+            _unit_id: unit.id, _legacy_status: form.get('legacy'), _reason: form.get('reason'),
+          }));
+          toast(`Unit ${unit.barcode} dikembalikan · ${stockStatusText[status] || status}.`);
+          if (state.page === 'inventory') await showPage('inventory');
+        }, 'Kembalikan ke stok');
+    } catch (error) {
+      toast(error.message || 'Status unit tidak dapat dimuat.', true);
+    } finally {
+      button.disabled = false;
+    }
+  }));
+}
+
+async function inventoryArchivePage(page) {
+  const organizationId = state.organization.id;
+  const [products, withdrawn] = await Promise.all([
+    fetchAllRows(supabase.from('products').select('id,name,sku,category,archived_at').eq('organization_id', organizationId).order('name')),
+    fetchAllRows(supabase.from('stock_items').select('id,product_id,branch_id,barcode,acquisition_cost')
+      .eq('organization_id', organizationId).eq('status', 'withdrawn').order('barcode')),
+  ]);
+  if (!page.isConnected || !canManage() || !state.inventoryArchiveOpen) return;
+  const archived = products.filter(product => product.archived_at);
+  const productById = new Map(products.map(product => [product.id, product]));
+  const units = withdrawn.filter(unit => productById.get(unit.product_id)?.category?.trim().toLowerCase() === 'laptop');
+  page.innerHTML = `${header('Arsip produk & unit', 'Semua cabang · produk yang diarsipkan dan unit yang dikeluarkan lewat koreksi.',
+    '<button type="button" class="btn" data-inventory-back>Kembali ke Produk & stok</button>')}
+    <div class="field"><label for="inventory-archive-search">Cari produk atau barcode</label><input type="search" id="inventory-archive-search" placeholder="Nama, SKU, atau barcode" /></div>
+    <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Produk diarsipkan</div></div>
+      <div class="table-wrap"><table><thead><tr><th>Produk / SKU</th><th>Diarsipkan</th><th>Aksi</th></tr></thead><tbody>
+      ${archived.map(product => `<tr data-archive-row><td><b>${esc(product.name)}</b><div class="field-hint">${esc(product.sku || '')}</div></td>
+      <td>${new Date(product.archived_at).toLocaleDateString('id-ID')}</td><td><button type="button" class="small-btn" data-unarchive-product="${esc(product.id)}">Aktifkan produk</button></td></tr>`).join('')}
+      <tr data-archive-empty><td colspan="3">Tidak ada produk arsip yang cocok.</td></tr></tbody></table></div></section>
+    <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Unit yang dikeluarkan</div></div>
+      <div class="table-wrap"><table><thead><tr><th>Barcode / produk</th><th>Cabang</th><th>Modal</th><th>Aksi</th></tr></thead><tbody>
+      ${units.map(unit => `<tr data-archive-row><td><b>${esc(unit.barcode)}</b><div class="field-hint">${esc(productById.get(unit.product_id)?.name || 'Laptop')}</div></td>
+      <td>${esc(branchName(unit.branch_id))}</td><td>${money(unit.acquisition_cost)}</td><td>${restoreUnitButton(unit.id)}</td></tr>`).join('')}
+      <tr data-archive-empty><td colspan="4">Tidak ada unit keluaran yang cocok.</td></tr></tbody></table></div></section>`;
+  page.querySelector('[data-inventory-back]').addEventListener('click', () => {
+    state.inventoryArchiveOpen = false;
+    showPage('inventory');
+  });
+  const search = page.querySelector('#inventory-archive-search');
+  const tables = [...page.querySelectorAll('tbody')].map(table => ({
+    table, rows: [...table.querySelectorAll('[data-archive-row]')], empty: table.querySelector('[data-archive-empty]'),
+  }));
+  const filter = () => {
+    const query = search.value.trim().toLowerCase();
+    tables.forEach(({ table, rows, empty }) => filterPagedRows(table, rows,
+      row => row.textContent.toLowerCase().includes(query), empty));
+  };
+  search.addEventListener('input', filter);
+  filter();
+  bindRestoreUnitButtons(page, units, products);
+  page.querySelectorAll('[data-unarchive-product]').forEach(button => button.addEventListener('click', () => {
+    const product = productById.get(button.dataset.unarchiveProduct);
+    if (!product || !canManage()) return;
+    openModal('Aktifkan produk?', 'Produk kembali ke daftar inventaris dengan jumlah stok yang tercatat saat ini.',
+      `<div class="notice">${esc(product.name)}</div>`, async () => {
+        if (!canManage()) throw new Error('Hanya Pemilik dapat membuka arsip produk.');
+        checkError(await supabase.from('products').update({ archived_at: null })
+          .eq('organization_id', organizationId).eq('id', product.id).select('id').single());
+        toast('Produk kembali aktif di inventaris.');
+        if (state.page === 'inventory') await showPage('inventory');
+      }, 'Aktifkan produk');
+  }));
 }
 
 function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
