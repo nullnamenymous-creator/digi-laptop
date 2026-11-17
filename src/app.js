@@ -2741,6 +2741,22 @@ function filterPagedRows(body, rows, predicate, emptyRow) {
   bindRecordPages(wrap, matches);
 }
 
+async function fetchReportStockValue(organizationId, branchId) {
+  return checkError(await supabase.rpc('report_stock_value', {
+    _organization_id: organizationId, _branch_id: branchId === 'all' ? null : branchId,
+  }));
+}
+
+function stockValueReportEntries(value) {
+  return [
+    ['Total stok tersisa', `${value.units.toLocaleString('id-ID')} unit`, `${value.transitUnits.toLocaleString('id-ID')} unit dalam mutasi`],
+    ['Total modal tercatat', money(value.cost), value.missingCost ? `${value.missingCost.toLocaleString('id-ID')} unit tanpa data modal` : 'Berdasarkan harga perolehan unit'],
+    ['Estimasi nilai jual stok', money(value.retail), `${value.readyUnits.toLocaleString('id-ID')} unit siap jual atau siap kirim${value.missingPrice ? ` · ${value.missingPrice.toLocaleString('id-ID')} unit tanpa harga jual` : ''}`],
+  ];
+}
+
+const stockValueReportNote = 'Modal memakai harga perolehan, di luar biaya repair. Estimasi memakai harga eceran setelah promo untuk unit siap jual atau siap kirim. Unit dalam perjalanan dihitung di cabang asal.';
+
 async function reportsPage(page) {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const range = state.profile.role === 'operator' ? 'daily' : params.get('range') || 'daily';
@@ -2816,6 +2832,11 @@ async function reportsPage(page) {
   const rangeLabel = range === 'daily' ? '7 hari terakhir' : range === 'weekly' ? '8 minggu terakhir' : range === 'monthly' ? '12 bulan terakhir' : '5 tahun terakhir';
   const branchOptions = canSelectBranches() ? `<select id="report-branch" class="branch-select"><option value="all" ${state.reportBranch==='all'?'selected':''}>Semua cabang</option>${state.branches.map(branch=>`<option value="${branch.id}" ${state.reportBranch===branch.id?'selected':''}>${esc(branch.name)}</option>`).join('')}</select>` : '';
   page.innerHTML = `${header('Laporan laba & arus kas',`Rekap ${rangeLabel}. Laba memakai modal barang tersimpan dan belum memasukkan pembayaran hutang sebagai biaya baru.`,`<select id="report-range" class="branch-select"><option value="daily" ${range==='daily'?'selected':''}>Harian</option><option value="weekly" ${range==='weekly'?'selected':''}>Mingguan</option><option value="monthly" ${range==='monthly'?'selected':''}>Bulanan</option><option value="yearly" ${range==='yearly'?'selected':''}>Tahunan</option></select>${branchOptions}`)}
+    ${canManage() ? `<section class="panel report-stock-value" aria-labelledby="report-stock-title">
+      <div class="panel-head"><div><div class="panel-title" id="report-stock-title">Ringkasan nilai stok</div>
+      <div class="panel-sub">Posisi stok saat ini · ${reportBranchId === 'all' ? 'Semua cabang' : esc(branchName(reportBranchId))}</div></div></div>
+      <div data-report-stock-value aria-live="polite">Memuat posisi stok…</div>
+    </section>` : ''}
     <div class="cards report-summary">
       ${financeSummaryCard('sales', 'Omzet produk', money(salesTotal), `${sales.length} transaksi penjualan`)}
       ${financeSummaryCard('service', 'Omzet servis', money(serviceTotal), 'Servis yang sudah diserahkan')}
@@ -2834,6 +2855,19 @@ async function reportsPage(page) {
     </details>
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Rekap ${range==='daily'?'per hari':range==='weekly'?'per minggu':range==='monthly'?'per bulan':'per tahun'}</div><div class="panel-sub">Pilih periode untuk membuka transaksi, HPP, dan dampak labanya.</div></div></div><div class="table-wrap"><table><thead><tr><th>PERIODE</th><th>CATATAN</th><th>OMZET PRODUK</th><th>OMZET SERVIS</th><th>HPP</th><th>BIAYA OPERASIONAL</th><th>LABA OPERASIONAL</th><th>DETAIL</th></tr></thead><tbody>${[...buckets.values()].sort((a,b)=>b.key.localeCompare(a.key)).map(bucket=>`<tr><td class="product-name">${esc(bucket.key)}</td><td>${bucket.count}</td><td>${money(bucket.sales)}</td><td>${money(bucket.services)}</td><td>${money(bucket.hpp+bucket.serviceCost)}</td><td>${money(bucket.operatingExpense)}</td><td><b>${money(bucket.sales+bucket.services-bucket.hpp-bucket.serviceCost+bucket.otherIncome-bucket.operatingExpense)}</b></td><td><button class="small-btn" data-report-detail="${esc(bucket.key)}">Lihat detail</button></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Belum ada transaksi pada periode ini.</div></td></tr>'}</tbody></table></div></section>`;
   let selectedPeriod = null;
+  let currentStockValue;
+  const stockValuePanel = page.querySelector('[data-report-stock-value]');
+  if (stockValuePanel) {
+    fetchReportStockValue(state.organization.id, reportBranchId).then((value) => {
+      if (!stockValuePanel.isConnected || !canManage() || state.reportBranch !== reportBranchId) return;
+      currentStockValue = value;
+      stockValuePanel.innerHTML = `<div class="cards report-summary">${stockValueReportEntries(value).map(([label, amount, detail]) =>
+        `<article class="card"><span class="card-label">${label}</span><b class="card-value">${amount}</b><span class="card-sub">${detail}</span></article>`).join('')}</div>
+        <p class="field-hint">${stockValueReportNote}</p>`;
+    }).catch(() => {
+      stockValuePanel.textContent = 'Nilai stok gagal dimuat. Muat ulang laporan untuk mencoba lagi.';
+    });
+  }
   const printReport = document.createElement('button');
   printReport.type = 'button';
   printReport.className = 'btn';
@@ -2874,6 +2908,10 @@ async function reportsPage(page) {
         <p>${esc(branch)} · ${esc(rangeLabel)} · Dicetak ${esc(new Date().toLocaleDateString('id-ID'))}</p></div>
       </header>
       <dl>${summary.map(([label, amount]) => `<div><dt>${label}</dt><dd>${money(amount)}</dd></div>`).join('')}</dl>
+      ${canManage() && currentStockValue ? `<section><h3>Ringkasan nilai stok saat ini</h3>
+        <dl>${stockValueReportEntries(currentStockValue).map(([label, amount, detail]) =>
+          `<div><dt>${label}</dt><dd>${amount}</dd><small>${detail}</small></div>`).join('')}</dl>
+        <p class="print-note">${stockValueReportNote}</p></section>` : ''}
       ${tables}${costNote}
     </main>`, 'report', `
       .print-report{max-width:1100px;margin:14px auto}
