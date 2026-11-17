@@ -600,9 +600,53 @@ async function showOwnerBranchStock(panel) {
   }
 }
 
+const saleReferralLabels = new Map([
+  ['recommendation', 'Rekomendasi teman / keluarga'], ['walk_in', 'Lewat depan toko'],
+  ['google_maps', 'Google Maps'], ['instagram', 'Instagram'], ['facebook', 'Facebook'],
+  ['tiktok', 'TikTok'], ['other', 'Lainnya'],
+]);
+
+function normalizeCustomerPhone(phone) {
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  if (digits.startsWith('00')) return digits.slice(2);
+  return digits.startsWith('0') ? '62' + digits.slice(1) : digits;
+}
+
+function saleReferralSummary(sales, title, subtitle) {
+  const totals = new Map();
+  for (const sale of sales) {
+    const source = sale.referral_source || '';
+    const entry = totals.get(source) || { count: 0, revenue: 0 };
+    entry.count++;
+    entry.revenue += Number(sale.total);
+    totals.set(source, entry);
+  }
+  const rows = [...totals].sort((a, b) => b[1].count - a[1].count || b[1].revenue - a[1].revenue);
+  return `<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">${title}</div>
+    <div class="panel-sub">${subtitle}</div></div></div><div class="table-wrap"><table>
+    <thead><tr><th>SUMBER REFERENSI</th><th>TRANSAKSI</th><th>OMZET</th></tr></thead><tbody>
+    ${rows.map(([source, entry]) => `<tr><td>${esc(saleReferralLabels.get(source) || 'Belum dicatat')}</td>
+      <td>${entry.count}</td><td>${money(entry.revenue)}</td></tr>`).join('') ||
+      '<tr><td colspan="3" class="empty">Belum ada referensi penjualan pada periode ini.</td></tr>'}
+    </tbody></table></div></section>`;
+}
+
+async function ownerReferralDashboard() {
+  if (!canManage()) return '';
+  const start = new Date();
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const sales = await fetchAllRows(supabase.from('sales').select('referral_source,total')
+    .eq('organization_id', state.organization.id).not('referral_source', 'is', null)
+    .gte('created_at', start.toISOString()).order('id'));
+  return saleReferralSummary(sales, 'Referensi penjualan terbanyak',
+    'Semua cabang bulan ini · diurutkan menurut jumlah transaksi');
+}
+
 async function centralDashboardPage(page) {
   const branchId = state.branchId;
-  const [stock, intake, transfers] = await Promise.all([
+  const [referralDashboard, stock, intake, transfers] = await Promise.all([
+    ownerReferralDashboard(),
     fetchAllRows(supabase.from('stock_items').select('status,quantity').eq('branch_id', branchId)
       .in('status', ['pending_qc','repair_needed','repairing','waiting_parts','available'])),
     fetchAllRows(supabase.from('intake_batches').select('unit_count').eq('branch_id', branchId).gte('created_at', dayStart())),
@@ -627,6 +671,7 @@ async function centralDashboardPage(page) {
   page.innerHTML = `${header('Operasional Cabang Pusat', 'Penerimaan, pemeriksaan, dan distribusi stok ke cabang penjualan.', '<button class="btn primary" data-open-transfer>Kirim ke cabang</button>')}
     <section class="cards laptop-unit-summary">${cards.map(([label, count, action]) => `<button type="button" class="card unit-summary-button" data-central-page="${action}"><span class="card-label">${label}</span><span class="card-value">${count} <small>unit</small></span></button>`).join('')}</section>
     ${canSelectBranches() ? branchStockSection : ''}
+    ${referralDashboard}
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Distribusi per cabang</div><div class="panel-sub">Jumlah pengiriman dari Cabang Pusat</div></div></div><div class="table-wrap"><table><thead><tr><th>Cabang tujuan</th><th>Menunggu diterima</th><th>Sudah diterima</th></tr></thead><tbody>${state.branches.filter(branch => !branch.is_central).map(branch => `<tr><td>${esc(branch.name)}</td><td>${pending.filter(row => row.destination_branch_id === branch.id).length}</td><td>${received.get(branch.id) || 0}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Mutasi menunggu diterima</div></div><div class="table-wrap"><table><thead><tr><th>Nomor mutasi</th><th>Tujuan</th><th>Jumlah unit</th><th>Tanggal kirim</th></tr></thead><tbody>${pending.map(row => `<tr><td>${esc(row.transfer_number)}</td><td>${esc(branchName(row.destination_branch_id))}</td><td>${unitCount(row)}</td><td>${new Date(row.created_at).toLocaleString('id-ID')}</td></tr>`).join('') || '<tr><td colspan="4">Tidak ada mutasi dalam perjalanan.</td></tr>'}</tbody></table></div></section>`;
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
@@ -647,7 +692,8 @@ async function dashboardPage(page) {
   if (!ownerView) bestSellingQuery = bestSellingQuery.eq('sales.branch_id', state.branchId);
   let recentSalesQuery = supabase.from('sales').select('receipt_number,customer_name,total,created_at,branch_id,branches(name)').order('created_at', { ascending: false }).limit(ownerView ? 12 : 4);
   if (!ownerView) recentSalesQuery = recentSalesQuery.eq('branch_id', state.branchId);
-  const [stock, laptopStock, services, sales, bestSelling, recentServices, recentSales, inventoryData] = await Promise.all([
+  const [referralDashboard, stock, laptopStock, services, sales, bestSelling, recentServices, recentSales, inventoryData] = await Promise.all([
+    ownerReferralDashboard(),
     fetchAllRows(stockQuery), fetchAllRows(laptopStockQuery), fetchAllRows(serviceQuery), fetchAllRows(salesQuery), fetchAllRows(bestSellingQuery),
     supabase.from('service_tickets').select('ticket_number,customer_name,device_name,status,created_at').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(4),
     recentSalesQuery,
@@ -686,6 +732,7 @@ async function dashboardPage(page) {
         <div class="cards"><button type="button" class="card dashboard-summary-button" data-dashboard-card="sales"><span class="card-label">${ownerView ? 'Penjualan semua cabang' : 'Penjualan hari ini'}<span class="card-icon">↗</span></span><span class="card-value">${money(salesTotal)}</span><span class="card-sub">${ownerView ? 'Akumulasi cabang hari ini' : 'Data transaksi tersimpan'}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="stock"><span class="card-label">Total unit siap jual<span class="card-icon">▤</span></span><span class="card-value">${unitCount} <small style="font-size:11px;font-weight:500">unit</small></span><span class="card-sub">${laptopUnitCount} laptop · ${esc(branchName(state.branchId))}</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="service"><span class="card-label">Servis berjalan<span class="card-icon">⌁</span></span><span class="card-value">${activeServices}</span><span class="card-sub">${readyCount} siap diserahkan</span></button><button type="button" class="card dashboard-summary-button" data-dashboard-card="branches"><span class="card-label">Jumlah cabang<span class="card-icon">⌂</span></span><span class="card-value">${state.branches.length}</span><span class="card-sub">Terhubung ke database pusat</span></button></div>
     ${canSelectBranches() ? branchStockSection : ''}
     ${ownerBranchSales}
+    ${referralDashboard}
     <div class="dashboard-insights"><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Penjualan tertinggi</div><div class="panel-sub">Laptop paling banyak terjual · ${monthStart.toLocaleDateString('id-ID',{month:'long'})} ini</div></div><span class="insight-tag">TOP 5</span></div><div class="rank-list">${topProductRows || '<div class="empty"><b>Belum ada penjualan bulan ini</b>Produk akan muncul setelah transaksi tersimpan.</div>'}</div></section><section class="panel insight-panel"><div class="panel-head"><div><div class="panel-title">Stok laptop</div><div class="panel-sub">Unit siap dijual di ${esc(branchName(state.branchId))}</div></div><button class="link-button" data-go="inventory">Lihat stok →</button></div><div class="laptop-stock-total"><strong>${laptopUnitCount.toLocaleString('id-ID')}</strong><span>unit tersedia</span></div><div class="brand-stock-list">${laptopBrandRows || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit laptop akan dihitung setelah lolos QC.</div>'}</div></section></div>
     <div class="grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Aktivitas terbaru</div><div class="panel-sub">Transaksi dan tiket servis cabang ini</div></div></div>${recent.length ? `<div class="table-wrap"><table><thead><tr><th>AKTIVITAS</th><th>DETAIL</th><th>WAKTU</th></tr></thead><tbody>${recent.map((row) => `<tr><td class="product-name">${esc(row.title)}</td><td>${esc(row.detail)}</td><td>${new Date(row.date).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty"><b>Belum ada aktivitas</b>Transaksi dan servis baru akan muncul di sini.</div>'}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">Akses cepat</div><div class="panel-sub">${state.profile.role === 'owner' ? 'Pemantauan dan pengelolaan toko' : 'Pekerjaan sehari-hari'}</div></div></div><div class="quick-links">${(state.profile.role === 'owner' ? [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Pantau stok semua cabang'],['finance','Rp','Keuangan','Lihat pemasukan dan pengeluaran']] : [['receiving','▤','Penerimaan & barcode','Buat batch dan cetak label unit'],['inventory','▧','Produk & stok','Kelola stok cabang'],['cashier','▣','Buka kasir','Catat penjualan dan pembayaran'],['service','⌁','Servis pelanggan','Buat tiket dan foto kondisi']]).filter(([key]) => rolePages().includes(key)).map(([key,icon,label,description]) => `<button class="quick-link" data-go="${key}"><span>${icon}</span><div><b>${label}</b><small>${description}</small></div><span>→</span></button>`).join('')}</div></section></div>`;
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
@@ -2530,7 +2577,8 @@ async function syncPendingOfflineSales() {
     for(const row of rows){
       if(row.status!=='queued'||row.organization_id!==state.organization.id||row.branch_id!==state.profile?.branch_id)continue;
       try{
-        const {data,error}=await supabase.rpc('create_cashier_sale_with_commission',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date,_discount:row.discount_amount ?? 0,_commission:row.commission ?? null});
+        const {data,error}=await supabase.rpc('create_cashier_sale_with_customer',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date,_discount:row.discount_amount ?? 0,_commission:row.commission ?? null,
+          _customer_address:row.customer_address ?? null,_referral_source:row.referral_source ?? null,_referral_note:row.referral_note ?? null});
         if(error)throw error;
         const sale=checkError(await supabase.from('sales').select('receipt_number').eq('id',data).single());row.status='synced';row.receipt_number=sale.receipt_number;row.sale_id=data;row.synced_at=new Date().toISOString();row.error='';submitted++;changed=true;anyChanged=true;
       }catch(error){
@@ -2547,7 +2595,7 @@ async function cashierPage(page) {
   if (atCentral()) throw new Error('Cabang Pusat tidak melayani penjualan.');
   const branchId = state.branchId;
   const cacheKey=`digi-offline-cashier:${state.organization.id}:${branchId}`;let products,customers,stock,sales=[];
-  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,created_at').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
+  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,address,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,created_at').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
   catch(error){if(navigator.onLine)throw error;const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(!cached)throw new Error('Data kasir belum tersimpan di perangkat ini. Buka halaman kasir saat online dahulu.');({products,customers,stock}=cached);sales=[];}
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
@@ -2569,9 +2617,12 @@ async function cashierPage(page) {
         <summary><span>Pelanggan</span><small id="cashier-customer-summary">Pembeli umum</small></summary>
         <div class="form-grid cashier-fields">
         <div class="field"><label for="sale-customer-id">Pelanggan terdaftar</label><select id="sale-customer-id" name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div>
-        <div class="field"><label for="sale-customer-name">Nama pembeli</label><input id="sale-customer-name" name="customer_name" placeholder="Pembeli umum" /></div>
+        <div class="field"><label for="sale-customer-name">Nama pembeli</label><input id="sale-customer-name" name="customer_name" maxlength="120" autocomplete="name" placeholder="Pembeli umum" /></div>
         <div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div>
-        <div class="field"><label for="sale-customer-type">Harga pelanggan</label><select id="sale-customer-type" name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select></div></div>
+        <div class="field"><label for="sale-customer-type">Harga pelanggan</label><select id="sale-customer-type" name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select></div>
+          <div class="full" id="sale-customer-match" hidden><button type="button" class="small-btn" id="sale-use-customer"></button></div>
+          <div class="field full"><label for="sale-customer-address">Alamat pembeli</label><input id="sale-customer-address" name="customer_address" maxlength="300" autocomplete="street-address" /></div>
+        </div>
       </details>
       <details id="cashier-adjustments">
         <summary><span>Potongan &amp; komisi</span><small id="cashier-adjustment-summary">Opsional</small></summary>
@@ -2581,6 +2632,14 @@ async function cashierPage(page) {
         <div class="field"><label for="mediator-name">Nama mediator</label><input id="mediator-name" name="mediator_name" maxlength="120" required /></div>
         <div class="field"><label for="commission-amount">Komisi (Rp)</label><input id="commission-amount" name="commission_amount" type="number" min="1" step="1" required /></div><div class="field-hint full" id="commission-cash" aria-live="polite"></div></fieldset></div>
       </details>
+    </div>
+    <div class="form-grid cashier-fields cashier-payment">
+      <div class="field full"><label for="sale-referral-source">Tahu toko dari mana? <small>(opsional)</small></label>
+      <select id="sale-referral-source" name="referral_source"><option value="">Pilih referensi</option>
+        ${[...saleReferralLabels].map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
+      </select></div>
+      <div class="full" id="sale-referral-note-field" hidden><div class="field"><label for="sale-referral-note">Sumber lainnya</label>
+      <input id="sale-referral-note" name="referral_note" maxlength="120" placeholder="Tulis sumber referensi" /></div></div>
     </div>
     <div class="cashier-submit"><span>Total bayar <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div>
   </form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
@@ -2700,9 +2759,32 @@ async function cashierPage(page) {
     form.customer_name.value = customer?.name || '';
     form.customer_name.readOnly = Boolean(customer);
     form.customer_phone.value = customer?.phone || '';
+    form.customer_phone.readOnly = Boolean(customer?.phone);
+    form.customer_address.value = customer?.address || '';
     form.customer_type.value = customer?.customer_type === 'reseller' ? 'reseller' : 'end_user';
     form.customer_type.disabled = Boolean(customer);
     renderCart();
+  });
+  const customerMatch = form.querySelector('#sale-customer-match');
+  const useCustomer = form.querySelector('#sale-use-customer');
+  const updatePhoneMatch = () => {
+    const phone = normalizeCustomerPhone(form.customer_phone.value);
+    const matches = !form.customer_id.value && phone.length >= 8
+      ? customers.filter(customer => normalizeCustomerPhone(customer.phone) === phone) : [];
+    const match = matches.length === 1 ? matches[0] : null;
+    customerMatch.hidden = !match;
+    useCustomer.textContent = match ? `Pakai kontak ${match.name}` : '';
+    useCustomer.dataset.customerId = match?.id || '';
+  };
+  form.customer_phone.addEventListener('input', updatePhoneMatch);
+  form.customer_id.addEventListener('change', updatePhoneMatch);
+  useCustomer.addEventListener('click', () => {
+    form.customer_id.value = useCustomer.dataset.customerId;
+    form.customer_id.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const referralNoteField = form.querySelector('#sale-referral-note-field');
+  form.referral_source.addEventListener('change', () => {
+    referralNoteField.hidden = form.referral_source.value !== 'other';
   });
   form.customer_type.addEventListener('change', renderCart);
   form.discount_amount.addEventListener('input', renderCart);
@@ -2780,6 +2862,9 @@ async function cashierPage(page) {
       request_id: crypto.randomUUID(), organization_id: state.organization.id, branch_id: branchId,
       customer_name: customers.find(customer=>customer.id===form.customer_id.value)?.name || String(form.customer_name.value).trim(), customer_id: form.customer_id.value || null,
       customer_phone: form.customer_phone.value.trim(),
+      customer_address: form.customer_address.value.trim(),
+      referral_source: form.referral_source.value || null,
+      referral_note: form.referral_source.value === 'other' ? form.referral_note.value.trim() : null,
       customer_type: form.customer_type.value, payment_method: form.payment_method.value,
       lines: cart.map(item=>({product_id:item.product.id,quantity:item.quantity,expected_price:priceFor(item.product)})),
       discount_amount: discount, commission, paid_amount: paid, due_date: paid < total ? form.due_date.value : null,
@@ -2794,13 +2879,20 @@ async function cashierPage(page) {
         form.mediator_name.value = ''; form.commission_amount.value = '';
         commissionFields.hidden = commissionFields.disabled = true;
         adjustmentDetails.open = false;
+        form.customer_id.value = '';
+        form.customer_id.dispatchEvent(new Event('change', { bubbles: true }));
+        customerDetails.open = false;
+        form.referral_source.value = '';
+        form.referral_note.value = '';
+        referralNoteField.hidden = true;
         renderCart();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
-      const {data,error}=await supabase.rpc('create_cashier_sale_with_commission',{
+      const {data,error}=await supabase.rpc('create_cashier_sale_with_customer',{
         _customer_phone:payload.customer_phone || null, _request_id:payload.request_id,_branch_id:payload.branch_id,_customer_name:payload.customer_name,
         _customer_type:payload.customer_type,_payment_method:payload.payment_method,_lines:payload.lines,
-        _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date,_discount:payload.discount_amount,_commission:payload.commission
+        _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date,_discount:payload.discount_amount,_commission:payload.commission,
+        _customer_address:payload.customer_address,_referral_source:payload.referral_source,_referral_note:payload.referral_note
       });
       if(error) throw error;
       committed = true;
@@ -3225,7 +3317,7 @@ async function reportsPage(page) {
   else if (range === 'monthly') { start.setMonth(start.getMonth() - 11, 1); start.setHours(0,0,0,0); }
   else { start.setFullYear(start.getFullYear() - 4, 0, 1); start.setHours(0,0,0,0); }
 
-  let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,discount_amount,paid_amount,payment_method,created_at,branches(name),sale_commissions(mediator_name,amount,settlement_method),sale_items(quantity,unit_price,line_total,products(cost_price),stock_items(acquisition_cost,stock_repairs(status,labor_cost,stock_repair_parts(cost))))').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
+  let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,discount_amount,referral_source,referral_note,paid_amount,payment_method,created_at,branches(name),sale_commissions(mediator_name,amount,settlement_method),sale_items(quantity,unit_price,line_total,products(cost_price),stock_items(acquisition_cost,stock_repairs(status,labor_cost,stock_repair_parts(cost))))').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let cashQuery = supabase.from('cash_transactions').select('id,branch_id,direction,category,amount,description,source_type,created_at,branches(name)').gte('created_at', start.toISOString()).order('created_at', { ascending: false });
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,ticket_number,customer_name,final_cost,handed_over_at,branches(name),service_parts(cost)').eq('status','handed_over').gte('handed_over_at', start.toISOString()).order('handed_over_at', { ascending: false });
   if (canSelectBranches() && state.reportBranch && state.reportBranch !== 'all') {
@@ -3248,7 +3340,7 @@ async function reportsPage(page) {
     }
     const commission = sale.sale_commissions;
     const commissionAmount = Number(commission?.amount || 0);
-    return { commission, commissionAmount, id:sale.id, branch_id:sale.branch_id, branch:sale.branches?.name, date:sale.created_at, kind:'Penjualan produk', label:sale.receipt_number, value:Number(sale.total), discount:Number(sale.discount_amount || 0), cost, profitImpact:Number(sale.total)-cost-commissionAmount, direction:'income' };
+    return { commission, commissionAmount, referralSource:sale.referral_source, referralNote:sale.referral_note, id:sale.id, branch_id:sale.branch_id, branch:sale.branches?.name, date:sale.created_at, kind:'Penjualan produk', label:sale.receipt_number, value:Number(sale.total), discount:Number(sale.discount_amount || 0), cost, profitImpact:Number(sale.total)-cost-commissionAmount, direction:'income' };
   });
   const serviceRows = services.map((ticket) => {
     const cost = (ticket.service_parts || []).reduce((sum,part) => sum + Number(part.cost || 0),0);
@@ -3296,6 +3388,7 @@ async function reportsPage(page) {
       <div class="panel-sub">Posisi stok saat ini · ${reportBranchId === 'all' ? 'Semua cabang' : esc(branchName(reportBranchId))}</div></div></div>
       <div data-report-stock-value aria-live="polite">Memuat posisi stok…</div>
     </section>` : ''}
+    ${saleReferralSummary(sales, 'Referensi penjualan', rangeLabel + ' · omzet setelah potongan')}
     <div class="cards report-summary">
       ${financeSummaryCard('sales', 'Omzet produk', money(salesTotal), `${sales.length} transaksi penjualan`)}
       ${financeSummaryCard('service', 'Omzet servis', money(serviceTotal), 'Servis yang sudah diserahkan')}
@@ -3433,6 +3526,7 @@ function reportFinanceTable(rows, mode, tableClass = '') {
       <td>${esc(row.label || '-')}${!tableClass && row.kind === 'Penjualan produk' && (canSelectBranches() || state.profile?.role === 'operator')
         ? `<div><button type="button" class="small-btn" data-report-sale-receipt="${esc(row.id)}">Detail nota</button></div>` : ''}
       ${row.commission ? `<div class="field-hint">Komisi ${money(row.commissionAmount)} · ${esc(row.commission.mediator_name)} · ${row.commission.settlement_method === 'pending' ? 'Belum dibayar' : row.commission.settlement_method === 'retained' ? 'Dipotong dari setoran' : 'Sudah dibayar'}</div>` : ''}
+      ${row.referralSource ? `<div class="field-hint">Referensi ${esc(saleReferralLabels.get(row.referralSource))}${row.referralNote ? ` · ${esc(row.referralNote)}` : ''}</div>` : ''}
       ${row.discount ? `<div class="field-hint">Potongan ${money(row.discount)}</div>` : ''}
       ${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
       ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Pembayaran stok tidak dihitung sebagai biaya laba.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
@@ -3519,12 +3613,54 @@ function supplierInitials(name) {
   return words.length > 1 ? `${words[0][0]}${words[1][0]}`.toUpperCase() : (words[0] || 'SUP').slice(0, 2).toUpperCase();
 }
 
+function customerWhatsAppNumber(phone) {
+  const normalized = normalizeCustomerPhone(phone).replace(/^8/, '628');
+  return /^[1-9][0-9]{7,14}$/.test(normalized) ? normalized : '';
+}
+
+function openCustomerBroadcast(customers, sales) {
+  if (!canManage()) return;
+  const contacts = new Map(customers.map(customer => [customer.id, customer]));
+  const recipients = new Map();
+  for (const sale of sales) {
+    const contact = contacts.get(sale.customer_id);
+    const phone = customerWhatsAppNumber(contact?.phone) || customerWhatsAppNumber(sale.customer_phone);
+    if (phone && !recipients.has(phone)) recipients.set(phone, contact?.name || sale.customer_name || 'Pelanggan');
+  }
+
+  const host = openModal('Broadcast WhatsApp', `${recipients.size} nomor dari riwayat penjualan semua cabang`, `
+    <div class="field"><label for="customer-promo">Pesan produk baru atau promo</label>
+    <textarea id="customer-promo" rows="4" maxlength="1000" placeholder="Tulis produk, harga promo, dan masa berlaku."></textarea></div>
+    <div class="field" style="margin:10px 0"><label for="customer-promo-search">Cari penerima</label>
+    <input id="customer-promo-search" type="search" placeholder="Nama atau nomor pelanggan" /></div>
+    <p class="field-hint">Buka chat pelanggan yang setuju menerima promo, lalu tinjau dan kirim di WhatsApp.</p>
+    <div class="table-wrap"><table><thead><tr><th>PELANGGAN</th><th>NOMOR</th><th>AKSI</th></tr></thead>
+    <tbody id="customer-promo-rows">${[...recipients].map(([phone, name]) => `
+      <tr><td>${esc(name)}</td><td>+${phone}</td><td><button type="button" class="small-btn" data-customer-promo="${phone}" disabled>Buka WhatsApp</button></td></tr>
+    `).join('') || '<tr><td colspan="3">Belum ada nomor WhatsApp dari riwayat penjualan.</td></tr>'}</tbody></table></div>`, null);
+  const message = host.querySelector('#customer-promo');
+  const search = host.querySelector('#customer-promo-search');
+  const list = host.querySelector('#customer-promo-rows');
+  const rows = [...list.querySelectorAll('tr')];
+  const buttons = [...list.querySelectorAll('[data-customer-promo]')];
+  const filter = () => filterPagedRows(list, rows, row => row.textContent.toLowerCase().includes(search.value.trim().toLowerCase()));
+  search.addEventListener('input', filter);
+  filter();
+  message.addEventListener('input', () => {
+    buttons.forEach(button => { button.disabled = !message.value.trim(); });
+  });
+  buttons.forEach(button => button.addEventListener('click', () => {
+    const draft = encodeURIComponent(message.value.trim());
+    if (draft) window.open(`https://wa.me/${button.dataset.customerPromo}?text=${draft}`, '_blank', 'noopener,noreferrer');
+  }));
+}
+
 async function contactsPage(page, type) {
   const supplierMode = type === 'suppliers';
   const table = supplierMode ? 'suppliers' : 'customers';
   const visibleBranch = state.profile.role === 'owner' ? state.branchId : state.profile.branch_id;
   let batchesQuery = supabase.from('intake_batches').select('id,branch_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,created_at,suppliers(name),branches(name)').order('created_at', { ascending: false });
-  let salesQuery = supabase.from('sales').select('id,branch_id,customer_id,receipt_number,customer_name,total,paid_amount,due_date,customers(name),branches(name),created_at').order('created_at', { ascending: false });
+  let salesQuery = supabase.from('sales').select('id,branch_id,customer_id,receipt_number,customer_name,customer_phone,total,paid_amount,due_date,customers(name),branches(name),created_at').order('created_at', { ascending: false });
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,customer_id,ticket_number,customer_name,customer_phone,final_cost,paid_amount,due_date,status,branches(name),created_at').order('created_at', { ascending: false });
   if (state.profile.role !== 'owner') { batchesQuery = batchesQuery.eq('branch_id', visibleBranch); salesQuery = salesQuery.eq('branch_id', visibleBranch); serviceQuery = serviceQuery.eq('branch_id', visibleBranch); }
   const [suppliers, customers, batches, sales, serviceTickets] = await Promise.all([
@@ -3533,14 +3669,17 @@ async function contactsPage(page, type) {
     fetchAllRows(batchesQuery), fetchAllRows(salesQuery), fetchAllRows(serviceQuery),
   ]);
   const rowsData = supplierMode ? suppliers : customers;
+  const showContactActions = !supplierMode || canManage();
   const payables = batches.filter((batch) => Number(batch.total_amount) > Number(batch.amount_paid)).map((batch) => ({ ...batch, remaining: Number(batch.total_amount)-Number(batch.amount_paid) }));
   const matchesSupplier = (batch, supplier) => batch.supplier_id ? batch.supplier_id === supplier.id : String(batch.supplier || '').trim().toLowerCase() === supplier.name.trim().toLowerCase();
   const matchesCustomer = (entry, customer) => {
     if (entry.customer_id) return entry.customer_id === customer.id;
-    if (String(entry.customer_name || '').trim().toLowerCase() === customer.name.trim().toLowerCase()) return true;
-    const contactPhone = String(customer.phone || '').replace(/\D/g, '');
-    const entryPhone = String(entry.customer_phone || '').replace(/\D/g, '');
-    return contactPhone.length >= 8 && entryPhone.length >= 8 && (contactPhone.endsWith(entryPhone.slice(-8)) || entryPhone.endsWith(contactPhone.slice(-8)));
+    const contactPhone = normalizeCustomerPhone(customer.phone);
+    const entryPhone = normalizeCustomerPhone(entry.customer_phone);
+    if (entryPhone.length >= 8) return entryPhone === contactPhone;
+    const name = String(entry.customer_name || '').trim().toLowerCase();
+    return name === customer.name.trim().toLowerCase()
+      && customers.filter(item => item.name.trim().toLowerCase() === name).length === 1;
   };
   const receivables = [
     ...sales.filter((sale) => Number(sale.total) > Number(sale.paid_amount)).map((sale) => ({ ...sale, source_type: 'sale', label: sale.receipt_number, total_due: Number(sale.total), paid: Number(sale.paid_amount) })),
@@ -3549,13 +3688,16 @@ async function contactsPage(page, type) {
   const rows = (rowsData || []).map((item) => {
     const relatedDebt = supplierMode ? payables.filter((batch) => matchesSupplier(batch, item)) : receivables.filter((entry) => matchesCustomer(entry, item));
     const balance = relatedDebt.reduce((sum, entry) => sum + entry.remaining, 0);
-    return `<tr class="contact-row" data-contact-detail="${item.id}"><td class="product-name">${supplierMode ? `<span class="pill blue">${esc(item.initials)}</span> ` : ''}<button class="contact-open" type="button" data-open-contact="${item.id}">${esc(item.name)}<span>Detail →</span></button></td><td>${esc(item.phone || '—')}</td>${supplierMode ? `<td>${esc(item.address || '—')}</td>` : `<td>${esc(item.email || '—')}</td>`}<td><b>${money(balance)}</b></td>${canManage() ? `<td><div class="actions-cell"><button class="small-btn" type="button" data-edit-contact="${item.id}">Edit</button><button class="small-btn" type="button" data-delete-contact="${item.id}">Hapus</button></div></td>` : ''}</tr>`;
+    const whatsapp = supplierMode ? '' : customerWhatsAppNumber(item.phone);
+    return `<tr class="contact-row" data-contact-detail="${item.id}"><td class="product-name">${supplierMode ? `<span class="pill blue">${esc(item.initials)}</span> ` : ''}<button class="contact-open" type="button" data-open-contact="${item.id}">${esc(item.name)}<span>Detail →</span></button></td><td>${esc(item.phone || '—')}</td>${supplierMode ? `<td>${esc(item.address || '—')}</td>` : `<td>${esc(item.email || '—')}</td>`}<td><b>${money(balance)}</b></td>${showContactActions ? `<td><div class="actions-cell">
+      ${whatsapp ? `<a class="small-btn" href="https://wa.me/${whatsapp}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ''}
+      ${canManage() ? `<button class="small-btn" type="button" data-edit-contact="${item.id}">Edit</button><button class="small-btn" type="button" data-delete-contact="${item.id}">Hapus</button>` : ''}</div></td>` : ''}</tr>`;
   }).join('');
   const contactsTabs = `<div class="contact-tabs"><button class="contact-tab${supplierMode ? ' active' : ''}" data-contact-tab="suppliers">Supplier <span>${suppliers.length}</span></button><button class="contact-tab${!supplierMode ? ' active' : ''}" data-contact-tab="customers">Pelanggan <span>${customers.length}</span></button></div>`;
   const supplierDebt = supplierMode ? `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa tagihan dihitung dari total invoice dikurangi pembayaran yang sudah dicatat.</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL TAGIHAN</th><th>DIBAYAR</th><th>SISA HUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay-batch="${batch.id}">Bayar</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>` : `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis untuk pelanggan.</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / NOTA</th><th>CABANG</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA PIUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect-contact="${entry.id}" data-source="${entry.source_type}">Terima</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>`;
   const totalDebt = supplierMode ? payables.reduce((sum, batch) => sum + batch.remaining, 0) : 0;
   const totalReceivable = supplierMode ? 0 : receivables.reduce((sum, entry) => sum + entry.remaining, 0);
-  page.innerHTML = `${header('Pelanggan & supplier', 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.', `<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${canManage() ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${canManage() ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
+  page.innerHTML = `${header('Pelanggan & supplier', 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.', `${!supplierMode && canManage() ? '<button class="btn" type="button" id="customer-broadcast">Broadcast WhatsApp</button>' : ''}<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${showContactActions ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${showContactActions ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
   page.querySelectorAll('[data-contact-tab]').forEach((button) => button.addEventListener('click', async () => { state.contactTab = button.dataset.contactTab; await contactsPage(page, state.contactTab); }));
   const contactBody = page.querySelector('#contact-rows');
   const contactRows = [...contactBody.querySelectorAll('tr')];
@@ -3585,8 +3727,11 @@ async function contactsPage(page, type) {
     const records = supplierMode
       ? relatedBatches.map((batch) => ({ id: batch.id, source: 'intake_batch', label: batch.invoice_number || `Batch ${batch.id.slice(0,8).toUpperCase()}`, branch: batch.branches?.name || branchName(batch.branch_id), date: batch.created_at, total: Number(batch.total_amount), paid: Number(batch.amount_paid), remaining: Math.max(0, Number(batch.total_amount)-Number(batch.amount_paid)), due: batch.due_date }))
       : [...relatedSales.map((sale) => ({ id: sale.id, source: 'sale', label: sale.receipt_number, branch: sale.branches?.name || branchName(sale.branch_id), date: sale.created_at, total: Number(sale.total), paid: Number(sale.paid_amount), remaining: Math.max(0, Number(sale.total)-Number(sale.paid_amount)), due: sale.due_date })), ...relatedServices.map((ticket) => ({ id: ticket.id, source: 'service_ticket', label: ticket.ticket_number, branch: ticket.branches?.name || branchName(ticket.branch_id), date: ticket.created_at, total: Number(ticket.final_cost), paid: Number(ticket.paid_amount), remaining: Math.max(0, Number(ticket.final_cost)-Number(ticket.paid_amount)), due: ticket.due_date, status: ticket.status }))].sort((a,b) => new Date(b.date)-new Date(a.date));
-    const recordRows = records.map((record) => `<tr><td class="product-name">${esc(record.label)}<div class="field-hint">${new Date(record.date).toLocaleDateString('id-ID')} · ${esc(record.branch)}${record.status ? ` · ${esc(statusText[record.status] || record.status)}` : ''}</div></td><td>${money(record.total)}</td><td>${money(record.paid)}</td><td><b>${money(record.remaining)}</b></td><td>${record.due ? new Date(`${record.due}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td>${record.remaining > 0 ? `<button class="small-btn" data-detail-pay="${record.id}" data-source="${record.source}">${supplierMode ? 'Bayar hutang' : 'Terima piutang'}</button>` : '<span class="pill">Lunas</span>'}</td></tr>`).join('');
+    const recordRows = records.map((record) => `<tr><td class="product-name">${esc(record.label)}<div class="field-hint">${new Date(record.date).toLocaleString('id-ID')} · ${esc(record.branch)}${record.status ? ` · ${esc(statusText[record.status] || record.status)}` : ''}</div></td><td>${money(record.total)}</td><td>${money(record.paid)}</td><td><b>${money(record.remaining)}</b></td><td>${record.due ? new Date(`${record.due}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td>${record.remaining > 0 ? `<button class="small-btn" data-detail-pay="${record.id}" data-source="${record.source}">${supplierMode ? 'Bayar hutang' : 'Terima piutang'}</button>` : '<span class="pill">Lunas</span>'}
+      ${record.source === 'sale' ? `<button class="small-btn" type="button" data-contact-sale="${record.id}">Detail transaksi</button>` : ''}</td></tr>`).join('');
     const host = openModal(`Detail ${supplierMode ? 'supplier' : 'pelanggan'}`, `${contact.name} · ${supplierMode ? 'Saldo hutang supplier' : 'Saldo piutang pelanggan'} ${money(balance)}`, `<div class="contact-detail-grid"><div><small>TELEPON</small><b>${esc(contact.phone || '—')}</b></div><div><small>${supplierMode ? 'KODE SUPPLIER' : 'EMAIL'}</small><b>${esc(supplierMode ? contact.initials : contact.email || '—')}</b></div><div class="full"><small>ALAMAT</small><b>${esc(contact.address || '—')}</b></div><div class="full"><small>CATATAN</small><b>${esc(contact.notes || '—')}</b></div></div><section class="contact-detail-ledger"><div class="panel-title">${supplierMode ? 'Riwayat tagihan pembelian' : 'Riwayat penjualan, servis & piutang'}</div><div class="table-wrap"><table><thead><tr><th>${supplierMode ? 'NOTA / BATCH' : 'STRUK / TIKET'}</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th>AKSI</th></tr></thead><tbody>${recordRows || `<tr><td colspan="6"><div class="empty">Belum ada ${supplierMode ? 'penerimaan barang' : 'penjualan atau servis'} terkait kontak ini.</div></td></tr>`}</tbody></table></div></section>`, null);
+    host.querySelectorAll('[data-contact-sale]').forEach((action) =>
+      action.addEventListener('click', () => openSaleReceipt(action.dataset.contactSale, action)));
     host.querySelectorAll('[data-detail-pay]').forEach((action) => action.addEventListener('click', () => {
       const record = records.find((entry) => entry.id === action.dataset.detailPay);
       if (!record) return;
@@ -3629,6 +3774,7 @@ async function contactsPage(page, type) {
     toast('Kontak tersimpan.');
     await reloadContacts();
   }, 'Simpan kontak');
+  page.querySelector('#customer-broadcast')?.addEventListener('click', () => openCustomerBroadcast(customers, sales));
   page.querySelector('#new-contact').addEventListener('click', () => contactForm());
   page.querySelectorAll('[data-edit-contact]').forEach((button) => button.addEventListener('click', () => {
     const contact = rowsData.find((row) => row.id === button.dataset.editContact);
