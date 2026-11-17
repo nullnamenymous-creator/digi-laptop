@@ -2009,6 +2009,8 @@ function printerSettings() {
   });
 }
 
+const receiptSaleItems = 'sale_items(*,products(specifications))';
+
 function printSaleReceipt(sale) {
   const format = printPreferences().receipt;
   const thermal = format === '58' || format === '80';
@@ -2017,12 +2019,21 @@ function printSaleReceipt(sale) {
   const win = window.open('', '_blank', 'width=420,height=700');
   if (!win) return toast('Izinkan pop-up untuk mencetak struk.', true);
   const mobile = printerPlatform() !== 'desktop';
-  const lines = (sale.sale_items || []).map((line) => `<tr><td>${esc(line.product_name)} × ${Number(line.quantity)}</td><td>${money(line.line_total ?? Number(line.unit_price) * Number(line.quantity))}</td></tr>`).join('');
+  const lines = (sale.sale_items || []).map((line) => {
+    const specifications = line.specifications ?? line.products?.specifications;
+    const details = pamphletSpecs.flatMap(([key, label]) => {
+      const value = String(specifications?.[key] ?? '').trim();
+      return value ? [`<b>${label}</b> ${esc(value)}`] : [];
+    });
+    return `<tr><td>${esc(line.product_name)} × ${Number(line.quantity)}</td><td>${money(line.line_total ?? Number(line.unit_price) * Number(line.quantity))}</td></tr>
+      ${details.length ? `<tr><td colspan="2" class="item-specs">${line.specifications == null ? '<b>Spek katalog saat ini</b><br>' : ''}${details.join(' · ')}</td></tr>` : ''}`;
+  }).join('');
   const paid = Number(sale.paid_amount || 0), total = Number(sale.total || 0);
   win.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Struk ${esc(sale.receipt_number || '')}</title><style>
     @page{size:${paper};margin:${thermal ? 4 : 10}mm}*{box-sizing:border-box}body{max-width:${width};margin:0 auto;color:#111;font:12px/1.45 Arial,sans-serif}
     h1{margin:0 0 3px;text-align:center;font-size:15px}p{margin:2px 0;text-align:center}.meta{margin:10px 0;border-top:1px dashed #555;border-bottom:1px dashed #555;padding:6px 0}
     table{width:100%;border-collapse:collapse}td{padding:3px 0;vertical-align:top}td:last-child{text-align:right;white-space:nowrap}.totals{margin-top:7px;border-top:1px dashed #555;padding-top:6px}
+    td.item-specs{text-align:left;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:1.35;padding:0 0 5px}
     .thanks{text-align:center;margin-top:12px}@media print{body{width:auto}}
     ${printControlsStyle}
   </style></head><body>${mobile ? printControls() : ''}<h1>${esc(state.organization.name || 'DIGITAL LAPTOP JOMBANG')}</h1><p>${esc(state.organization.phone || '')}</p><p>${esc(state.organization.address || '')}</p>
@@ -2058,7 +2069,7 @@ async function cashierPage(page) {
   if (atCentral()) throw new Error('Cabang Pusat tidak melayani penjualan.');
   const branchId = state.branchId;
   const cacheKey=`digi-offline-cashier:${state.organization.id}:${branchId}`;let products,customers,stock,sales=[];
-  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,sale_items(product_name,quantity,unit_price,line_total)').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
+  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select(`id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,${receiptSaleItems}`).eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
   catch(error){if(navigator.onLine)throw error;const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(!cached)throw new Error('Data kasir belum tersimpan di perangkat ini. Buka halaman kasir saat online dahulu.');({products,customers,stock}=cached);sales=[];}
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
@@ -2217,7 +2228,7 @@ async function cashierPage(page) {
         _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date
       });
       if(error) throw error;
-      const sale=checkError(await supabase.from('sales').select('receipt_number,total,paid_amount,customer_name,customer_type,payment_method,created_at,sale_items(product_name,quantity,unit_price,line_total)').eq('id',data).single());
+      const sale=checkError(await supabase.from('sales').select(`receipt_number,total,paid_amount,customer_name,customer_type,payment_method,created_at,${receiptSaleItems}`).eq('id',data).single());
       toast(`Transaksi tersimpan. ${money(paid)} masuk ke kas.`);
       if (state.branchId !== branchId || state.page !== 'cashier') return;
       await showPage('cashier');
