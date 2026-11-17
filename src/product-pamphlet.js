@@ -4,6 +4,12 @@ export const pamphletSpecs = [
 ];
 
 export async function renderProductPamphlet({ store, name, price, specifications, barcode, warranty }) {
+  const { default: JsBarcode } = await import('jsbarcode');
+  const barcodeCanvas = document.createElement('canvas');
+  JsBarcode(barcodeCanvas, barcode, {
+    format: 'CODE128', displayValue: false, width: 3, height: 84,
+    margin: 0, marginLeft: 30, marginRight: 30, background: '#fff', lineColor: '#000',
+  });
   const logo = new Image();
   logo.src = '/store-logo-transparent.png';
   await logo.decode();
@@ -110,9 +116,14 @@ export async function renderProductPamphlet({ store, name, price, specifications
     box(31, 350, 141, 33, sage, border, 16);
     text(`Garansi ${warranty} bulan`, 44, 371, 116, 13, muted);
   }
-  text('KODE UNIT', 331, 369, 64, 10, muted);
-  ctx.textAlign = 'right';
-  text(barcode, 555, 372, 150, 19, ink, 11);
+  const barcodeCenter = 383;
+  const barcodeWidth = Math.min(barcodeCanvas.width / 3, 348);
+  const barcodeX = Math.round((barcodeCenter - barcodeWidth / 2) * 3) / 3;
+  box(201, 345, 364, 55, '#fff', border, 6);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(barcodeCanvas, barcodeX, 351, barcodeWidth, barcodeCanvas.height / 3);
+  ctx.textAlign = 'center';
+  text(barcode, barcodeCenter, 392, 348, 12, ink);
   return canvas.toDataURL('image/png');
 }
 

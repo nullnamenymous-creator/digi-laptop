@@ -1382,6 +1382,9 @@ button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offse
 
 .transfer-scan-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .transfer-scan-controls #transfer-barcode { flex: 1 1 190px; width: auto; min-width: 0; }
+.opening-scan-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.opening-scan-controls input { flex: 1 1 165px; width: auto; min-width: 0; }
+#opening-scanner:not(:empty) { max-width: 380px; margin-top: 6px; }
 
 .public-price-block { display: grid; gap: 3px; }
 .public-price-savings { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; font-size: 11px; line-height: 1.35; }

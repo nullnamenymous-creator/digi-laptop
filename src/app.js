@@ -1168,11 +1168,15 @@ async function inventoryPage(page) {
         <div class="form-grid">
           <div class="field"><label for="opening-brand">Merek laptop</label><select id="opening-brand"></select></div>
           <div class="field"><label for="opening-model">Tipe laptop</label><select id="opening-model"></select></div>
-          <div class="field"><label for="opening-unit-search">Kode unit</label><input type="search" id="opening-unit-search" placeholder="Cari kode unit / barcode" /></div>
+          <div class="field full">
+            <label for="opening-unit-search">Kode unit</label>
+            <div class="opening-scan-controls"><input type="search" id="opening-unit-search" placeholder="Cari kode unit / barcode" autocomplete="off" spellcheck="false" /><button type="button" class="btn" id="opening-scan-button">Scan barcode</button></div>
+            <div id="opening-scanner"></div>
+          </div>
         </div>
         <button type="button" class="btn danger" id="cancel-opening-group" hidden>Batalkan semua batch tipe ini</button>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr data-opening-row="${batch.id}"><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> ${canManageOpeningStock() ? `<button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button>` : ''} ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('')}<tr data-opening-empty hidden><td colspan="6"><div class="empty">Tidak ada batch yang cocok.</div></td></tr></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>TANGGAL / KODE</th><th>PRODUK</th><th>JUMLAH</th><th>MODAL / UNIT</th><th>CATATAN</th><th></th></tr></thead><tbody>${openingBatches.map((batch) => `<tr data-opening-row="${batch.id}"><td class="product-name">${new Date(batch.created_at).toLocaleString('id-ID')}<div class="field-hint">${esc(batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.products?.name || 'Produk')}<div class="field-hint">${esc(batch.products?.sku || '')}</div></td><td>${Number(batch.unit_count)} unit</td><td>${money(batch.unit_cost)}</td><td>${esc(batch.notes || '—')}</td><td><button class="small-btn" data-print-opening="${batch.id}">Cetak barcode</button> ${batch.products?.category === 'Laptop' ? `<button type="button" class="small-btn" data-opening-pamphlet="${batch.id}">Pamflet</button>` : ''} ${canManageOpeningStock() ? `<button class="small-btn" data-correct-opening="${batch.id}">Koreksi stok awal</button>` : ''} ${canManage() ? `<button class="small-btn" data-cancel-opening="${batch.id}">Batalkan stok awal</button>` : ''}</td></tr>`).join('')}<tr data-opening-empty hidden><td colspan="6"><div class="empty">Tidak ada batch yang cocok.</div></td></tr></tbody></table></div>
       <div class="panel-head"><span data-opening-count role="status"></span><button type="button" class="btn" data-opening-more hidden>Tampilkan lagi</button></div></section>` : ''}
     <section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">QR garansi unit terjual</div><div class="panel-sub">QR dibuat setelah laptop bergaransi terjual; cetak dari kolom aksi unit atau halaman Garansi.</div></div><button class="small-btn" id="open-warranty-qr">Buka halaman Garansi →</button></div></section>`;
   const unitSearch = page.querySelector('#unit-search');
@@ -1346,7 +1350,15 @@ async function inventoryPage(page) {
     printBarcode(button.dataset.printBarcode, printWindow);
   }));
   const openingHistory = page.querySelector('#opening-stock-history');
-  if (openingHistory) bindOpeningHistory(openingHistory, openingBatches, branchId);
+  if (openingHistory) bindOpeningHistory(openingHistory, openingBatches, branchId, (batch, matchesBarcode) => {
+    const product = products.find((item) => item.id === batch.product_id);
+    if (!product) return;
+    const units = (stockByProduct.get(product.id) || []).filter((unit) =>
+      unit.opening_batch_id === batch.id && unit.status === 'available' && unit.quantity > 0 && matchesBarcode(unit.barcode));
+    if (!units.length) return toast('Tidak ada unit siap jual yang cocok di batch ini pada cabang yang dipilih.', true);
+    productDetailModal(product, totals.get(product.id) || 0, units);
+    document.querySelector('#pamphlet-unit')?.focus();
+  });
   page.querySelectorAll('[data-correct-opening]').forEach((button) => button.addEventListener('click', async () => {
     const batch = openingBatches.find((item) => item.id === button.dataset.correctOpening);
     const product = products.find((item) => item.id === batch?.product_id);
@@ -1402,8 +1414,10 @@ async function inventoryPage(page) {
   page.querySelectorAll('[data-print-warranty-unit]').forEach((button) => button.addEventListener('click', () => { const unit=stock.find((item) => item.id===button.dataset.printWarrantyUnit); if (unit) printWarrantyQr({...unit,products:products.find((product) => product.id===unit.product_id)}); }));
 }
 
-function bindOpeningHistory(panel, batches, branchId) {
+function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
   const unitSearch = panel.querySelector('#opening-unit-search');
+  const scanButton = panel.querySelector('#opening-scan-button');
+  const scanner = panel.querySelector('#opening-scanner');
   const brand = panel.querySelector('#opening-brand');
   const model = panel.querySelector('#opening-model');
   const bulk = panel.querySelector('#cancel-opening-group');
@@ -1418,11 +1432,15 @@ function bindOpeningHistory(panel, batches, branchId) {
   const laptops = batches.filter((batch) => key(batch.products?.category) === 'laptop');
   options(brand, laptops.map((batch) => batch.products.brand), 'Semua merek');
   const brandMatches = () => laptops.filter((batch) => !brand.value || key(batch.products.brand) === brand.value);
-  const matching = () => {
+  let exactBarcode = false;
+  const matchesBarcode = (barcode) => {
     const query = key(unitSearch.value);
+    return !query || (exactBarcode ? key(barcode) === query : key(barcode).includes(query));
+  };
+  const matching = () => {
     const candidates = !brand.value && !model.value ? batches : brandMatches()
       .filter((batch) => !model.value || key(batch.products.model) === model.value);
-    return candidates.filter((batch) => !query || batch.stock_items?.some((unit) => key(unit.barcode).includes(query)));
+    return candidates.filter((batch) => !key(unitSearch.value) || batch.stock_items?.some((unit) => matchesBarcode(unit.barcode)));
   };
   let limit = 20;
   const render = () => {
@@ -1440,7 +1458,32 @@ function bindOpeningHistory(panel, batches, branchId) {
     render();
   };
   brand.addEventListener('change', updateModels);
-  unitSearch.addEventListener('input', () => { limit = 20; render(); });
+  const searchBarcode = () => {
+    if (!key(unitSearch.value)) return;
+    exactBarcode = true;
+    brand.value = '';
+    updateModels();
+  };
+  unitSearch.addEventListener('input', () => { exactBarcode = false; limit = 20; render(); });
+  unitSearch.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    searchBarcode();
+  });
+  scanButton.addEventListener('click', async () => {
+    if (scanner.querySelector('video')) return;
+    scanButton.disabled = true;
+    try {
+      await startScanner(scanner, unitSearch, ['code_128'], searchBarcode);
+    } finally {
+      scanButton.disabled = false;
+    }
+  });
+  panel.querySelectorAll('[data-opening-pamphlet]').forEach((button) => button.addEventListener('click', () => {
+    if (state.branchId !== branchId) return;
+    const batch = batches.find((item) => item.id === button.dataset.openingPamphlet);
+    if (batch) openPamphlet(batch, matchesBarcode);
+  }));
   model.addEventListener('change', () => { limit = 20; render(); });
   more.addEventListener('click', () => { limit += 20; render(); });
   bulk.addEventListener('click', () => {
