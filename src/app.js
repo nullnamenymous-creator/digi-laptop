@@ -1525,8 +1525,12 @@ async function transfersPage(page) {
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Riwayat mutasi barang</div><div class="panel-sub">Laptop mempertahankan barcode. Mutasi sebagian lot sparepart membuat barcode lot baru di cabang tujuan.</div></div><input class="search" type="search" id="transfer-unit-search" aria-label="Cari kode unit, produk, atau nomor mutasi" placeholder="Cari kode unit atau mutasi" /></div><div class="table-wrap"><table><thead><tr><th>NO. / WAKTU</th><th>ASAL → TUJUAN</th><th>BARANG</th><th>STATUS</th><th>CATATAN</th><th>AKSI</th></tr></thead><tbody>${rows.map((transfer) => {
       const transferItems = itemsByTransfer.get(transfer.id) || [];
       const canReceive = transfer.status === 'in_transit' && (canManage() || (isCentralAdmin() ? branchId : state.profile.branch_id) === transfer.destination_branch_id);
-      const status = transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
-      return `<tr data-transfer-row="${esc(transfer.id)}"><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}</td><td>${canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Serah terima barang</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}</td></tr>`;
+      const cancelled = transfer.status === 'cancelled';
+      const status = cancelled ? 'Dibatalkan' : transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
+      const cancelAction = canSelectBranches() && !cancelled
+        ? `<button type="button" class="small-btn danger" data-cancel-transfer="${transfer.id}">Batalkan mutasi</button>` : '';
+      const cancellation = cancelled ? `<div class="field-hint">Alasan batal: ${esc(transfer.cancellation_reason || '—')}</div>` : '';
+      return `<tr data-transfer-row="${esc(transfer.id)}"><td class="product-name">${esc(transfer.transfer_number)}<div class="field-hint">${new Date(transfer.created_at).toLocaleString('id-ID')}</div></td><td>${esc(branchName(transfer.source_branch_id))}<div class="field-hint">→ ${esc(branchName(transfer.destination_branch_id))}</div></td><td>${transferItems.map((item) => `<div class="transfer-item-line"><b>${esc(item.products?.name || 'Barang')}</b> · ${Number(item.quantity)} unit<div class="field-hint">${esc(item.source_barcode)}${item.target_barcode && item.target_barcode !== item.source_barcode ? ` → ${esc(item.target_barcode)}` : ''}</div></div>`).join('') || '—'}</td><td><span class="pill ${transfer.status === 'received' ? '' : 'warn'}">${status}</span></td><td>${esc(transfer.note || '—')}${cancellation}</td><td>${cancelled ? '<span class="field-hint">Sudah dibatalkan</span>' : canReceive ? `<button class="small-btn" data-receive-transfer="${transfer.id}">Serah terima barang</button>` : transfer.status === 'in_transit' ? '<span class="field-hint">Menunggu cabang tujuan</span>' : `<span class="field-hint">${transfer.received_at ? new Date(transfer.received_at).toLocaleString('id-ID') : ''}</span>`}${cancelAction ? `<div>${cancelAction}</div>` : ''}</td></tr>`;
     }).join('') || '<tr><td colspan="6"><div class="empty"><b>Belum ada mutasi stok</b>Buat mutasi untuk memindahkan barang antar cabang.</div></td></tr>'}<tr data-transfer-search-empty hidden><td colspan="6"><div class="empty">Tidak ada mutasi yang cocok.</div></td></tr></tbody></table></div>
     <nav class="inventory-pagination" id="transfer-pagination" aria-label="Halaman riwayat mutasi" hidden>
       <button type="button" class="btn" data-transfer-prev>Sebelumnya</button>
@@ -1566,6 +1570,22 @@ async function transfersPage(page) {
   }));
   renderTransfers();
   page.querySelector('#new-stock-transfer')?.addEventListener('click', transferModal);
+  page.querySelectorAll('[data-cancel-transfer]').forEach((button) => button.addEventListener('click', () => {
+    const transfer = rows.find((row) => row.id === button.dataset.cancelTransfer);
+    if (!transfer || !canSelectBranches()) return;
+    const message = transfer.status === 'received'
+      ? 'Pastikan barang fisik sudah kembali ke cabang asal. Pembatalan hanya bisa dilakukan jika stok tujuan masih utuh dan belum dipakai.'
+      : 'Pastikan barang fisik ada di cabang asal sebelum stok dikembalikan.';
+    openModal(`Batalkan mutasi ${esc(transfer.transfer_number)}?`, message,
+      `<div class="notice">Stok akan dikembalikan ke <strong>${esc(branchName(transfer.source_branch_id))}</strong>. Pembatalan tercatat di riwayat.</div>
+      <div class="field"><label for="transfer-cancellation-reason">Alasan pembatalan</label><textarea id="transfer-cancellation-reason" name="reason" required minlength="3" maxlength="500" rows="3"></textarea></div>
+      <label><input type="checkbox" required /> Barang fisik sudah ada di cabang asal.</label>`,
+      async (form) => {
+        checkError(await supabase.rpc('cancel_stock_transfer', { _transfer_id: transfer.id, _reason: form.get('reason') }));
+        toast('Mutasi dibatalkan dan stok dikembalikan ke cabang asal.');
+        if (state.page === 'transfers') await showPage('transfers');
+      }, 'Batalkan mutasi');
+  }));
   page.querySelectorAll('[data-receive-transfer]').forEach((button) => button.addEventListener('click', () => {
     const transfer = rows.find((row) => row.id === button.dataset.receiveTransfer);
     receiveStockTransferModal(transfer, itemsByTransfer.get(transfer?.id) || []);
