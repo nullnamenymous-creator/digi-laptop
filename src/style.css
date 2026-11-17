@@ -1782,3 +1782,86 @@ button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offse
   gap: 8px;
 }
 .cashier-checkout .cashier-submit > span b { margin-top: 0; }
+.referral-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 12px;
+}
+.referral-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 49px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.referral-card-top { background: #f2f7ef; }
+.referral-card strong { display: block; font-size: 12px; }
+.referral-card small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.referral-icon {
+  position: relative;
+  flex: 0 0 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(145deg, #63ad88, #196644);
+  box-shadow: inset 0 1px 2px #ffffff76, inset 0 -2px 4px #0004, 0 3px 4px #173c2b36;
+}
+.referral-icon i { font: 700 16px/1 Arial, sans-serif; }
+.referral-card-top .referral-icon { animation: referral-float 4s ease-in-out infinite; }
+.referral-card-top:nth-child(2) .referral-icon { animation-delay: -.7s; }
+.referral-card-top:nth-child(3) .referral-icon { animation-delay: -1.4s; }
+.referral-icon[data-referral-icon="facebook"] { background: linear-gradient(145deg, #55a8ff, #0755c9); }
+.referral-icon[data-referral-icon="facebook"] i { font-size: 22px; }
+.referral-icon[data-referral-icon="tiktok"] { background: linear-gradient(145deg, #4c4e57, #111216); }
+.referral-icon[data-referral-icon="tiktok"] i { text-shadow: -1px 0 #26e6df, 1px 0 #ff426d; }
+.referral-icon[data-referral-icon="instagram"] { background: radial-gradient(circle at 24% 100%, #ffc84f, #ed356a 51%, #853bee 83%); }
+.referral-icon[data-referral-icon="instagram"] i { position:relative; width:14px; height:14px; border:1.5px solid; border-radius:4px; display:grid; place-items:center; }
+.referral-icon[data-referral-icon="instagram"] i::before { content:''; width:6px; height:6px; border:1px solid; border-radius:50%; }
+.referral-icon[data-referral-icon="instagram"] i::after { content:''; position:absolute; inset:1px 1px auto auto; width:2px; height:2px; border-radius:50%; background:currentColor; }
+.referral-icon[data-referral-icon="google_maps"] { background: linear-gradient(145deg,#fff,#dee9e2); }
+.referral-icon[data-referral-icon="google_maps"] i { width:14px; height:14px; display:grid; place-items:center; border-radius:50% 50% 50% 0; transform:translateY(-1px) rotate(-45deg); background:conic-gradient(#4285f4 30%,#34a853 30% 56%,#fbbc04 56% 75%,#ea4335 75%); }
+.referral-icon[data-referral-icon="google_maps"] i::after { content:''; width:5px; height:5px; border-radius:50%; background:white; }
+
+.prayer-widget {
+  position: fixed;
+  z-index: 6;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+.prayer-widget > * { pointer-events: auto; }
+.prayer-panel[hidden], .prayer-panel form[hidden] { display: none; }
+.prayer-toggle, .prayer-panel { border: 1px solid #afc9b3; background: #edf7e9; color: #173e2a; box-shadow: 0 5px 18px #18362326; }
+.prayer-toggle { border-radius: 24px; min-height: 38px; padding: 4px 10px; display: flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.prayer-moon { color: #b57518; font: 700 24px/1 Georgia, serif; text-shadow: 1px 2px 1px #59783e66; animation: referral-float 4s ease-in-out infinite; }
+.prayer-panel { width: min(285px, calc(100vw - 24px)); max-height: min(50vh, 390px); overflow: auto; border-radius: 12px; padding: 10px; }
+.prayer-header, .prayer-location, .prayer-city, .prayer-times li { display: flex; justify-content: space-between; align-items: center; gap: 7px; }
+.prayer-location { margin: 6px 0; font-size: 12px; }
+.prayer-panel .small-btn { min-height: 30px; }
+.prayer-panel form { display: grid; gap: 5px; font-size: 12px; }
+.prayer-city input { width: 100%; min-width: 0; min-height: 32px; padding: 4px 6px; border: 1px solid var(--line); }
+.prayer-panel [data-prayer-status]:empty { display: none; }
+.prayer-times { padding: 0; margin: 6px 0 0; list-style: none; font-size: 12px; }
+.prayer-times li { padding: 5px 7px; border-radius: 4px; }
+.prayer-times .prayer-next { background: #ffeac2; font-weight: 700; }
+body:has(.modal-backdrop, dialog[open]) .prayer-widget { visibility: hidden; }
+@keyframes referral-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@media (max-width: 760px) {
+  body:has(.staff-bottom-nav) .prayer-widget { bottom: calc(62px + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .referral-card-top .referral-icon, .prayer-moon { animation: none; }
+}
+@media print { .prayer-widget { display: none; } }

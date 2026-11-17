@@ -1,5 +1,6 @@
 import { pamphletSpecs, renderProductPamphlet, downloadProductPamphlet } from './product-pamphlet.js';
 import { hasBackendConfig, supabase } from './supabase.js';
+import { mountPrayerReminder } from './prayer-reminder.js';
 import './style.css';
 
 const root = document.querySelector('#app');
@@ -612,7 +613,7 @@ function normalizeCustomerPhone(phone) {
   return digits.startsWith('0') ? '62' + digits.slice(1) : digits;
 }
 
-function saleReferralSummary(sales, title, subtitle) {
+function saleReferralSummary(sales, title, subtitle, dashboard = false) {
   const totals = new Map();
   for (const sale of sales) {
     const source = sale.referral_source || '';
@@ -622,6 +623,15 @@ function saleReferralSummary(sales, title, subtitle) {
     totals.set(source, entry);
   }
   const rows = [...totals].sort((a, b) => b[1].count - a[1].count || b[1].revenue - a[1].revenue);
+  if (dashboard && rows.length) {
+    const symbols = { facebook: 'f', tiktok: '♪', recommendation: '★', walk_in: '⌂', other: '…' };
+    return `<section class="panel referral-dashboard"><div class="panel-head"><div><div class="panel-title">${title}</div>
+      <div class="panel-sub">${subtitle}</div></div></div>
+      <ol class="referral-cards">${rows.map(([source, entry], index) => `<li class="referral-card${index < 3 ? ' referral-card-top' : ''}">
+        <span class="referral-icon" data-referral-icon="${esc(saleReferralLabels.has(source) ? source : 'other')}" aria-hidden="true"><i>${symbols[source] || ''}</i></span>
+        <div><strong>${esc(saleReferralLabels.get(source) || 'Belum dicatat')}</strong><small>${entry.count} transaksi · ${money(entry.revenue)}</small></div>
+      </li>`).join('')}</ol></section>`;
+  }
   return `<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">${title}</div>
     <div class="panel-sub">${subtitle}</div></div></div><div class="table-wrap"><table>
     <thead><tr><th>SUMBER REFERENSI</th><th>TRANSAKSI</th><th>OMZET</th></tr></thead><tbody>
@@ -644,7 +654,7 @@ async function showOwnerReferrals(panel) {
       .gte('created_at', start.toISOString()).abortSignal(AbortSignal.timeout(10000)));
     if (!panel.isConnected || !canManage()) return;
     panel.innerHTML = saleReferralSummary(sales, 'Referensi penjualan terbanyak',
-      'Semua cabang bulan ini · diurutkan menurut jumlah transaksi');
+      'Semua cabang bulan ini · diurutkan menurut jumlah transaksi', true);
   } catch {
     if (panel.isConnected) panel.querySelector('[role="status"]').textContent = 'Referensi penjualan belum bisa dimuat.';
   }
@@ -4775,4 +4785,5 @@ start().catch((error) => {
   loading.innerHTML = '<p role="alert">Digi-Laptop belum bisa dibuka. Periksa koneksi lalu coba lagi.</p><button class="btn" type="button">Muat ulang</button>';
   loading.querySelector('button').addEventListener('click', () => location.reload());
 });
+mountPrayerReminder();
 window.setTimeout(showMobileInstall, 1800);
