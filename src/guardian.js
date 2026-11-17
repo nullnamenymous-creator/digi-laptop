@@ -1,4 +1,4 @@
-export function mountGuardian({canManage = () => false, onSetupMfa, onAudit, onStaffAccess} = {}) {
+export function mountGuardian({canManage = () => false, onSetupMfa, onAudit} = {}) {
   const widget = document.createElement('aside');
   widget.className = 'guardian-widget';
   widget.setAttribute('aria-label', 'Guardian Cyber Security');
@@ -14,7 +14,6 @@ export function mountGuardian({canManage = () => false, onSetupMfa, onAudit, onS
       <div data-guardian-owner hidden>
         <button class="small-btn" type="button" data-guardian-mfa>Autentikator akun</button>
         <button class="small-btn" type="button" data-guardian-audit>Jejak perubahan</button>
-        <button class="small-btn" type="button" data-guardian-staff>Akses staf</button>
       </div>
       <p class="field-hint">Indikator ini membaca status koneksi dari browser.</p>
     </section>
@@ -52,9 +51,6 @@ export function mountGuardian({canManage = () => false, onSetupMfa, onAudit, onS
     toggle.focus();
   };
 
-  widget.querySelector('[data-guardian-staff]').addEventListener('click', () => {
-    if (canManage()) onStaffAccess?.();
-  });
   widget.querySelector('[data-guardian-mfa]').addEventListener('click', () => {
     if (canManage()) onSetupMfa?.();
   });

@@ -184,7 +184,7 @@ async function afterAuth({ preferCentral = false } = {}) {
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.profile&&cached?.branches){state.profile=cached.profile;state.organization=cached.profile.organizations;state.branches=cached.branches;state.branchId=canSelectBranches()?resolveManagedBranch(state.organization.id,state.branches,state.branchId):state.profile.branch_id;if(state.profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
     authScreen(error.message);return;
   }
-  if(!profile){ownerSetupScreen();return;}
+  if (!profile) { authScreen('Akses akun belum dapat dibaca. Masuk kembali memakai akun toko yang sudah ada. Hubungi pengelola jika kendala berlanjut.'); return; }
   state.profile=profile;state.organization=profile.organizations;
   if(branchError){
     if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem(sessionCacheKey)||'null');if(cached?.branches){state.branches=cached.branches;state.branchId=canSelectBranches()?resolveManagedBranch(state.organization.id,state.branches,state.branchId):profile.branch_id;if(profile.role==='operator'&&localStorage.getItem(`digi-offline-cashier:${state.organization.id}:${state.branchId}`))state.page='cashier';subscribeOperationalUpdates();showShell();await showPage(state.page);return}}
@@ -1254,7 +1254,7 @@ function barcodeSupplierInitials(item) {
   return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0].slice(0, 2)).toUpperCase();
 }
 
-async function fetchAllRows(query) { const all=[],ordered=query.order('id');for(let from=0;;from+=1000){const {data,error}=await ordered.range(from,from+999);if(error)throw error;all.push(...(data||[]));if(!data||data.length<1000)break}return all;}
+async function fetchAllRows(query, primaryKey = 'id') { const all=[],ordered=query.order(primaryKey);for(let from=0;;from+=1000){const {data,error}=await ordered.range(from,from+999);if(error)throw error;all.push(...(data||[]));if(!data||data.length<1000)break}return all;}
 function downloadCsv(filename, rows) { const keys=Object.keys(rows[0]||{name:'',sku:'',category:''}); const cell=(v)=>`"${String(v??'').replaceAll('"','""')}"`; const csv=[keys.map(cell).join(','),...rows.map(row=>keys.map((key)=>cell(row[key])).join(','))].join('\r\n'); const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download=filename;a.click();URL.revokeObjectURL(a.href); }
 function parseCsv(text) { const rows=[];let row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}else if(c==='"')quoted=true;else if(c===','){row.push(value);value=''}else if(c==='\n'){row.push(value.replace(/\r$/,''));rows.push(row);row=[];value=''}else value+=c}if(value||row.length){row.push(value.replace(/\r$/,''));rows.push(row)}const headers=(rows.shift()||[]).map((h)=>h.trim().replace(/^\ufeff/,''));return rows.filter((r)=>r.some((v)=>v.trim())).map((r)=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||''])));}
 
@@ -1307,7 +1307,7 @@ async function inventoryPage(page) {
         </div>
       </div>
     </article>`).join('');
-  const action = canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label><button class="btn" id="open-opening-stock">＋ Stok awal</button><button class="btn primary" id="new-product">＋ Produk baru</button>' : isCentralAdmin() ? '<button class="btn" id="open-opening-stock">+ Stok awal</button><button class="btn primary" id="new-product">＋ Produk baru</button>' : '';
+  const action = `${canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label>' : ''}${canManageOpeningStock() ? '<button class="btn" id="open-opening-stock">+ Stok awal</button>' : ''}${canManage() || isCentralAdmin() ? '<button class="btn primary" id="new-product">+ Produk baru</button>' : ''}`;
   const laptopUnits = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category === 'Laptop');
   const componentLots = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category !== 'Laptop');
   const unitCountFor = (status) => laptopUnits.filter((item) => item.status === status).reduce((sum, item) => sum + Number(item.quantity || 1), 0);
@@ -2621,27 +2621,72 @@ const saleNotePrintStyles = `
   .receipt-qris{break-inside:avoid}.receipt-qris img{display:block;width:36mm;max-width:100%;margin:4px auto}
 `;
 
+let offlineSyncInProgress = false;
+
 async function syncPendingOfflineSales() {
-  if(!navigator.onLine||state.profile?.role!=='operator'||!state.organization)return;
-  const prefix=`digi-sale-outbox:${state.organization.id}:`;let changed=false,anyChanged=false,submitted=0;
-  for(let i=0;i<localStorage.length;i++){
-    const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;
-    let rows;try{rows=JSON.parse(localStorage.getItem(key)||'[]')}catch{continue}
-    for(const row of rows){
-      if(row.status!=='queued'||row.organization_id!==state.organization.id||row.branch_id!==state.profile?.branch_id)continue;
-      try{
-        const {data,error}=await supabase.rpc('create_cashier_sale_with_customer',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date,_discount:row.discount_amount ?? 0,_commission:row.commission ?? null,
-          _customer_address:row.customer_address ?? null,_referral_source:row.referral_source ?? null,_referral_note:row.referral_note ?? null});
-        if(error)throw error;
-        const sale=checkError(await supabase.from('sales').select('receipt_number').eq('id',data).single());row.status='synced';row.receipt_number=sale.receipt_number;row.sale_id=data;row.synced_at=new Date().toISOString();row.error='';submitted++;changed=true;anyChanged=true;
-      }catch(error){
-        const transient=!navigator.onLine||/fetch|network|failed to connect|connection/i.test(error.message||'');row.status=transient?'queued':'attention';row.error=transient?'Koneksi terputus saat sinkron.':error.message||'Transaksi perlu diperiksa.';changed=true;anyChanged=true;if(!transient)continue;else break;
+  if (!navigator.onLine || state.profile?.role !== 'operator' || !state.organization || offlineSyncInProgress) return;
+  const organizationId = state.organization.id;
+  const branchId = state.profile.branch_id;
+  const userId = state.user?.id;
+  const prefix = `digi-sale-outbox:${organizationId}:`;
+  const sameAccount = () => state.user?.id === userId && state.organization?.id === organizationId
+    && state.profile?.branch_id === branchId;
+  const synchronize = async () => {
+    const keys = Array.from({length: localStorage.length}, (_, index) => localStorage.key(index))
+      .filter(key => key?.startsWith(prefix));
+    let submitted = 0;
+    let changed = false;
+    for (const key of keys) {
+      let rows;
+      try { rows = JSON.parse(localStorage.getItem(key) || '[]'); } catch { continue; }
+      if (!Array.isArray(rows)) continue;
+      for (const queued of rows) {
+        if (!sameAccount()) return;
+        const latest = JSON.parse(localStorage.getItem(key) || '[]');
+        const row = latest.find(item => item.request_id === queued.request_id);
+        if (!row || row.status !== 'queued' || row.organization_id !== organizationId || row.branch_id !== branchId) continue;
+        try {
+          const {data, error} = await supabase.rpc('create_cashier_sale_with_customer', {
+            _customer_phone: row.customer_phone || null, _request_id: row.request_id, _branch_id: row.branch_id,
+            _customer_name: row.customer_name, _customer_type: row.customer_type, _payment_method: row.payment_method,
+            _lines: row.lines, _customer_id: row.customer_id, _paid_amount: row.paid_amount, _due_date: row.due_date,
+            _discount: row.discount_amount ?? 0, _commission: row.commission ?? null,
+            _customer_address: row.customer_address ?? null, _referral_source: row.referral_source ?? null,
+            _referral_note: row.referral_note ?? null,
+          });
+          if (error) throw error;
+          row.sale_id = data;
+          const sale = checkError(await supabase.from('sales').select('receipt_number').eq('id', data).single());
+          Object.assign(row, {status: 'synced', receipt_number: sale.receipt_number, synced_at: new Date().toISOString(), error: ''});
+          submitted++;
+        } catch (error) {
+          const transient = !navigator.onLine || /fetch|network|failed to connect|connection/i.test(error.message || '');
+          row.status = transient ? 'queued' : 'attention';
+          row.error = transient ? 'Koneksi terputus saat sinkron.' : error.message || 'Transaksi perlu diperiksa.';
+        }
+        // Merge against the current queue so sales appended during network requests survive.
+        const current = JSON.parse(localStorage.getItem(key) || '[]');
+        const index = current.findIndex(item => item.request_id === row.request_id);
+        if (index >= 0) {
+          current[index] = row;
+          localStorage.setItem(key, JSON.stringify(current));
+          changed = true;
+        }
+        if (!navigator.onLine) break;
       }
     }
-    if(changed)localStorage.setItem(key,JSON.stringify(rows));
-    changed=false;
+    if (!sameAccount()) return;
+    if (submitted) toast(`${submitted} transaksi offline berhasil disinkronkan.`);
+    if (changed && state.page === 'cashier') await showPage('cashier');
+  };
+  offlineSyncInProgress = true;
+  try {
+    if (navigator.locks) {
+      await navigator.locks.request(`digi-sale-sync:${organizationId}`, {ifAvailable: true}, lock => lock ? synchronize() : undefined);
+    } else await synchronize();
+  } finally {
+    offlineSyncInProgress = false;
   }
-  if(submitted)toast(`${submitted} transaksi offline berhasil disinkronkan.`);if(anyChanged&&state.page==='cashier')await showPage('cashier');
 }
 
 async function cashierPage(page) {
@@ -2885,6 +2930,26 @@ async function cashierPage(page) {
   page.querySelectorAll('[data-print-sale]').forEach(button => button.addEventListener('click', () => {
     openSaleReceipt(button.dataset.printSale, button);
   }));
+  const resetCheckout = () => {
+    cart = [];
+    form.discount_amount.value = '';
+    form.commission_method.value = '';
+    form.mediator_name.value = '';
+    form.commission_amount.value = '';
+    commissionFields.hidden = commissionFields.disabled = true;
+    adjustmentDetails.open = false;
+    form.customer_id.value = '';
+    form.customer_id.dispatchEvent(new Event('change', {bubbles: true}));
+    customerDetails.open = false;
+    form.referral_source.value = '';
+    form.referral_note.value = '';
+    referralNoteField.hidden = true;
+    form.payment_mode.value = 'full';
+    form.payment_mode.dispatchEvent(new Event('change'));
+    form.paid_amount.value = '0';
+    form.due_date.value = '';
+    renderCart();
+  };
   renderCart();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2928,17 +2993,7 @@ async function cashierPage(page) {
     renderCart();
     try {
       if (!navigator.onLine) {
-        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; form.discount_amount.value = ''; form.commission_method.value = '';
-        form.mediator_name.value = ''; form.commission_amount.value = '';
-        commissionFields.hidden = commissionFields.disabled = true;
-        adjustmentDetails.open = false;
-        form.customer_id.value = '';
-        form.customer_id.dispatchEvent(new Event('change', { bubbles: true }));
-        customerDetails.open = false;
-        form.referral_source.value = '';
-        form.referral_note.value = '';
-        referralNoteField.hidden = true;
-        renderCart();
+        const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));resetCheckout();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
       const {data,error}=await supabase.rpc('create_cashier_sale_with_customer',{
@@ -2966,7 +3021,7 @@ async function cashierPage(page) {
       if (committed) {
         toast('Transaksi sudah tersimpan. Buka nota dari riwayat transaksi.', true);
       } else if(!navigator.onLine||/fetch|network|failed to connect|connection/i.test(error.message||'')){
-        const q=readQueue();q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[];renderCart();
+        const q=readQueue();q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));resetCheckout();
         toast('Jaringan terputus. Transaksi masuk antrean untuk dikirim ulang.',true);renderOfflineQueue();
       } else toast(error.message||'Transaksi gagal.',true);
     } finally {
@@ -3769,12 +3824,7 @@ async function contactsPage(page, type) {
     if (!contact) return;
     const relatedBatches = supplierMode ? batches.filter((batch) => matchesSupplier(batch, contact)) : [];
     const relatedSales = supplierMode ? [] : sales.filter((sale) => matchesCustomer(sale, contact));
-    const contactPhoneDigits = String(contact.phone || '').replace(/\D/g, '');
-    const relatedServices = supplierMode ? [] : serviceTickets.filter((ticket) => {
-      if (ticket.customer_id === contact.id || ticket.customer_name.trim().toLowerCase() === contact.name.trim().toLowerCase()) return true;
-      const ticketPhoneDigits = String(ticket.customer_phone || '').replace(/\D/g, '');
-      return contactPhoneDigits.length >= 8 && ticketPhoneDigits.length >= 8 && (ticketPhoneDigits.endsWith(contactPhoneDigits.slice(-8)) || contactPhoneDigits.endsWith(ticketPhoneDigits.slice(-8)));
-    });
+    const relatedServices = supplierMode ? [] : serviceTickets.filter(ticket => matchesCustomer(ticket, contact));
     const relatedReceivables = receivables.filter((entry) => matchesCustomer(entry, contact) || relatedServices.some((ticket) => ticket.id === entry.id));
     const balance = supplierMode ? relatedBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch.total_amount)-Number(batch.amount_paid)), 0) : relatedReceivables.reduce((sum, entry) => sum + entry.remaining, 0);
     const records = supplierMode
@@ -3876,7 +3926,7 @@ async function financePage(page) {
   if (filter !== 'all') commissionQuery = commissionQuery.eq('branch_id', filter);
   const [cash,sales,services,purchases,commissions] = await Promise.all([
     fetchAllRows(cashQuery),fetchAllRows(salesQuery),fetchAllRows(serviceQuery),fetchAllRows(purchasesQuery),
-    fetchAllRows(commissionQuery)
+    fetchAllRows(commissionQuery, 'sale_id')
   ]);
   const incomes = cash.filter((entry) => entry.direction === 'income').reduce((sum, entry) => sum + Number(entry.amount), 0);
   const expenses = cash.filter((entry) => entry.direction === 'expense').reduce((sum, entry) => sum + Number(entry.amount), 0);
@@ -4804,33 +4854,6 @@ mountPrayerReminder();
 mountGuardian({
   canManage,
   onSetupMfa: () => setupGuardianMfa(supabase, openModal, toast).catch(error => toast(error.message, true)),
-  onStaffAccess: async () => {
-    if (!canManage()) return;
-    try {
-      const {users = []} = await teamAdminRequest({action:'list'});
-      const staff = users.filter(user => user.role !== 'owner');
-      const host = openModal('Akses staf', 'Cabut sesi meminta staf masuk kembali. Nonaktifkan menutup akses sampai diaktifkan lagi.',
-        `<div class="table-wrap"><table><thead><tr><th>STAF</th><th>AKSI</th></tr></thead><tbody>
-        ${staff.map(user => `<tr><td>${esc(user.full_name)}<small>${esc(user.role)}</small></td><td>
-          <button class="small-btn" type="button" data-staff-action="revoke" data-user="${user.id}">Cabut sesi</button>
-          <button class="small-btn" type="button" data-staff-action="disable" data-user="${user.id}">Nonaktifkan</button>
-          <button class="small-btn" type="button" data-staff-action="enable" data-user="${user.id}">Aktifkan akses</button></td></tr>`).join('') ||
-          '<tr><td colspan="2">Belum ada akun staf.</td></tr>'}</tbody></table></div>`, null);
-      host.querySelectorAll('[data-staff-action]').forEach(button => button.addEventListener('click', async () => {
-        const action = button.dataset.staffAction;
-        const user = staff.find(item => item.id === button.dataset.user);
-        if (!window.confirm(`${button.textContent} untuk ${user.full_name}?`)) return;
-        button.disabled = true;
-        try {
-          checkError(await supabase.rpc('guardian_set_staff_access', {
-            _user_id: user.id, _disabled: action === 'disable' ? true : action === 'enable' ? false : null,
-          }));
-          toast('Akses diperbarui. Sesi sebelumnya sudah dicabut.');
-        } catch (error) { toast(error.message, true); }
-        finally { button.disabled = false; }
-      }));
-    } catch (error) { toast(error.message, true); }
-  },
   onAudit: async () => {
     if (!canManage()) return;
     try {
