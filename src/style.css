@@ -1275,7 +1275,38 @@ body { font-size: 14px; line-height: 1.5; }
 
 button.storefront-card { padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
 button.storefront-card:hover { border-color: #659477; }
-.storefront-card .storefront-photo { width: 100%; }
+button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offset: 3px; }
+.storefront-card .storefront-photo {
+  align-self: stretch;
+  margin: 8px 8px 0;
+  padding: 4px;
+  border: 1px solid #87a895;
+  border-radius: 8px;
+  background: #e5ece5;
+  box-shadow: inset 0 0 0 2px #f9fcf8;
+  overflow: hidden;
+}
+.storefront-photo img { border-radius: 4px; }
+.storefront-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  align-self: stretch;
+  min-height: 40px;
+  margin: 0 12px 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #e5f0e7;
+  color: #174c34;
+  font-size: 12px;
+  font-weight: 750;
+}
+.storefront-card:hover .storefront-card-action,
+.storefront-card:focus-visible .storefront-card-action { background: #174c34; color: #fff; }
+@media (max-width: 600px) {
+  .storefront-card-action { margin: 0 9px 9px; }
+}
 .storefront-product-name { font-weight: 700; line-height: 1.35; }
 .public-product-dialog {
   width: min(780px, calc(100% - 32px));
@@ -1356,6 +1387,8 @@ button.storefront-card:hover { border-color: #659477; }
 .public-price-savings { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; font-size: 11px; line-height: 1.35; }
 .public-price-savings del { color: #59665f; }
 .public-price-savings span { padding: 2px 6px; border-radius: 5px; background: #fff0dc; color: #824009; font-weight: 700; }
+.public-price-block.has-promo .public-price-savings del { font-size: 12px; text-decoration-thickness: 1.5px; }
+.public-price-block.has-promo strong { color: #9b321f; }
 .storefront-specs { display: grid; gap: 4px; padding-top: 7px; border-top: 1px solid #dce7df; color: #334b40; font-size: 11px; line-height: 1.35; }
 .storefront-specs b { font-weight: 650; color: #1c3e31; }
 

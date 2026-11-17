@@ -419,10 +419,10 @@ function publicRetailPrice(product) {
 function publicPriceMarkup(product) {
   const price = publicRetailPrice(product);
   const discount = Number(product.retail_price) - price;
-  return `<span class="public-price-block">
-    ${discount > 0 ? `<span class="public-price-savings"><del aria-label="Harga normal ${money(product.retail_price)}">${money(product.retail_price)}</del>
+  return `<span class="public-price-block${discount > 0 ? ' has-promo' : ''}">
+    ${discount > 0 ? `<span class="public-price-savings"><del aria-label="Harga asli ${money(product.retail_price)}">${money(product.retail_price)}</del>
       <span>Hemat ${money(discount)}</span></span>` : ''}
-    <strong>${money(price)}</strong></span>`;
+    <strong${discount > 0 ? ` aria-label="Harga promo ${money(price)}"` : ''}>${money(price)}</strong></span>`;
 }
 
 function productPromoField(product) {
@@ -3381,8 +3381,8 @@ function customerPortal(tracking) {
         const reason = need && catalogNeedReason(product, need);
         const branches = product.available_branches || [];
         const location = branches.length === 1 ? branches[0] : branches.length ? `Tersedia di ${branches.length} cabang` : '';
-        return `<button type="button" class="storefront-card" data-public-product>
-          <span class="storefront-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : '<span>Foto belum tersedia</span>'}</span>
+        return `<button type="button" class="storefront-card" data-public-product aria-label="Lihat produk ${esc(product.name)}">
+          <span class="storefront-photo">${product.image_path ? `<img loading="lazy" decoding="async" src="${esc(publicProductPhotoUrl(product.image_path))}" alt="" />` : '<span>Foto belum tersedia</span>'}</span>
           <span class="storefront-card-body">
             <span class="storefront-product-name">${esc(product.name)}</span>
             ${publicPriceMarkup(product)}
@@ -3392,6 +3392,7 @@ function customerPortal(tracking) {
               ${specs.map(([label, value]) => `<span><b>${label}</b> ${esc(value)}</span>`).join('')}
             </span>` : ''}
           </span>
+          <span class="storefront-card-action">Lihat produk <span aria-hidden="true">→</span></span>
         </button>`;
       }).join('');
       grid.querySelectorAll('[data-public-product]').forEach((button, index) => {
@@ -3455,6 +3456,10 @@ function productWhatsAppShareUrl(product) {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
 
+function publicProductPhotoUrl(path) {
+  return `/foto-produk?${new URLSearchParams({ path })}`;
+}
+
 function showPublicProduct(product) {
   const photos = [...new Set([product.image_path, ...(product.gallery_paths || [])].filter(Boolean))].slice(0, 4);
   const specs = pamphletSpecs.flatMap(([key, label]) => {
@@ -3478,10 +3483,10 @@ function showPublicProduct(product) {
     <div class="public-product-layout">
       <div class="public-product-media">
         <div class="public-product-photos" aria-label="Galeri foto produk">
-          ${photos.map((path, index) => `<img src="${esc(productImageUrl(path))}" alt="${esc(product.name)} · Foto ${index + 1}" ${index ? 'loading="lazy"' : ''} />`).join('') || '<p>Foto belum tersedia.</p>'}
+          ${photos.map((path, index) => `<img src="${esc(publicProductPhotoUrl(path))}" alt="${esc(product.name)} · Foto ${index + 1}" ${index ? 'loading="lazy"' : ''} />`).join('') || '<p>Foto belum tersedia.</p>'}
         </div>
         ${photos.length > 1 ? `<div class="public-product-thumbs" aria-label="Pilih foto">${photos.map((path, index) =>
-          `<button type="button" aria-label="Foto ${index + 1}" aria-pressed="${index === 0}"><img src="${esc(productImageUrl(path))}" alt="" /></button>`).join('')}</div>` : ''}
+          `<button type="button" aria-label="Foto ${index + 1}" aria-pressed="${index === 0}"><img src="${esc(publicProductPhotoUrl(path))}" alt="" /></button>`).join('')}</div>` : ''}
       </div>
       <div>
         <div class="public-product-price">${publicPriceMarkup(product)}</div>
