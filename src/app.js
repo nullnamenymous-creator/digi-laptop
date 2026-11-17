@@ -1064,14 +1064,84 @@ async function printBarcodeLabels(items, printable = null) {
     const supplier = barcodeSupplierInitials(item);
     return `<article class="label"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong>${svg.outerHTML}<small class="barcode-value">${esc(item.barcode)}</small></article>`;
   }).join('');
-  const prefs = JSON.parse(localStorage.getItem('digi-label-settings') || '{}');
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem('digi-label-settings')) || {}; } catch {}
   const isLaptopBatch=items.every((item)=>item.products?.category==='Laptop');
   printable.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Pratinjau barcode Digi-Laptop</title><style>
     *{box-sizing:border-box}body{font:14px Arial;color:#17201b;margin:0;background:#eef2ee}.toolbar{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid #ccd5cd;padding:14px 20px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}.toolbar label{display:grid;gap:5px;font-size:12px}.toolbar input,.toolbar select,.toolbar button{height:36px;border:1px solid #aebcaf;border-radius:0;padding:0 9px;background:white}.toolbar button{background:#075c37;color:white;font-weight:bold;padding:0 16px;cursor:pointer}.toolbar .count{margin-right:auto;font-weight:bold}.sheets{padding:18px;overflow-x:auto;display:grid;justify-items:center;gap:18px}.sheet{background:white;box-shadow:0 3px 16px #0002;padding:8mm;display:grid;grid-template-columns:repeat(var(--cols),var(--lw));grid-auto-rows:var(--lh);gap:3mm;align-content:start;justify-content:start;overflow:hidden}.label{border:1px solid #59655d;padding:1mm;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;text-align:center;break-inside:avoid;overflow:hidden}.label strong{font-size:8px;line-height:1;letter-spacing:.04em}.label span{font-size:8px;margin-top:2px}.label svg{width:100%;height:var(--barcode-h);max-height:75%;margin:0}.label small{font-size:7px}.label .barcode-value{font-size:8px;line-height:1.1;font-weight:700;letter-spacing:.03em;white-space:nowrap}.status{font-size:12px;color:#66756a}@media screen and (max-width:760px){.sheets{justify-items:start}}@media print{body{background:#fff}.toolbar,.status{display:none!important}.sheets{padding:0;gap:0;overflow:visible}.sheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}}
-  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><button id="print">Cetak barcode</button></div><div class="status" style="padding:0 20px 8px">Atur dimensi label dan kertas. Printer dipilih melalui dialog cetak perangkat. ${mobilePrintHint()}</div><main class="sheets" id="sheets">${labels}</main><script>
-  const $=id=>document.getElementById(id),presets={A4:[210,297],A5:[148,210],Letter:[216,279]},saved=${JSON.stringify(prefs)};if(saved.paper)$('paper').value=saved.paper;if(saved.width)$('lw').value=saved.width;if(saved.height)$('lh').value=saved.height;if(saved.cols)$('cols').value=saved.cols;
-  function layout(){const paper=$('paper').value,[presetW,ph]=presets[paper]||[210,297],w=+$('lw').value,h=+$('lh').value,c=+$('cols').value,pw=paper==='custom'?w*c+16:presetW,per=Math.max(1,Math.floor((ph-16+3)/(h+3))),all=[...document.querySelectorAll('.label')],wrap=$('sheets');wrap.innerHTML='';for(let i=0;i<all.length;i+=per*c){const sheet=document.createElement('section');sheet.className='sheet';sheet.style.setProperty('--cols',c);sheet.style.setProperty('--lw',w+'mm');sheet.style.setProperty('--lh',h+'mm');sheet.style.setProperty('--barcode-h',Math.max(9,h*.70)+'mm');sheet.style.width=pw+'mm';sheet.style.minHeight=ph+'mm';all.slice(i,i+per*c).forEach(x=>sheet.append(x));wrap.append(sheet)}const st=document.getElementById('dynamic')||document.head.appendChild(Object.assign(document.createElement('style'),{id:'dynamic'}));st.textContent='@page{size:'+(paper==='custom'?(w*c+16)+'mm '+ph+'mm':paper)+';margin:0}';localStorage.setItem('digi-label-settings',JSON.stringify({paper,width:w,height:h,cols:c}))}
-  ['paper','lw','lh','cols'].forEach(id=>$(id).addEventListener('input',layout));$('paper').addEventListener('change',layout);$('print').onclick=()=>window.print();layout();</script></body></html>`);
+      .toolbar [hidden]{display:none}.roll-settings{display:flex;gap:8px;flex-wrap:wrap}.roll-settings input{width:76px}
+    .sheet.roll{padding:var(--roll-top) 0 0 var(--roll-left);gap:0 var(--roll-gap)}
+    .roll .label{border:0;padding:0 1mm;justify-content:flex-start;color:#000}
+    .roll .label strong{display:none}.roll .label svg{height:8mm;max-height:none;flex:none}
+    .roll .barcode-value{margin-top:1mm;font-size:7pt;letter-spacing:0}
+  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option><option value="roll33">Roll 33 × 15 mm · 3 kolom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><div class="roll-settings" id="roll-settings" hidden>
+    <label>Lebar roll (mm)<input id="roll-width" type="number" min="99" max="120" step="0.1" value="104"></label>
+    <label>Jarak kolom (mm)<input id="roll-gap" type="number" min="0" max="5" step="0.1" value="0"></label>
+    <label>Margin kiri (mm)<input id="roll-left" type="number" min="0" max="10" step="0.1" value="2.5"></label>
+    <label>Margin atas (mm)<input id="roll-top" type="number" min="0" max="4" step="0.1" value="1"></label>
+    </div><button id="print">Cetak barcode</button></div><div class="status" style="padding:0 20px 8px"><span id="layout-hint">Atur dimensi label dan kertas.</span> Printer dipilih melalui dialog cetak perangkat. ${mobilePrintHint()}</div><main class="sheets" id="sheets">${labels}</main><script>
+  const $ = id => document.getElementById(id);
+  const presets = { A4: [210,297], A5: [148,210], Letter: [216,279] };
+  const saved = ${JSON.stringify(prefs).replaceAll('<', '\\u003c')};
+  const labels = [...document.querySelectorAll('.label')];
+  const rollFields = ['roll-width','roll-gap','roll-left','roll-top'];
+  for (const [id, key] of [['paper','paper'],['lw','width'],['lh','height'],['cols','cols']]) {
+    if (saved[key]) $(id).value = saved[key];
+  }
+  for (const id of rollFields) {
+    if (Number.isFinite(saved[id])) $(id).value = saved[id];
+  }
+  const number = (id, fallback) => {
+    const input = $(id);
+    return input.value === '' ? fallback : Math.min(Number(input.max), Math.max(Number(input.min), Number(input.value)));
+  };
+  function layout() {
+    const paper = $('paper').value;
+    const roll = paper === 'roll33';
+    const width = number('lw', 50), height = number('lh', 24), cols = Math.floor(number('cols', 3));
+    const rollWidth = number('roll-width', 104), gap = number('roll-gap', 0), left = number('roll-left', 2.5), top = number('roll-top', 1);
+    const fits = left + 99 + 2 * gap <= rollWidth + 0.001;
+    $('roll-settings').hidden = !roll;
+    for (const id of ['lw','lh','cols']) $(id).closest('label').hidden = roll;
+    $('layout-hint').textContent = roll
+      ? fits ? 'Pakai ukuran roll × 15 mm di driver, skala 100%, margin kosong, dan matikan header/footer.'
+        : 'Lebar roll terlalu kecil untuk tiga label dengan jarak dan margin ini.'
+      : 'Atur dimensi label dan kertas.';
+    $('print').disabled = roll && !fits;
+    const [presetWidth, presetHeight] = presets[paper] || [210,297];
+    const pageWidth = roll ? rollWidth : paper === 'custom' ? width * cols + 16 : presetWidth;
+    const pageHeight = roll ? 15 : presetHeight;
+    const perPage = roll ? 3 : Math.max(1, Math.floor((pageHeight - 13) / (height + 3))) * cols;
+    const wrap = $('sheets');
+    wrap.replaceChildren();
+    for (const label of labels) {
+      const barcode = label.querySelector('svg');
+      if (roll) barcode.setAttribute('preserveAspectRatio', 'none');
+      else barcode.removeAttribute('preserveAspectRatio');
+    }
+    for (let i = 0; i < labels.length; i += perPage) {
+      const sheet = document.createElement('section');
+      sheet.className = roll ? 'sheet roll' : 'sheet';
+      const dimensions = {
+        '--cols': roll ? 3 : cols, '--lw': (roll ? 33 : width) + 'mm', '--lh': (roll ? 15 - top : height) + 'mm',
+        '--barcode-h': Math.max(9, height * .70) + 'mm',
+        '--roll-gap': gap + 'mm', '--roll-left': left + 'mm', '--roll-top': top + 'mm',
+      };
+      for (const [key, value] of Object.entries(dimensions)) sheet.style.setProperty(key, value);
+      sheet.style.width = pageWidth + 'mm';
+      sheet.style.minHeight = pageHeight + 'mm';
+      sheet.append(...labels.slice(i, i + perPage));
+      wrap.append(sheet);
+    }
+    const style = $('dynamic') || document.head.appendChild(Object.assign(document.createElement('style'), {id:'dynamic'}));
+    style.textContent = '@page{size:' + (roll || paper === 'custom' ? pageWidth + 'mm ' + pageHeight + 'mm' : paper) + ';margin:0}';
+    localStorage.setItem('digi-label-settings', JSON.stringify({
+      paper, width, height, cols, 'roll-width': rollWidth, 'roll-gap': gap, 'roll-left': left, 'roll-top': top,
+    }));
+  }
+  ['paper','lw','lh','cols',...rollFields].forEach(id => $(id).addEventListener('input', layout));
+  $('print').onclick = () => window.print();
+  layout();</script></body></html>`);
   printable.document.close();
 }
 
