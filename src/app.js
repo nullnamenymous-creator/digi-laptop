@@ -2261,7 +2261,8 @@ function printerSettings() {
   });
 }
 
-const receiptSaleItems = 'sale_items(*,products(specifications))';
+const receiptSaleFields = '*,branches(name),customers(phone),sale_items(*,products(specifications),stock_items(barcode))';
+const saleReceiptThanks = 'Terima kasih telah berbelanja di Digital Laptop Jombang. Semoga perangkat Anda bermanfaat. Jika membutuhkan bantuan, silakan hubungi kami.';
 
 function saleReceiptQris(balance) {
   const payable = balance > 0 && balance <= 10000000;
@@ -2270,38 +2271,146 @@ function saleReceiptQris(balance) {
     <div>${payable ? `${money(balance)} · Kirim bukti ke petugas toko.` : balance > 0 ? 'Hubungi petugas untuk pembayaran sisa tagihan.' : 'Nota lunas.'}</div></section>`;
 }
 
-function printSaleReceipt(sale) {
-  const format = printPreferences().receipt;
-  const thermal = format === '58' || format === '80';
-  const paper = thermal ? 'auto' : format;
-  const width = thermal ? (Number(format) - 8) + 'mm' : '100%';
-  const win = window.open('', '_blank', 'width=420,height=700');
-  if (!win) return toast('Izinkan pop-up untuk mencetak struk.', true);
-  const mobile = printerPlatform() !== 'desktop';
-  const lines = (sale.sale_items || []).map((line) => {
-    const specifications = line.specifications ?? line.products?.specifications;
-    const details = pamphletSpecs.flatMap(([key, label]) => {
-      const value = String(specifications?.[key] ?? '').trim();
-      return value ? [`<b>${label}</b> ${esc(value)}`] : [];
-    });
-    return `<tr><td>${esc(line.product_name)} × ${Number(line.quantity)}</td><td>${money(line.line_total ?? Number(line.unit_price) * Number(line.quantity))}</td></tr>
-      ${details.length ? `<tr><td colspan="2" class="item-specs">${line.specifications == null ? '<b>Spek katalog saat ini</b><br>' : ''}${details.join(' · ')}</td></tr>` : ''}`;
-  }).join('');
-  const paid = Number(sale.paid_amount || 0), total = Number(sale.total || 0);
-  const qris = saleReceiptQris(total - paid);
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8">${printViewport}<title>Struk ${esc(sale.receipt_number || '')}</title><style>
-    @page{size:${paper};margin:${thermal ? 4 : 10}mm}*{box-sizing:border-box}body{max-width:${width};margin:0 auto;color:#111;font:12px/1.45 Arial,sans-serif}
-    h1{margin:0 0 3px;text-align:center;font-size:15px}p{margin:2px 0;text-align:center}.meta{margin:10px 0;border-top:1px dashed #555;border-bottom:1px dashed #555;padding:6px 0}
-    table{width:100%;border-collapse:collapse}td{padding:3px 0;vertical-align:top}td:last-child{text-align:right;white-space:nowrap}.totals{margin-top:7px;border-top:1px dashed #555;padding-top:6px}
-    td.item-specs{text-align:left;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:1.35;padding:0 0 5px}
-    .receipt-qris{text-align:center;break-inside:avoid;margin-top:8px}.receipt-qris img{display:block;width:36mm;max-width:100%;height:auto;margin:4px auto}.thanks{text-align:center;margin-top:12px}@media print{body{width:auto}}
-    ${printControlsStyle}
-  </style></head><body>${mobile ? printControls() : ''}<h1>${esc(state.organization.name || 'DIGITAL LAPTOP JOMBANG')}</h1><p>${esc(state.organization.phone || '')}</p><p>${esc(state.organization.address || '')}</p>
-    <div class="meta">No: ${esc(sale.receipt_number || 'Transaksi')}<br>Waktu: ${new Date(sale.created_at || Date.now()).toLocaleString('id-ID')}<br>Pembeli: ${esc(sale.customer_name || 'Pembeli umum')}</div>
-    <table>${lines || '<tr><td>Detail produk tidak tersedia</td></tr>'}</table><div class="totals">Total: <b>${money(total)}</b><br>Dibayar: ${money(paid)}${paid < total ? `<br>Sisa piutang: ${money(total - paid)}` : ''}<br>Metode: ${esc(sale.payment_method || '—')}</div>${qris}<p class="thanks">Terima kasih telah berbelanja.</p>
-    ${mobile ? '' : `<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150))<\/script>`}</body></html>`);
-  win.document.close();
+function saleReceiptDetails(sale) {
+  const phone = sale.customer_phone ?? sale.customers?.phone ?? '';
+  const branch = sale.branches?.name || branchName(sale.branch_id);
+  const paid = Number(sale.paid_amount || 0);
+  const total = Number(sale.total || 0);
+  const method = { cash: 'Tunai', transfer: 'Transfer', qris: 'QRIS', debit: 'Kartu debit', other: 'Lainnya' };
+  return {
+    phone,
+    branch,
+    balance: Math.max(0, total - paid),
+    customer: [
+      ['Waktu transaksi', new Date(sale.created_at).toLocaleString('id-ID')],
+      ['Pembeli', sale.customer_name || 'Pembeli umum'],
+      ['Telepon pembeli', phone || '—'],
+    ],
+    lines: (sale.sale_items || []).map((line) => {
+      const specs = line.specifications ?? line.products?.specifications;
+      const details = pamphletSpecs.flatMap(([key, label]) => {
+        const value = String(specs?.[key] ?? '').trim();
+        return value ? [`${label} ${value}`] : [];
+      });
+      const barcode = line.unit_barcode ?? line.stock_items?.barcode;
+      return {
+        name: `${line.product_name || 'Barang'} × ${Number(line.quantity)}`,
+        price: money(line.line_total ?? Number(line.unit_price) * Number(line.quantity)),
+        detail: [barcode ? `Barcode ${barcode}` : '', details.length
+          ? `${line.specifications == null ? 'Spek katalog saat ini · ' : ''}${details.join(' · ')}` : ''].filter(Boolean),
+      };
+    }),
+    totals: [
+      ['Total', money(total)], ['Dibayar', money(paid)],
+      ...(paid < total ? [['Sisa piutang', money(total - paid)]] : []),
+      ['Metode', method[sale.payment_method] || sale.payment_method || '—'],
+    ],
+  };
 }
+
+function saleReceiptMarkup(sale, details) {
+  return `<article class="sale-note">
+    <header class="sale-note-header"><h2>${esc(state.organization.name)}</h2><p>${esc(state.organization.address || '')}</p>
+      <p>${esc(state.organization.phone || '')}</p><p>${esc(details.branch)} · Nota ${esc(sale.receipt_number)}</p></header>
+    <div class="sale-note-meta">${details.customer.map(([label, value]) => `<div><b>${label}</b> ${esc(value)}</div>`).join('')}</div>
+    ${details.lines.map(line => `<div class="sale-note-line"><div class="sale-note-line-title"><b>${esc(line.name)}</b><span>${esc(line.price)}</span></div>
+      ${line.detail.map(text => `<div class="sale-note-line-detail">${esc(text)}</div>`).join('')}</div>`).join('') || '<p>Detail barang tidak tersedia.</p>'}
+    <div class="sale-note-meta">${details.totals.map(([label, value]) => `<div><b>${label}</b> ${esc(value)}</div>`).join('')}</div>
+    ${saleReceiptQris(details.balance)}<p class="sale-note-thanks">${saleReceiptThanks}</p>
+  </article>`;
+}
+
+async function prepareSaleReceiptWhatsApp(host, sale, details) {
+  const status = host.querySelector('[data-sale-share-status]');
+  const phone = details.phone.replace(/\D/g, '').replace(/^0/, '62');
+  const validPhone = /^[1-9]\d{7,14}$/.test(phone);
+  if (validPhone) {
+    const chat = host.querySelector('[data-sale-chat]');
+    chat.href = `https://wa.me/${phone}?text=${encodeURIComponent(`Halo, berikut nota pembelian ${sale.receipt_number}. ${saleReceiptThanks}`)}`;
+    chat.hidden = false;
+  }
+  status.textContent = 'Menyiapkan PDF nota…';
+  try {
+    const { createServiceReceiptPdf } = await import('./service-receipt-pdf.js');
+    const bytes = await createServiceReceiptPdf({
+      title: 'Nota penjualan', referenceLabel: 'No. nota', ticketNumber: sale.receipt_number,
+      organization: state.organization.name, branch: details.branch, logo: '/store-logo-transparent.png',
+      details: [...details.customer, ...details.lines.map(line => [line.name, [line.price, ...line.detail].join('\n')]),
+        ...details.totals, ['Terima kasih', saleReceiptThanks]],
+    });
+    if (!status.isConnected) return;
+    const file = new File([bytes], `Nota-${sale.receipt_number.replace(/[^\w-]/g, '-')}.pdf`, { type: 'application/pdf' });
+    const download = host.querySelector('[data-sale-download]');
+    const share = host.querySelector('[data-sale-share]');
+    download.hidden = false;
+    download.onclick = () => {
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    };
+    const canShare = Boolean(navigator.share && navigator.canShare?.({ files: [file] }));
+    share.hidden = !canShare;
+    share.onclick = async () => {
+      try { await navigator.share({ files: [file] }); }
+      catch (error) { if (error.name !== 'AbortError') status.textContent = 'Berbagi gagal. Unduh PDF dan lampirkan di WhatsApp.'; }
+    };
+    status.textContent = validPhone ? 'Buka chat pelanggan dan lampirkan PDF, atau pilih WhatsApp dari menu berbagi.'
+      : 'Nomor WhatsApp belum tersedia atau tidak valid. Pilih kontak sendiri saat membagikan PDF.';
+  } catch {
+    if (status.isConnected) status.textContent = 'PDF gagal dibuat. Coba lagi atau simpan PDF lewat dialog cetak.';
+  }
+}
+
+async function openSaleReceipt(id, trigger, saved = false) {
+  if (!id || trigger.disabled) return;
+  trigger.disabled = true;
+  try {
+    const sale = checkError(await supabase.from('sales').select(receiptSaleFields)
+      .eq('organization_id', state.organization.id).eq('id', id).single());
+    if (!trigger.isConnected) return;
+    const details = saleReceiptDetails(sale);
+    const note = saleReceiptMarkup(sale, details);
+    const format = printPreferences().receipt;
+    const host = openModal(saved ? 'Transaksi tersimpan' : 'Detail transaksi penjualan', esc(sale.receipt_number),
+      `${saved ? '<p class="field-hint">Cocokkan barcode pada nota dengan unit fisik sebelum diserahkan kepada pembeli.</p>' : ''}
+      <div class="sale-note-actions"><label for="sale-note-format">Ukuran kertas</label>
+      <select id="sale-note-format">${Object.entries(printFormats.receipt).map(([value, label]) =>
+        `<option value="${value}" ${value === format ? 'selected' : ''}>${label}</option>`).join('')}</select>
+      <button class="btn primary" type="button" data-sale-print>${saved ? 'Simpan & cetak' : 'Pratinjau cetak'}</button>
+      <button class="btn" type="button" data-sale-whatsapp>Kirim nota via WhatsApp</button></div>
+      <div data-sale-share-panel hidden><p role="status" data-sale-share-status></p><div class="sale-note-actions">
+      <a class="btn" target="_blank" rel="noopener noreferrer" data-sale-chat hidden>Buka chat pelanggan</a>
+      <button class="btn" type="button" data-sale-download hidden>Unduh PDF</button>
+      <button class="btn" type="button" data-sale-share hidden>Bagikan PDF</button></div></div>
+      ${note}`, null);
+    host.querySelector('[data-sale-print]').addEventListener('click', () => {
+      printDocument(`Nota ${sale.receipt_number}`, note, 'receipt', saleNotePrintStyles, host.querySelector('#sale-note-format').value);
+    });
+    host.querySelector('[data-sale-whatsapp]').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      host.querySelector('[data-sale-share-panel]').hidden = false;
+      await prepareSaleReceiptWhatsApp(host, sale, details);
+      button.disabled = false;
+    });
+  } catch (error) {
+    toast(error.message || 'Nota belum bisa dimuat. Coba buka kembali dari riwayat transaksi.', true);
+  } finally {
+    trigger.disabled = false;
+  }
+}
+
+const saleNotePrintStyles = `
+  .sale-note-header,.sale-note-thanks,.receipt-qris{text-align:center}
+  .sale-note-header h2,.sale-note-header p{margin:2px 0}
+  .sale-note-meta,.sale-note-line{padding:5px 0;border-top:1px dashed #666;break-inside:avoid;overflow-wrap:anywhere}
+  .sale-note-line-title{display:flex;justify-content:space-between;gap:6px}
+  .sale-note-line-title span{flex:none}.sale-note-line-detail{font-size:10px}
+  .receipt-qris{break-inside:avoid}.receipt-qris img{display:block;width:36mm;max-width:100%;margin:4px auto}
+`;
 
 async function syncPendingOfflineSales() {
   if(!navigator.onLine||state.profile?.role!=='operator'||!state.organization)return;
@@ -2312,7 +2421,7 @@ async function syncPendingOfflineSales() {
     for(const row of rows){
       if(row.status!=='queued'||row.organization_id!==state.organization.id||row.branch_id!==state.profile?.branch_id)continue;
       try{
-        const {data,error}=await supabase.rpc('create_sale_with_request',{_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date});
+        const {data,error}=await supabase.rpc('create_sale_with_receipt',{_customer_phone:row.customer_phone || null,_request_id:row.request_id,_branch_id:row.branch_id,_customer_name:row.customer_name,_customer_type:row.customer_type,_payment_method:row.payment_method,_lines:row.lines,_customer_id:row.customer_id,_paid_amount:row.paid_amount,_due_date:row.due_date});
         if(error)throw error;
         const sale=checkError(await supabase.from('sales').select('receipt_number').eq('id',data).single());row.status='synced';row.receipt_number=sale.receipt_number;row.sale_id=data;row.synced_at=new Date().toISOString();row.error='';submitted++;changed=true;anyChanged=true;
       }catch(error){
@@ -2329,14 +2438,14 @@ async function cashierPage(page) {
   if (atCentral()) throw new Error('Cabang Pusat tidak melayani penjualan.');
   const branchId = state.branchId;
   const cacheKey=`digi-offline-cashier:${state.organization.id}:${branchId}`;let products,customers,stock,sales=[];
-  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select(`id,receipt_number,customer_name,total,paid_amount,payment_method,created_at,${receiptSaleItems}`).eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
+  try { const [productRows,customerRows,stockRows,ar]=await Promise.all([loadCashierProducts(),fetchAllRows(supabase.from('customers').select('id,name,phone,customer_type').order('name')),fetchAllRows(supabase.from('stock_items').select('product_id,quantity,barcode,serial_number').eq('branch_id',branchId).eq('status','available')),supabase.from('sales').select('id,receipt_number,customer_name,total,paid_amount,created_at').eq('branch_id',branchId).order('created_at',{ascending:false}).limit(8)]);if(ar.error)throw ar.error;products=productRows;customers=customerRows;stock=stockRows;sales=ar.data||[];localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock,cachedAt:new Date().toISOString()})); }
   catch(error){if(navigator.onLine)throw error;const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(!cached)throw new Error('Data kasir belum tersimpan di perangkat ini. Buka halaman kasir saat online dahulu.');({products,customers,stock}=cached);sales=[];}
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
   const availableProducts=products.filter(product=>(available.get(product.id)||0)>0);
   const queueKey=`digi-sale-outbox:${state.organization.id}:${branchId}`,readQueue=()=>JSON.parse(localStorage.getItem(queueKey)||'[]'),saveQueue=(q)=>localStorage.setItem(queueKey,JSON.stringify(q));
   let cart=[];
-  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Cetak</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
+  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total belanja <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
   const form = page.querySelector('#sale-form');
   const productSearch = page.querySelector('#sale-product-search');
   const priceFor = product => form.customer_type.value === 'reseller' ? Number(product.reseller_price) : publicRetailPrice(product);
@@ -2439,6 +2548,7 @@ async function cashierPage(page) {
     const customer = customers.find(item => item.id === form.customer_id.value);
     form.customer_name.value = customer?.name || '';
     form.customer_name.readOnly = Boolean(customer);
+    form.customer_phone.value = customer?.phone || '';
     form.customer_type.value = customer?.customer_type === 'reseller' ? 'reseller' : 'end_user';
     form.customer_type.disabled = Boolean(customer);
     page.querySelector('#customer-price-hint').textContent = customer ? 'Harga mengikuti tipe pelanggan terdaftar.' : 'Pilih tipe harga untuk pembeli umum.';
@@ -2452,8 +2562,7 @@ async function cashierPage(page) {
     form.due_date.required = credit;
   });
   page.querySelectorAll('[data-print-sale]').forEach(button => button.addEventListener('click', () => {
-    const sale = sales.find(row => row.id === button.dataset.printSale);
-    if (sale) printSaleReceipt(sale);
+    openSaleReceipt(button.dataset.printSale, button);
   }));
   renderCart();
   form.addEventListener('submit', async (event) => {
@@ -2470,36 +2579,43 @@ async function cashierPage(page) {
     const payload = {
       request_id: crypto.randomUUID(), organization_id: state.organization.id, branch_id: branchId,
       customer_name: customers.find(customer=>customer.id===form.customer_id.value)?.name || String(form.customer_name.value).trim(), customer_id: form.customer_id.value || null,
+      customer_phone: form.customer_phone.value.trim(),
       customer_type: form.customer_type.value, payment_method: form.payment_method.value,
       lines: cart.map(item=>({product_id:item.product.id,quantity:item.quantity,expected_price:priceFor(item.product)})),
       paid_amount: paid, due_date: paid < total ? form.due_date.value : null,
       created_at: new Date().toISOString(), status: 'queued'
     };
     saving = true;
+    let committed = false;
     renderCart();
     try {
       if (!navigator.onLine) {
         const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; renderCart();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
-      const {data,error}=await supabase.rpc('create_sale_with_request',{
-        _request_id:payload.request_id,_branch_id:payload.branch_id,_customer_name:payload.customer_name,
+      const {data,error}=await supabase.rpc('create_sale_with_receipt',{
+        _customer_phone:payload.customer_phone || null, _request_id:payload.request_id,_branch_id:payload.branch_id,_customer_name:payload.customer_name,
         _customer_type:payload.customer_type,_payment_method:payload.payment_method,_lines:payload.lines,
         _customer_id:payload.customer_id,_paid_amount:payload.paid_amount,_due_date:payload.due_date
       });
       if(error) throw error;
-      const sale=checkError(await supabase.from('sales').select(`receipt_number,total,paid_amount,customer_name,customer_type,payment_method,created_at,${receiptSaleItems}`).eq('id',data).single());
+      committed = true;
+      cart = [];
       toast(`Transaksi tersimpan. ${money(paid)} masuk ke kas.`);
       if (state.branchId !== branchId || state.page !== 'cashier') return;
       await showPage('cashier');
       if (state.branchId !== branchId || state.page !== 'cashier') return;
-      const receipt=page.querySelector('#sale-receipt');
-      if(receipt){
-        receipt.innerHTML=`<div class="receipt cashier-receipt"><div><b>Transaksi tersimpan</b><span>${esc(sale.receipt_number)}</span></div><span>Total ${money(sale.total)} · Dibayar ${money(sale.paid_amount)}${sale.paid_amount<sale.total?` · Piutang ${money(sale.total-sale.paid_amount)}`:''}</span><button class="btn" id="print-receipt" type="button">Cetak struk</button></div>`;
-        receipt.querySelector('#print-receipt').addEventListener('click',()=>printSaleReceipt(sale));
+      const receipt = document.querySelector('#sale-receipt');
+      if (receipt) {
+        receipt.innerHTML = '<button class="btn" type="button">Buka nota transaksi tersimpan</button>';
+        const button = receipt.querySelector('button');
+        button.addEventListener('click', () => openSaleReceipt(data, button));
+        openSaleReceipt(data, button, true);
       }
     } catch(error) {
-      if(!navigator.onLine||/fetch|network|failed to connect|connection/i.test(error.message||'')){
+      if (committed) {
+        toast('Transaksi sudah tersimpan. Buka nota dari riwayat transaksi.', true);
+      } else if(!navigator.onLine||/fetch|network|failed to connect|connection/i.test(error.message||'')){
         const q=readQueue();q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[];renderCart();
         toast('Jaringan terputus. Transaksi masuk antrean untuk dikirim ulang.',true);renderOfflineQueue();
       } else toast(error.message||'Transaksi gagal.',true);
@@ -3106,7 +3222,9 @@ function reportFinanceTable(rows, mode, tableClass = '') {
   return `<table class="${tableClass}"><thead><tr><th>Waktu</th><th>Jenis</th><th>Nota / keterangan</th><th>Cabang</th>
     ${showValue ? '<th>Nominal</th>' : ''}${showCost ? '<th>HPP / biaya</th>' : ''}${showImpact ? '<th>Dampak laba</th>' : ''}</tr></thead>
     <tbody>${ordered.map((row) => `<tr><td>${new Date(row.date).toLocaleString('id-ID')}</td><td>${esc(row.kind)}</td>
-      <td>${esc(row.label || '-')}${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
+      <td>${esc(row.label || '-')}${!tableClass && row.kind === 'Penjualan produk' && (canSelectBranches() || state.profile?.role === 'operator')
+        ? `<div><button type="button" class="small-btn" data-report-sale-receipt="${esc(row.id)}">Detail nota</button></div>` : ''}
+      ${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
       ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Pembayaran stok tidak dihitung sebagai biaya laba.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
       ${showValue ? `<td>${money(row.value)}</td>` : ''}${showCost ? `<td>${money(row.cost)}</td>` : ''}
       ${showImpact ? `<td>${money(row.profitImpact)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
@@ -3120,6 +3238,8 @@ function openReportFinanceDetail(title, context, rows, mode, totals = []) {
     : '<div class="empty">Belum ada catatan untuk pilihan ini.</div>'}`, null);
   const table = host.querySelector('.finance-detail-table');
   if (table) bindRecordPages(table, [...table.querySelectorAll('tbody tr')]);
+  host.querySelectorAll('[data-report-sale-receipt]').forEach(button => button.addEventListener('click', () =>
+    openSaleReceipt(button.dataset.reportSaleReceipt, button)));
 }
 
 async function teamAdminRequest(payload) {

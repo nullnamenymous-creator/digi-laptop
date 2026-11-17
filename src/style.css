@@ -748,6 +748,16 @@ body { font-size: 14px; line-height: 1.5; }
 .laptop-unit-table .actions-cell { flex-wrap: wrap; }
 .laptop-unit-table .small-btn { max-width: 100%; white-space: normal; }
 .laptop-unit-table td::before { display: none; }
+.sale-note-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.sale-note-actions [hidden] { display: none; }
+.sale-note { padding: 12px; border: 1px solid var(--line); margin-top: 12px; overflow-wrap: anywhere; }
+.sale-note-header, .sale-note-thanks, .sale-note .receipt-qris { text-align: center; }
+.sale-note-header h2, .sale-note-header p { margin: 3px 0; }
+.sale-note-line, .sale-note-meta { padding: 6px 0; border-top: 1px dashed var(--line-dark); }
+.sale-note-line-title { display: flex; justify-content: space-between; gap: 8px; }
+.sale-note-line-title span { flex: none; }
+.sale-note-line-detail { font-size: 12px; color: var(--body); }
+.sale-note .receipt-qris img { display: block; width: 92px; margin: 4px auto; }
 .unit-label-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .unit-label-tools label, .unit-barcode-choice { display: flex; align-items: baseline; gap: 8px; }
 .unit-label-tools input, .unit-barcode-choice input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--green-700); align-self: center; }

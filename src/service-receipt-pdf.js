@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-export async function createServiceReceiptPdf({ title, ticketNumber, organization, branch, details, logo, qr, trackingCode, trackingUrl }) {
+export async function createServiceReceiptPdf({ title, ticketNumber, referenceLabel = 'No. tiket', organization, branch, details, logo, qr, trackingCode, trackingUrl }) {
   const pdf = await PDFDocument.create();
   pdf.setTitle(title);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -57,7 +57,7 @@ export async function createServiceReceiptPdf({ title, ticketNumber, organizatio
     draw(organization, margin + 75, 767, 15, bold);
     draw(branch, margin + 75, 747, 11, regular, muted);
     draw(title, margin, 692, 20, bold);
-    draw(`No. tiket ${ticketNumber}`, margin, 671, 11, regular, muted);
+    draw(`${referenceLabel} ${ticketNumber}`, margin, 671, 11, regular, muted);
     y = 646;
   };
   newPage();
