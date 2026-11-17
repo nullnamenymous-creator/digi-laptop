@@ -32,8 +32,8 @@ const rolePages = () => {
   if (role === 'investor') return ['reports'];
   if (role === 'technician') return canStockQc() ? ['quality','service'] : ['service'];
   if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality'] : [])];
-  if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','reports'];
-  return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty','reports', ...(atCentral() ? ['receiving'] : [])];
+  if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','contacts','reports'];
+  return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty', ...(role === 'operator' ? ['contacts'] : []), 'reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
@@ -196,7 +196,7 @@ async function afterAuth({ preferCentral = false } = {}) {
   subscribeOperationalUpdates();showShell();await showPage(state.page);syncPendingOfflineSales();
 }
 
-const pageLabel = (key) => key === 'quality' && !canTechnician() ? 'Laporan QC Teknisi' : pages[key]?.[0] || 'Dashboard';
+const pageLabel = (key) => key === 'contacts' && !canManage() ? 'Pelanggan' : key === 'quality' && !canTechnician() ? 'Laporan QC Teknisi' : pages[key]?.[0] || 'Dashboard';
 
 const staffRoleLabels = {
   owner: 'Pemilik',
@@ -211,7 +211,7 @@ function showShell() {
   const permittedPages = Object.entries(pages).filter(([key]) => rolePages().includes(key));
   const navHtml = permittedPages.map(([key, [, icon]]) => `<button class="nav-button${state.page === key ? ' active' : ''}" data-page="${key}"><span class="nav-icon">${icon}</span>${pageLabel(key)}</button>${key === 'quality' && canTechnician() ? `<button type="button" class="nav-button qc-subnav" data-qc-view="repair">Papan repair</button><button type="button" class="nav-button qc-subnav" data-qc-view="results">Hasil pemeriksaan QC</button>` : ''}`).join('');
   const mobilePages = {
-    operator: [['dashboard', 'Beranda'], ['cashier', 'Kasir'], ['inventory', 'Stok'], ['service', 'Servis']],
+    operator: [['dashboard', 'Beranda'], ['cashier', 'Kasir'], ['inventory', 'Stok'], ['service', 'Servis'], ['contacts', 'Pelanggan']],
     technician: [['quality', 'QC'], ['service', 'Servis']],
   }[state.profile.role] || [];
   const mobileNav = mobilePages.length ? `<nav class="staff-bottom-nav" aria-label="Navigasi cepat petugas">
@@ -541,7 +541,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'orders') await catalogOrdersPage(page);
     else if (name === 'service') await servicePage(page);
     else if (name === 'warranty') await warrantyPage(page);
-    else if (name === 'contacts') await contactsPage(page, state.contactTab || 'suppliers');
+    else if (name === 'contacts') await contactsPage(page, canManage() ? state.contactTab || 'suppliers' : 'customers');
     else if (name === 'finance') await financePage(page);
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
@@ -3656,7 +3656,7 @@ function openCustomerBroadcast(customers, sales) {
 }
 
 async function contactsPage(page, type) {
-  const supplierMode = type === 'suppliers';
+  const supplierMode = canManage() && type === 'suppliers';
   const table = supplierMode ? 'suppliers' : 'customers';
   const visibleBranch = state.profile.role === 'owner' ? state.branchId : state.profile.branch_id;
   let batchesQuery = supabase.from('intake_batches').select('id,branch_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,created_at,suppliers(name),branches(name)').order('created_at', { ascending: false });
@@ -3664,9 +3664,9 @@ async function contactsPage(page, type) {
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,customer_id,ticket_number,customer_name,customer_phone,final_cost,paid_amount,due_date,status,branches(name),created_at').order('created_at', { ascending: false });
   if (state.profile.role !== 'owner') { batchesQuery = batchesQuery.eq('branch_id', visibleBranch); salesQuery = salesQuery.eq('branch_id', visibleBranch); serviceQuery = serviceQuery.eq('branch_id', visibleBranch); }
   const [suppliers, customers, batches, sales, serviceTickets] = await Promise.all([
-    fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone,address,notes,created_at').order('name')),
+    canManage() ? fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone,address,notes,created_at').order('name')) : [],
     fetchAllRows(supabase.from('customers').select('id,name,phone,email,address,notes,customer_type,created_at').order('name')),
-    fetchAllRows(batchesQuery), fetchAllRows(salesQuery), fetchAllRows(serviceQuery),
+    canManage() ? fetchAllRows(batchesQuery) : [], fetchAllRows(salesQuery), fetchAllRows(serviceQuery),
   ]);
   const rowsData = supplierMode ? suppliers : customers;
   const showContactActions = !supplierMode || canManage();
@@ -3693,11 +3693,11 @@ async function contactsPage(page, type) {
       ${whatsapp ? `<a class="small-btn" href="https://wa.me/${whatsapp}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ''}
       ${canManage() ? `<button class="small-btn" type="button" data-edit-contact="${item.id}">Edit</button><button class="small-btn" type="button" data-delete-contact="${item.id}">Hapus</button>` : ''}</div></td>` : ''}</tr>`;
   }).join('');
-  const contactsTabs = `<div class="contact-tabs"><button class="contact-tab${supplierMode ? ' active' : ''}" data-contact-tab="suppliers">Supplier <span>${suppliers.length}</span></button><button class="contact-tab${!supplierMode ? ' active' : ''}" data-contact-tab="customers">Pelanggan <span>${customers.length}</span></button></div>`;
+  const contactsTabs = canManage() ? `<div class="contact-tabs"><button class="contact-tab${supplierMode ? ' active' : ''}" data-contact-tab="suppliers">Supplier <span>${suppliers.length}</span></button><button class="contact-tab${!supplierMode ? ' active' : ''}" data-contact-tab="customers">Pelanggan <span>${customers.length}</span></button></div>` : '';
   const supplierDebt = supplierMode ? `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa tagihan dihitung dari total invoice dikurangi pembayaran yang sudah dicatat.</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL TAGIHAN</th><th>DIBAYAR</th><th>SISA HUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay-batch="${batch.id}">Bayar</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>` : `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis untuk pelanggan.</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / NOTA</th><th>CABANG</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA PIUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect-contact="${entry.id}" data-source="${entry.source_type}">Terima</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>`;
   const totalDebt = supplierMode ? payables.reduce((sum, batch) => sum + batch.remaining, 0) : 0;
   const totalReceivable = supplierMode ? 0 : receivables.reduce((sum, entry) => sum + entry.remaining, 0);
-  page.innerHTML = `${header('Pelanggan & supplier', 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.', `${!supplierMode && canManage() ? '<button class="btn" type="button" id="customer-broadcast">Broadcast WhatsApp</button>' : ''}<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${showContactActions ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${showContactActions ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
+  page.innerHTML = `${header(pageLabel('contacts'), canManage() ? 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.' : 'Kontak pelanggan dan riwayat transaksi cabang ini.', `${!supplierMode && canManage() ? '<button class="btn" type="button" id="customer-broadcast">Broadcast WhatsApp</button>' : ''}<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${showContactActions ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${showContactActions ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
   page.querySelectorAll('[data-contact-tab]').forEach((button) => button.addEventListener('click', async () => { state.contactTab = button.dataset.contactTab; await contactsPage(page, state.contactTab); }));
   const contactBody = page.querySelector('#contact-rows');
   const contactRows = [...contactBody.querySelectorAll('tr')];
