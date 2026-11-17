@@ -1742,4 +1742,43 @@ button.storefront-card:focus-visible { outline: 2px solid #17633e; outline-offse
   }
   .warranty-history-table td[data-label="Aksi"]::before { content: none; }
 }
-.cashier-payment .commission-fields[hidden] { display: none; }
+.cashier-payment > .credit-fields { margin-top: 10px; }
+.cashier-checkout .cashier-fields { align-items: start; }
+.cashier-options { display: grid; gap: 6px; margin-top: 12px; }
+.cashier-options details { border: 1px solid var(--line); background: #f8faf7; }
+.cashier-options summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.cashier-options summary::-webkit-details-marker { display: none; }
+.cashier-options summary::after { content: '+'; flex: none; color: var(--muted); font-size: 15px; }
+.cashier-options details[open] > summary::after { content: '-'; }
+.cashier-options summary small {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-weight: 500;
+}
+.cashier-options details > .cashier-fields { padding: 4px 10px 10px; }
+.cashier-options .commission-fields { min-inline-size: 0; margin: 0; padding: 8px; border: 1px solid var(--line); }
+.cashier-options .commission-fields legend { padding: 0 4px; font-size: 11px; font-weight: 700; }
+.cashier-options .commission-fields[hidden], #cashier-discount-hint:empty { display: none; }
+.cashier-checkout .cashier-submit {
+  background: #f0f5ee;
+  border: 1px solid var(--line);
+  padding: 10px;
+  gap: 8px;
+}
+.cashier-checkout .cashier-submit > span b { margin-top: 0; }

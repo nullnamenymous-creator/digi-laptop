@@ -2554,7 +2554,36 @@ async function cashierPage(page) {
   const availableProducts=products.filter(product=>(available.get(product.id)||0)>0);
   const queueKey=`digi-sale-outbox:${state.organization.id}:${branchId}`,readQueue=()=>JSON.parse(localStorage.getItem(queueKey)||'[]'),saveQueue=(q)=>localStorage.setItem(queueKey,JSON.stringify(q));
   let cart=[];
-  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div><div class="panel-sub">Atur pelanggan dan pembayaran.</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form"><section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section><div class="form-grid"><div class="field"><label>Pelanggan terdaftar</label><select name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div><div class="field"><label>Nama pembeli</label><input name="customer_name" placeholder="Nama pembeli umum" /></div><div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div><div class="field"><label>Harga pelanggan</label><select name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select><small class="field-hint" id="customer-price-hint">Pembeli umum memakai harga end user secara default. Pilih reseller jika transaksi menggunakan harga reseller.</small></div></div><div class="form-grid cashier-payment"><div class="field"><label>Metode pembayaran</label><select name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div><div class="field"><label>Pelunasan</label><select name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div><div class="field"><label for="cashier-discount">Potongan harga (Rp)</label><input id="cashier-discount" name="discount_amount" type="number" min="0" step="1" placeholder="0" aria-describedby="cashier-discount-hint" /><div id="cashier-discount-hint" class="field-hint" aria-live="polite"></div></div><div class="field"><label for="commission-mode">Komisi mediator</label><select id="commission-mode" name="commission_method"><option value="">Tanpa mediator</option><option value="cashier">Kasir langsung bayar komisi</option><option value="retained">Mediator potong dari setoran</option><option value="pending">Komisi dibayar nanti</option></select></div><fieldset class="commission-fields form-grid full" hidden disabled><legend>Rincian mediator</legend><div class="field"><label for="mediator-name">Nama mediator</label><input id="mediator-name" name="mediator_name" maxlength="120" required /></div><div class="field"><label for="commission-amount">Komisi (Rp)</label><input id="commission-amount" name="commission_amount" type="number" min="1" step="1" required /></div><div class="field-hint full" id="commission-cash" aria-live="polite"></div></fieldset><div class="credit-fields form-grid full" hidden><div class="field"><label>Dibayar sekarang</label><input name="paid_amount" type="number" min="0" value="0" /></div><div class="field"><label>Jatuh tempo</label><input name="due_date" type="date" /></div></div></div><div class="cashier-submit"><span>Total setelah potongan <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div></form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
+  page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form">
+    <section class="panel table-panel cashier-cart"><div class="panel-head"><div><div class="panel-title">Keranjang</div><div class="panel-sub" id="cart-count">Belum ada barang</div></div><b id="cart-total">${money(0)}</b></div><ul class="cashier-cart-lines" id="cart-lines"></ul></section>
+    <section class="cashier-payment" aria-label="Pembayaran">
+      <div class="form-grid cashier-fields">
+        <div class="field"><label for="sale-payment-method">Metode</label><select id="sale-payment-method" name="payment_method"><option value="cash">Tunai</option><option value="transfer">Transfer</option><option value="qris">QRIS</option><option value="debit">Kartu debit</option><option value="other">Lainnya</option></select></div>
+        <div class="field"><label for="sale-payment-mode">Pelunasan</label><select id="sale-payment-mode" name="payment_mode"><option value="full">Lunas sekarang</option><option value="credit">Tempo / piutang</option></select></div></div>
+      <div class="credit-fields form-grid full" hidden>
+        <div class="field"><label for="sale-paid-amount">Dibayar sekarang</label><input id="sale-paid-amount" name="paid_amount" type="number" min="0" value="0" /></div>
+        <div class="field"><label for="sale-due-date">Jatuh tempo</label><input id="sale-due-date" name="due_date" type="date" /></div></div>
+    </section>
+    <div class="cashier-options">
+      <details id="cashier-customer">
+        <summary><span>Pelanggan</span><small id="cashier-customer-summary">Pembeli umum</small></summary>
+        <div class="form-grid cashier-fields">
+        <div class="field"><label for="sale-customer-id">Pelanggan terdaftar</label><select id="sale-customer-id" name="customer_id"><option value="">Pembeli umum</option>${customers.map(customer=>`<option value="${customer.id}">${esc(customer.name)} · ${customer.customer_type==='reseller'?'Reseller':'End user'} · ${esc(customer.phone||'tanpa telepon')}</option>`).join('')}</select></div>
+        <div class="field"><label for="sale-customer-name">Nama pembeli</label><input id="sale-customer-name" name="customer_name" placeholder="Pembeli umum" /></div>
+        <div class="field"><label for="sale-customer-phone">No. telepon / WhatsApp</label><input id="sale-customer-phone" name="customer_phone" type="tel" autocomplete="tel" maxlength="32" /></div>
+        <div class="field"><label for="sale-customer-type">Harga pelanggan</label><select id="sale-customer-type" name="customer_type"><option value="end_user">End user</option><option value="reseller">Reseller</option></select></div></div>
+      </details>
+      <details id="cashier-adjustments">
+        <summary><span>Potongan &amp; komisi</span><small id="cashier-adjustment-summary">Opsional</small></summary>
+        <div class="form-grid cashier-fields">
+        <div class="field"><label for="cashier-discount">Potongan harga (Rp)</label><input id="cashier-discount" name="discount_amount" type="number" min="0" step="1" placeholder="0" aria-describedby="cashier-discount-hint" /><div id="cashier-discount-hint" class="field-hint" aria-live="polite"></div></div>
+        <div class="field"><label for="commission-mode">Komisi mediator</label><select id="commission-mode" name="commission_method"><option value="">Tanpa mediator</option><option value="cashier">Kasir langsung bayar komisi</option><option value="retained">Mediator potong dari setoran</option><option value="pending">Komisi dibayar nanti</option></select></div><fieldset class="commission-fields form-grid full" hidden disabled><legend>Rincian mediator</legend>
+        <div class="field"><label for="mediator-name">Nama mediator</label><input id="mediator-name" name="mediator_name" maxlength="120" required /></div>
+        <div class="field"><label for="commission-amount">Komisi (Rp)</label><input id="commission-amount" name="commission_amount" type="number" min="1" step="1" required /></div><div class="field-hint full" id="commission-cash" aria-live="polite"></div></fieldset></div>
+      </details>
+    </div>
+    <div class="cashier-submit"><span>Total bayar <b id="checkout-total">${money(0)}</b></span><button class="btn primary" type="submit" disabled>Simpan transaksi</button></div>
+  </form><div id="sale-receipt"></div><section id="offline-queue"></section></section><section class="panel cashier-recent"><div class="panel-head"><div><div class="panel-title">Transaksi terbaru</div><div class="panel-sub">Cetak ulang struk dari transaksi tersimpan</div></div></div>${sales.length?`<div class="table-wrap"><table><thead><tr><th>NO. STRUK</th><th>TOTAL</th><th>AKSI</th></tr></thead><tbody>${sales.map(sale=>`<tr><td class="product-name">${esc(sale.receipt_number)}<div class="field-hint">${esc(sale.customer_name||'Pembeli umum')} · ${new Date(sale.created_at).toLocaleString('id-ID')}</div></td><td>${money(sale.total)}<div class="field-hint">Dibayar ${money(sale.paid_amount)}</div></td><td><button class="small-btn" type="button" data-print-sale="${sale.id}">Buka nota</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty"><b>Belum ada transaksi</b>Transaksi tersimpan di cabang ini akan tampil di sini.</div>'}</section></div>`;
   const form = page.querySelector('#sale-form');
   const productSearch = page.querySelector('#sale-product-search');
   const priceFor = product => form.customer_type.value === 'reseller' ? Number(product.reseller_price) : publicRetailPrice(product);
@@ -2673,7 +2702,6 @@ async function cashierPage(page) {
     form.customer_phone.value = customer?.phone || '';
     form.customer_type.value = customer?.customer_type === 'reseller' ? 'reseller' : 'end_user';
     form.customer_type.disabled = Boolean(customer);
-    page.querySelector('#customer-price-hint').textContent = customer ? 'Harga mengikuti tipe pelanggan terdaftar.' : 'Pilih tipe harga untuk pembeli umum.';
     renderCart();
   });
   form.customer_type.addEventListener('change', renderCart);
@@ -2683,13 +2711,32 @@ async function cashierPage(page) {
     form.querySelector('.credit-fields').hidden = !credit;
     form.paid_amount.required = credit;
     form.due_date.required = credit;
+    if (credit && !form.customer_name.value.trim()) form.querySelector('#cashier-customer').open = true;
   });
+  const customerDetails = form.querySelector('#cashier-customer');
+  const adjustmentDetails = form.querySelector('#cashier-adjustments');
+  const updateCustomerSummary = () => {
+    const name = form.customer_name.value.trim() || 'Pembeli umum';
+    const priceType = form.customer_type.value === 'reseller' ? ' · Reseller' : '';
+    form.querySelector('#cashier-customer-summary').textContent = name + priceType;
+  };
+  form.addEventListener('input', updateCustomerSummary);
+  form.addEventListener('change', updateCustomerSummary);
+  form.addEventListener('invalid', (event) => {
+    const details = event.target.closest('details');
+    if (details) details.open = true;
+  }, true);
   const commissionFields = form.querySelector('.commission-fields');
   const renderCommissionCash = () => {
-    const { total, validDiscount } = checkoutAmounts();
+    const { total, discount, validDiscount } = checkoutAmounts();
     const paid = form.payment_mode.value === 'full' ? total : Number(form.paid_amount.value);
     const amount = Number(form.commission_amount.value);
     const method = form.commission_method.value;
+    const summary = [
+      validDiscount && discount > 0 ? `Potongan ${money(discount)}` : '',
+      method ? 'Mediator' : '',
+    ].filter(Boolean);
+    form.querySelector('#cashier-adjustment-summary').textContent = summary.join(' · ') || 'Opsional';
     page.querySelector('#commission-cash').textContent = validDiscount && amount > 0
       ? method === 'pending' ? `Kas masuk ${money(paid)} · Komisi terutang ${money(amount)}`
         : `Kas bersih transaksi ${money(paid - amount)}` : '';
@@ -2714,7 +2761,11 @@ async function cashierPage(page) {
     if (!validDiscount) return toast('Potongan harus lebih kecil dari subtotal dan dalam rupiah bulat.', true);
     const paid = form.payment_mode.value === 'full' ? total : Number(form.paid_amount.value);
     if (!Number.isFinite(paid) || paid < 0 || paid > total) return toast('Nominal pembayaran tidak valid.', true);
-    if (paid < total && !String(form.customer_name.value || '').trim()) return toast('Nama pembeli wajib diisi untuk transaksi piutang.', true);
+    if (paid < total && !form.customer_name.value.trim()) {
+      customerDetails.open = true;
+      form.customer_name.focus();
+      return toast('Nama pembeli wajib diisi untuk transaksi piutang.', true);
+    }
     if (paid < total && !form.due_date.value) return toast('Tanggal jatuh tempo wajib untuk piutang.', true);
     const method = form.commission_method.value;
     const commission = method ? {
@@ -2741,7 +2792,9 @@ async function cashierPage(page) {
       if (!navigator.onLine) {
         const q=readQueue(); q.push(payload);saveQueue(q);cart.forEach(line=>{let left=line.quantity;for(const item of stock){if(item.product_id!==line.product.id||left<=0)continue;const take=Math.min(Number(item.quantity),left);item.quantity=Number(item.quantity)-take;left-=take}available.set(line.product.id,Math.max(0,(available.get(line.product.id)||0)-line.quantity))});localStorage.setItem(cacheKey,JSON.stringify({products,customers,stock:stock.filter(item=>item.quantity>0),cachedAt:new Date().toISOString()}));cart=[]; form.discount_amount.value = ''; form.commission_method.value = '';
         form.mediator_name.value = ''; form.commission_amount.value = '';
-        commissionFields.hidden = commissionFields.disabled = true; renderCart();
+        commissionFields.hidden = commissionFields.disabled = true;
+        adjustmentDetails.open = false;
+        renderCart();
         toast('Transaksi disimpan di antrean perangkat. Belum tercatat di database pusat.'); renderOfflineQueue(); return;
       }
       const {data,error}=await supabase.rpc('create_cashier_sale_with_commission',{
