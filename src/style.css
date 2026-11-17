@@ -916,6 +916,23 @@ body { font-size: 14px; line-height: 1.5; }
 .report-stock-value { margin-bottom: 14px; }
 .report-stock-value [data-report-stock-value] { padding: 0 12px 10px; }
 .report-stock-value .cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); margin: 0; }
+.report-stock-value .card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.report-stock-value .card-value {
+  margin: 0;
+  font-size: clamp(19px, 2vw, 24px);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.report-stock-value .card-sub {
+  margin: 0;
+  color: #58675d;
+  line-height: 1.45;
+}
 .report-stock-value .field-hint { margin: 8px 0 0; }
 .storefront { width: min(1240px, 100%); margin: auto; padding: 0 24px 48px; color: #142d24; }
 .storefront-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 0; }
