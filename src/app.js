@@ -2770,11 +2770,20 @@ function printerSettings() {
 const receiptSaleFields = '*,branches(name),customers(phone),sale_items(*,products(specifications),stock_items(barcode))';
 const saleReceiptThanks = 'Terima kasih telah berbelanja di Digital Laptop Jombang. Semoga perangkat Anda bermanfaat. Jika membutuhkan bantuan, silakan hubungi kami.';
 
-function saleReceiptQris(balance) {
-  const payable = balance > 0 && balance <= 10000000;
-  return `<section class="receipt-qris"><b>${payable ? 'Bayar sisa tagihan via QRIS' : 'QRIS Digital Laptop'}</b>
-    <img src="${esc(new URL('/store-qris.svg', location.origin).href)}" alt="QRIS Digital Laptop" />
-    <div>${payable ? `${money(balance)} · Kirim bukti ke petugas toko.` : balance > 0 ? 'Hubungi petugas untuk pembayaran sisa tagihan.' : 'Nota lunas.'}</div></section>`;
+async function prepareSaleUnitBarcodes(details) {
+  if (!details.lines.some(line => line.barcode)) return;
+  const { default: JsBarcode } = await import('jsbarcode');
+  for (const line of details.lines) {
+    if (!line.barcode) continue;
+    const canvas = document.createElement('canvas');
+    try {
+      JsBarcode(canvas, line.barcode, { format: 'CODE128', width: 2, height: 48, margin: 12, displayValue: true, fontSize: 15, background: '#ffffff', lineColor: '#000000' });
+      line.barcodeImage = canvas.toDataURL('image/png');
+    } catch {
+      // Keep the stored identity readable even for unsupported legacy codes.
+      line.barcodeImage = null;
+    }
+  }
 }
 
 async function saleReceiptCashier(sale) {
@@ -2810,6 +2819,7 @@ function saleReceiptDetails(sale) {
       });
       const barcode = line.unit_barcode ?? line.stock_items?.barcode;
       return {
+        barcode: barcode || '',
         name: `${line.product_name || 'Barang'} × ${Number(line.quantity)}`,
         price: money(discount ? Number(line.unit_price) * Number(line.quantity) : line.line_total ?? Number(line.unit_price) * Number(line.quantity)),
         detail: [barcode ? `Barcode ${barcode}` : '', details.length
@@ -2831,9 +2841,10 @@ function saleReceiptMarkup(sale, details) {
       <p>${esc(state.organization.phone || '')}</p><p>${esc(details.branch)} · Nota ${esc(sale.receipt_number)}</p></header>
     <div class="sale-note-meta">${details.customer.map(([label, value]) => `<div><b>${label}</b> ${esc(value)}</div>`).join('')}</div>
     ${details.lines.map(line => `<div class="sale-note-line"><div class="sale-note-line-title"><b>${esc(line.name)}</b><span>${esc(line.price)}</span></div>
-      ${line.detail.map(text => `<div class="sale-note-line-detail">${esc(text)}</div>`).join('')}</div>`).join('') || '<p>Detail barang tidak tersedia.</p>'}
+      ${line.detail.map(text => `<div class="sale-note-line-detail">${esc(text)}</div>`).join('')}
+      ${line.barcodeImage ? `<div class="sale-unit-barcode"><img src="${line.barcodeImage}" alt="Barcode unit ${esc(line.barcode)}" /></div>` : ''}</div>`).join('') || '<p>Detail barang tidak tersedia.</p>'}
     <div class="sale-note-meta">${details.totals.map(([label, value]) => `<div><b>${label}</b> ${esc(value)}</div>`).join('')}</div>
-    ${saleReceiptQris(details.balance)}<p class="sale-note-thanks">${saleReceiptThanks}</p>
+    <p class="sale-note-thanks">${saleReceiptThanks}</p>
   </article>`;
 }
 
@@ -2852,6 +2863,7 @@ async function prepareSaleReceiptWhatsApp(host, sale, details) {
     const bytes = await createServiceReceiptPdf({
       title: 'Nota penjualan', referenceLabel: 'No. nota', ticketNumber: sale.receipt_number,
       organization: state.organization.name, branch: details.branch, logo: '/store-logo-transparent.png',
+      barcodes: details.lines.filter(line => line.barcodeImage).map(line => ({ label: line.name, image: line.barcodeImage })),
       details: [...details.customer, ...details.lines.map(line => [line.name, [line.price, ...line.detail].join('\n')]),
         ...details.totals, ['Terima kasih', saleReceiptThanks]],
     });
@@ -2890,6 +2902,8 @@ async function openSaleReceipt(id, trigger, saved = false) {
     sale.receipt_cashier_name = await saleReceiptCashier(sale);
     if (!trigger.isConnected) return;
     const details = saleReceiptDetails(sale);
+    await prepareSaleUnitBarcodes(details);
+    if (!trigger.isConnected) return;
     const note = saleReceiptMarkup(sale, details);
     const format = printPreferences().receipt;
     const host = openModal(saved ? 'Transaksi tersimpan' : 'Detail transaksi penjualan', esc(sale.receipt_number),
@@ -2922,12 +2936,12 @@ async function openSaleReceipt(id, trigger, saved = false) {
 }
 
 const saleNotePrintStyles = `
-  .sale-note-header,.sale-note-thanks,.receipt-qris{text-align:center}
+  .sale-note-header,.sale-note-thanks,.sale-unit-barcode{text-align:center}
   .sale-note-header h2,.sale-note-header p{margin:2px 0}
   .sale-note-meta,.sale-note-line{padding:5px 0;border-top:1px dashed #666;break-inside:avoid;overflow-wrap:anywhere}
   .sale-note-line-title{display:flex;justify-content:space-between;gap:6px}
   .sale-note-line-title span{flex:none}.sale-note-line-detail{font-size:10px}
-  .receipt-qris{break-inside:avoid}.receipt-qris img{display:block;width:36mm;max-width:100%;margin:4px auto}
+  .sale-unit-barcode{break-inside:avoid}.sale-unit-barcode img{display:block;width:100%;max-width:70mm;height:auto;margin:5px auto;image-rendering:crisp-edges}
 `;
 
 let offlineSyncInProgress = false;

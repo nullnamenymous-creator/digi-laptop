@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-export async function createServiceReceiptPdf({ title, ticketNumber, referenceLabel = 'No. tiket', organization, branch, details, logo, qr, trackingCode, trackingUrl }) {
+export async function createServiceReceiptPdf({ title, ticketNumber, referenceLabel = 'No. tiket', organization, branch, details, logo, qr, trackingCode, trackingUrl, barcodes = [] }) {
   const pdf = await PDFDocument.create();
   pdf.setTitle(title);
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -78,6 +78,17 @@ export async function createServiceReceiptPdf({ title, ticketNumber, referenceLa
     }
     page.drawLine({ start: { x: margin, y: y + 5 }, end: { x: width - margin, y: y + 5 }, color: rule, thickness: .6 });
     y -= 10;
+  }
+
+  for (const barcode of barcodes) {
+    const image = await pdf.embedPng(barcode.image);
+    const scaled = image.scale(Math.min(300 / image.width, 85 / image.height));
+    const labels = lines(barcode.label, bold, 10, contentWidth);
+    const needed = scaled.height + labels.length * 13 + 20;
+    if (y < margin + needed) newPage();
+    for (const label of labels) { draw(label, margin, y, 10, bold); y -= 13; }
+    page.drawImage(image, { x: margin, y: y - scaled.height, ...scaled });
+    y -= scaled.height + 16;
   }
 
   if (qrImage) {
