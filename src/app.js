@@ -2478,6 +2478,14 @@ function saleReceiptQris(balance) {
     <div>${payable ? `${money(balance)} · Kirim bukti ke petugas toko.` : balance > 0 ? 'Hubungi petugas untuk pembayaran sisa tagihan.' : 'Nota lunas.'}</div></section>`;
 }
 
+async function saleReceiptCashier(sale) {
+  if (!sale.cashier_id) return 'Tidak tersedia';
+  const {data, error} = await supabase.from('profiles').select('full_name')
+    .eq('organization_id', sale.organization_id).eq('id', sale.cashier_id).maybeSingle();
+  if (error) return 'Tidak tersedia';
+  return data?.full_name?.trim() || 'Tidak tersedia';
+}
+
 function saleReceiptDetails(sale) {
   const phone = sale.customer_phone ?? sale.customers?.phone ?? '';
   const branch = sale.branches?.name || branchName(sale.branch_id);
@@ -2491,6 +2499,7 @@ function saleReceiptDetails(sale) {
     balance: Math.max(0, total - paid),
     customer: [
       ['Waktu transaksi', new Date(sale.created_at).toLocaleString('id-ID')],
+      ['Kasir', sale.receipt_cashier_name || 'Tidak tersedia'],
       ['Pembeli', sale.customer_name || 'Pembeli umum'],
       ['Telepon pembeli', phone || '—'],
     ],
@@ -2579,6 +2588,7 @@ async function openSaleReceipt(id, trigger, saved = false) {
   try {
     const sale = checkError(await supabase.from('sales').select(receiptSaleFields)
       .eq('organization_id', state.organization.id).eq('id', id).single());
+    sale.receipt_cashier_name = await saleReceiptCashier(sale);
     if (!trigger.isConnected) return;
     const details = saleReceiptDetails(sale);
     const note = saleReceiptMarkup(sale, details);
