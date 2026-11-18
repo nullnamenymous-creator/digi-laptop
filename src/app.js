@@ -975,13 +975,46 @@ async function partsStockPage(page) {
   const search=page.querySelector('#parts-stock-search'),body=page.querySelector('tbody'),rows=[...body.querySelectorAll('[data-part-search]')];
   const render=()=>filterPagedRows(body,rows,row=>row.dataset.partSearch.includes(search.value.trim().toLowerCase()),body.querySelector('[data-parts-empty]'));
   search.addEventListener('input',render);render();bindQcUnitDetails(page);
+  if (canIntake()) {
+    const catalog = (await fetchAllRows(supabase.from('products').select('*').eq('organization_id',state.organization.id).eq('category','Sparepart').order('name'))).filter(product=>!product.archived_at);
+    if(!page.isConnected || state.branchId!==branchId)return;
+    page.insertAdjacentHTML('beforeend',`<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Kelola data sparepart</div><div class="panel-sub">Edit identitas dan harga. Hapus hanya data yang belum mempunyai riwayat stok atau transaksi. Untuk salah penerimaan, gunakan pembatalan di halaman Penerimaan.</div></div><input type="search" id="part-master-search" class="search" placeholder="Cari nama atau SKU sparepart" /></div><div class="table-wrap"><table><thead><tr><th>SPAREPART</th><th>SPESIFIKASI</th><th>AKSI</th></tr></thead><tbody id="part-master-body">${catalog.map(product=>`<tr data-part-master="${esc([product.name,product.sku,product.model].join(' ').toLowerCase())}"><td>${esc(product.name)}<div class="field-hint">${esc(product.sku)}</div></td><td>${esc(product.model || '—')}</td><td><div class="actions-cell"><button class="small-btn" data-edit-part="${product.id}">Edit</button><button class="small-btn" data-delete-part="${product.id}">Hapus</button></div></td></tr>`).join('')}<tr data-part-master-empty><td colspan="3">Belum ada data sparepart yang cocok.</td></tr></tbody></table></div></section>`);
+    const masterBody=page.querySelector('#part-master-body'),masterRows=[...masterBody.querySelectorAll('[data-part-master]')],masterSearch=page.querySelector('#part-master-search');
+    const renderMaster=()=>filterPagedRows(masterBody,masterRows,row=>row.dataset.partMaster.includes(masterSearch.value.trim().toLowerCase()),masterBody.querySelector('[data-part-master-empty]'));
+    masterSearch.addEventListener('input',renderMaster);renderMaster();
+    masterBody.addEventListener('click',event=>{
+      const edit=event.target.closest('[data-edit-part]'),remove=event.target.closest('[data-delete-part]');
+      const product=catalog.find(item=>item.id===(edit?.dataset.editPart || remove?.dataset.deletePart));
+      if(!product)return;
+      if(edit)return sparepartEditModal(product);
+      openModal('Hapus data sparepart?', 'Data stok, pemakaian teknisi, dan transaksi yang sudah tercatat tetap dilindungi.',`<div class="notice"><strong>${esc(product.name)}</strong><p>Hanya sparepart yang belum terhubung dengan riwayat apa pun yang bisa dihapus. Menghapus master tidak membatalkan penerimaan atau mengembalikan uang supplier.</p></div>`,async()=>{
+        if(!canIntake() || state.branchId!==branchId)throw new Error('Akses hapus sparepart ditolak.');
+        const result=await supabase.from('products').delete().eq('id',product.id).eq('organization_id',state.organization.id).eq('category','Sparepart').select('id');
+        if(result.error?.code==='23503')throw new Error('Sparepart sudah memiliki riwayat. Jika salah input penerimaan, buka Penerimaan & barcode; pembatalan penerimaan berbayar dilakukan Pemilik.');
+        if(result.error)throw result.error;
+        if(!result.data?.length)throw new Error('Akses hapus ditolak. Pastikan migrasi akses sparepart Admin Pusat sudah dijalankan.');
+        toast('Data sparepart dihapus.');await showPage('parts_stock');
+      },'Hapus sparepart');
+    });
+  }
   page.querySelector('#parts-intake')?.addEventListener('click',async()=>{
     try {
       const [products,suppliers]=await Promise.all([fetchAllRows(supabase.from('products').select('*').order('name')),fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone').order('name'))]);
-      intakeBatchModal(products.filter(product=>!product.archived_at && String(product.category).toLowerCase()!=='laptop'),suppliers);
-      const category=document.querySelector('#active-modal [name="new_category"]');category.value='Sparepart';category.dispatchEvent(new Event('change'));
+      intakeBatchModal(products,suppliers,'Sparepart');
     }catch(error){toast(error.message,true);}
   });
+}
+
+function sparepartEditModal(product) {
+  if(!canIntake() || product.category!=='Sparepart')return;
+  const branchId=state.branchId,organizationId=state.organization.id;
+  openModal('Edit sparepart','Perubahan master tidak mengubah modal lot yang sudah diterima atau biaya sparepart yang sudah dipakai teknisi.',`<div class="form-grid">${[['name','Nama sparepart'],['brand','Merek'],['model','Spesifikasi / kompatibilitas']].map(([key,label])=>`<div class="field ${key==='model'?'full':''}"><label>${label}</label><input name="${key}" value="${esc(product[key] || '')}" ${key==='name'?'required':''} /></div>`).join('')}${[['retail_price','Harga end user'],['reseller_price','Harga reseller']].map(([key,label])=>`<div class="field"><label>${label}</label><input name="${key}" type="number" min="0" value="${Number(product[key] || 0)}" required /></div>`).join('')}</div>`,async form=>{
+    if(!canIntake() || state.branchId!==branchId || state.organization.id!==organizationId)throw new Error('Akses edit sparepart berubah. Buka kembali halaman sparepart.');
+    const changes={name:String(form.get('name')).trim(),brand:String(form.get('brand')).trim(),model:String(form.get('model')).trim(),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price'))};
+    if(!changes.name || [changes.retail_price,changes.reseller_price].some(value=>!Number.isFinite(value)||value<0))throw new Error('Nama wajib diisi dan harga harus nol atau lebih.');
+    checkError(await supabase.from('products').update(changes).eq('id',product.id).eq('organization_id',organizationId).eq('category','Sparepart').select('id').single());
+    toast('Data sparepart diperbarui.');await showPage('parts_stock');
+  },'Simpan perubahan');
 }
 
 async function qcHandoverPage(page) {
@@ -1210,6 +1243,9 @@ async function receivingPage(page) {
     <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">Pindai & cek</div><div class="card-sub">Teknisi mengerjakan halaman QC & repair</div></article></div>
     <section class="panel table-panel" data-intake-history><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari kode unit / barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button>${canManage() ? ` <button type="button" class="small-btn" data-edit-intake-unit="${item.id}">Edit</button> <button type="button" class="small-btn" data-delete-intake-unit="${item.id}">Hapus</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
+  page.querySelector('#new-intake').textContent = 'Terima laptop';
+  page.querySelector('#new-intake').insertAdjacentHTML('afterend','<button class="btn" id="new-parts-intake">Terima sparepart</button>');
+  page.querySelector('#new-parts-intake').addEventListener('click', () => intakeBatchModal(products, suppliers, 'Sparepart'));
   page.querySelector('#new-intake').addEventListener('click', () => intakeBatchModal(products, suppliers));
   page.querySelectorAll('[data-intake-qc]').forEach(button => button.addEventListener('click', () => { state.qcSearchQuery = button.dataset.intakeQc; state.qcView = 'results'; showPage('quality'); }));
   page.querySelectorAll('[data-intake-units]').forEach(button => button.addEventListener('click', () => { const batch = batches.data.find(row => row.id === button.dataset.intakeUnits); if (batch) openIntakeBatchUnits(batch,button); }));
@@ -1307,7 +1343,41 @@ async function receivingPage(page) {
   filterIntake();
 }
 
-function intakeBatchModal(products, suppliers) {
+function setupSparepartFields(form) {
+  const types = {
+    SSD: ['Kapasitas (contoh: 256GB)', 'Antarmuka (SATA / NVMe)', 'Ukuran (2.5 inci / M.2 2280)'],
+    'Hard disk': ['Kapasitas (contoh: 1TB)', 'Antarmuka (SATA)', 'Ukuran / RPM'],
+    RAM: ['Kapasitas (contoh: 8GB)', 'Generasi (DDR3 / DDR4 / DDR5)', 'Kecepatan / SODIMM'],
+    LCD: ['Ukuran layar (inci)', 'Resolusi', 'Konektor / jumlah pin'],
+    Keyboard: ['Model laptop yang cocok', 'Layout keyboard', 'Backlight / konektor'],
+    Baterai: ['Kode / part number baterai', 'Kapasitas / tegangan', 'Model laptop yang cocok'],
+    'Charger / adaptor': ['Daya / tegangan / arus', 'Ukuran konektor', 'Model laptop yang cocok'],
+    'Kipas / heatsink': ['Model laptop yang cocok', 'Kode sparepart', 'Spesifikasi tambahan'],
+    'Casing / engsel': ['Model laptop yang cocok', 'Bagian / posisi', 'Spesifikasi tambahan'],
+    'Kabel / flex': ['Model laptop yang cocok', 'Kode / konektor', 'Spesifikasi tambahan'],
+    Lainnya: ['Nama / jenis sparepart', 'Spesifikasi', 'Kompatibilitas']
+  };
+  const container = form.querySelector('.new-product-fields');
+  container.insertAdjacentHTML('afterbegin', `<div class="field full"><label>Jenis sparepart</label><select name="part_type">${Object.keys(types).map(type=>`<option>${esc(type)}</option>`).join('')}</select></div>${[0,1,2].map(index=>`<div class="field"><label data-part-spec-label="${index}"></label><input name="part_spec_${index}" /></div>`).join('')}`);
+  form.new_model.type = 'hidden'; form.new_model.closest('.field').hidden = true;
+  form.new_category.closest('.field').hidden = true;
+  let manualName = false;
+  const sync = () => {
+    types[form.part_type.value].forEach((label,index)=>{
+      form.querySelector(`[data-part-spec-label="${index}"]`).textContent=label;
+    });
+    const specs=[0,1,2].map(index=>form.elements.namedItem(`part_spec_${index}`).value.trim());
+    form.new_model.value=[form.part_type.value,...specs].filter(Boolean).join(' | ');
+    if(!manualName)form.new_name.value=[form.part_type.value,form.new_brand.value.trim(),...specs].filter(Boolean).join(' ');
+  };
+  form.part_type.addEventListener('change',()=>{[0,1,2].forEach(index=>form.elements.namedItem(`part_spec_${index}`).value='');sync();});
+  [form.new_brand,...[0,1,2].map(index=>form.elements.namedItem(`part_spec_${index}`))].forEach(input=>input.addEventListener('input',sync));
+  form.new_name.addEventListener('input',()=>{manualName=Boolean(form.new_name.value.trim());sync();});
+  sync();
+}
+
+function intakeBatchModal(products, suppliers, kind = 'Laptop') {
+  products = products.filter(product => !product.archived_at && (kind === 'Sparepart' ? product.category === 'Sparepart' : String(product.category).toLowerCase() === 'laptop'));
   const options = products.map((p) => `<option value="${p.id}" data-cost="${Number(p.cost_price || 0)}" data-image="${esc(p.image_path || '')}">${esc(p.name)} · ${esc(p.sku)}</option>`).join('');
   const supplierOptions = suppliers.map((supplier,index) => `<option value="${supplier.id}" data-name="${esc(supplier.name)}" data-phone="${esc(supplier.phone || '')}" ${index === 0 ? 'selected' : ''}>${esc(supplier.name)} · ${esc(supplier.initials)}</option>`).join('');
   const host = openModal('Catat barang masuk', 'Satu penerimaan mengelompokkan barang dari supplier/nota yang sama, menghitung modal dan hutangnya, serta menautkan barcode unit atau lot.', `<div class="intake-layout"><div class="form-grid">${branchField('branch_id', state.branchId, true)}<div class="field"><label>Produk / barang</label><select name="product_id" required>${options}<option value="__new__">＋ Barang baru, belum ada di produk</option></select></div><div class="field"><label>Jumlah unit masuk</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Laptop: barcode unik tiap unit. Sparepart: satu stok lot sesuai jumlah.</small></div><div class="new-product-fields form-grid full" hidden><div class="field"><label>Nama barang baru</label><input name="new_name" placeholder="Contoh: Lenovo ThinkPad T14" /></div><div class="field"><label>SKU (opsional)</label><input name="new_sku" placeholder="Dibuat otomatis kalau kosong" /></div><div class="field"><label>Brand</label><input name="new_brand" /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field intake-sale-price" hidden><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field intake-sale-price" hidden><label>Harga reseller (opsional)</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div></div>${productPhotoPicker(products[0]?.image_path || '', false)}</div><div class="form-grid"><div class="field full"><label>Supplier</label><select name="supplier_pick"><option value="__new__">＋ Supplier baru</option>${supplierOptions}</select></div><div class="new-supplier-fields form-grid full"><div class="field"><label>Nama supplier baru</label><input name="supplier_name" placeholder="Contoh: Asep" required /></div><div class="field"><label>Telepon supplier</label><input name="supplier_phone" placeholder="Opsional" /></div></div><div class="field"><label>No. invoice / nota</label><input name="invoice_number" placeholder="Opsional" /></div><div class="field"><label>Modal beli per unit</label><small class="field-hint">Dipakai untuk menghitung tagihan supplier dan modal stok.</small><input name="unit_cost" type="number" min="0" value="0" required /></div><div class="field"><label>Total tagihan supplier · jumlah × modal/unit</label><input name="total_amount" type="text" value="Rp 0" readonly /></div><div class="field"><label>Dibayar sekarang</label><input name="amount_paid" type="number" min="0" value="0" step="1" required /><small class="field-hint" data-intake-balance aria-live="polite"></small><button type="button" class="small-btn" data-pay-in-full>Bayar lunas</button></div><div class="field debt-date" hidden><label>Jatuh tempo hutang</label><input name="due_date" type="date" /></div></div></div><div class="notice" style="margin-top:12px">Sisa tagihan otomatis dihitung dari total penerimaan dikurangi pembayaran awal. Laptop masuk antrean QC. Harga jual dan reseller diatur di Produk & stok setelah pemeriksaan.</div>`, async (form) => {
@@ -1321,7 +1391,7 @@ function intakeBatchModal(products, suppliers) {
     if (photoFile) { imagePath = await uploadProductPhoto(photoFile, crypto.randomUUID()); if (!isNew) { const photoResult = await supabase.rpc('set_product_image', { _product_id: existingProduct.id, _image_path: imagePath }); if (photoResult.error) { printWindow?.close(); throw photoResult.error; } } }
     const { data: batchId, error } = await supabase.rpc('receive_stock_batch_financial', {
       _branch_id: form.get('branch_id'), _product_id: isNew ? null : form.get('product_id'),
-      _new_product: isNew ? { name: String(form.get('new_name')).trim(), sku: String(form.get('new_sku')).trim(), brand: String(form.get('new_brand')).trim(), model: String(form.get('new_model')).trim(), category: form.get('new_category'), cost_price: Number(form.get('unit_cost') || 0), retail_price: isCentralAdmin() || form.get('new_category') === 'Laptop' ? 0 : Number(form.get('new_retail') || 0), reseller_price: isCentralAdmin() || form.get('new_category') === 'Laptop' ? 0 : Number(form.get('new_reseller') || 0), image_path: imagePath } : null,
+      _new_product: isNew ? { name: String(form.get('new_name')).trim(), sku: String(form.get('new_sku')).trim(), brand: String(form.get('new_brand')).trim(), model: String(form.get('new_model')).trim(), category: kind, warranty_months: kind === 'Sparepart' ? 0 : 1, cost_price: Number(form.get('unit_cost') || 0), retail_price: isCentralAdmin() || kind === 'Laptop' ? 0 : Number(form.get('new_retail') || 0), reseller_price: isCentralAdmin() || kind === 'Laptop' ? 0 : Number(form.get('new_reseller') || 0), image_path: imagePath } : null,
       _supplier_name: form.get('supplier_pick') === '__new__' ? String(form.get('supplier_name')).trim() : host.querySelector(`select[name="supplier_pick"] option[value="${CSS.escape(form.get('supplier_pick'))}"]`)?.dataset.name || '', _supplier_phone: form.get('supplier_pick') === '__new__' ? String(form.get('supplier_phone')).trim() : host.querySelector(`select[name="supplier_pick"] option[value="${CSS.escape(form.get('supplier_pick'))}"]`)?.dataset.phone || '', _invoice_number: String(form.get('invoice_number')).trim(),
       _quantity: Number(form.get('quantity')), _total_amount: Number(form.get('unit_cost')), _amount_paid: Number(form.get('amount_paid')), _due_date: form.get('due_date') || null,
     });
@@ -1332,9 +1402,16 @@ function intakeBatchModal(products, suppliers) {
     if (printWindow) printBarcodeLabels(toPrint, printWindow); else toast('Stok tersimpan. Izinkan pop-up, lalu cetak label dari daftar batch.');
     const supplierLabel = form.get('supplier_pick') === '__new__' ? String(form.get('supplier_name') || '').trim() : host.querySelector(`select[name="supplier_pick"] option[value="${CSS.escape(form.get('supplier_pick'))}"]`)?.dataset.name;
     toast(serialized?`${labels.length} barcode unik laptop dibuat. Label supplier ${supplierLabel||'SUP'} siap dicetak.`:`${Number(labels[0]?.quantity||0)} unit sparepart masuk sebagai stok lot. Satu barcode lot dibuat; supplier ${supplierLabel||'SUP'}.`);
-    await showPage('receiving');
+    await showPage(kind === 'Sparepart' ? 'parts_stock' : 'receiving');
   }, 'Simpan penerimaan & cetak label');
   const form = host.querySelector('#active-modal');
+  const sparepart = kind === 'Sparepart';
+  host.querySelector('h2').textContent = sparepart ? 'Catat sparepart masuk' : 'Terima unit laptop';
+  form.new_category.innerHTML = `<option>${kind}</option>`;
+  form.querySelector('.notice').textContent = sparepart ? 'Sparepart langsung masuk stok Pusat, satu barcode lot untuk jumlah yang diterima. Tidak melalui QC laptop. Pemakaian teknisi mengurangi stok lot dan melekatkan modal ke unit laptop.' : 'Setiap laptop mendapat barcode unik dan masuk antrean QC. Stok siap jual bertambah setelah serah terima hasil QC.';
+  form.quantity.closest('.field').querySelector('.field-hint').textContent = sparepart ? 'Jumlah keping / buah. Satu barcode lot untuk penerimaan ini.' : 'Satu barcode unik untuk setiap unit laptop.';
+  form.new_name.placeholder = sparepart ? 'Contoh: SSD Samsung 256GB SATA' : 'Contoh: Lenovo ThinkPad T14';
+  if (sparepart) setupSparepartFields(form);
   form.classList.add('intake-modal');
   const syncTotal = () => { const total=Math.max(0,Number(form.quantity.value||0))*Math.max(0,Number(form.unit_cost.value||0));form.querySelector('[name="total_amount"]').value=money(total); };
   const syncSalePriceFields = () => {
@@ -1342,7 +1419,7 @@ function intakeBatchModal(products, suppliers) {
   };
   form.new_category.addEventListener('change', syncSalePriceFields);
   syncSalePriceFields();
-  const syncProductFields = () => { const isNew = form.product_id.value === '__new__'; const option = form.querySelector('select[name="product_id"] option:checked'); form.querySelector('.new-product-fields').hidden = !isNew; if (!isNew) form.unit_cost.value = option?.dataset.cost || 0; else form.unit_cost.value = 0; const hasFile = form.product_photo_file.files.length || form.product_photo_camera.files.length; if (!hasFile) { const imagePath = isNew ? '' : option?.dataset.image || ''; const preview = form.querySelector('[data-photo-preview]'); const url = productImageUrl(imagePath); preview.innerHTML = url ? `<img src="${url}" alt="Foto produk" />` : '<span>Foto belum tersedia · opsional</span>'; } syncTotal(); };
+  const syncProductFields = () => { const isNew = form.product_id.value === '__new__'; const option = form.querySelector('select[name="product_id"] option:checked'); form.querySelector('.new-product-fields').hidden = !isNew; form.new_name.required = isNew; if (sparepart) form.elements.namedItem('part_spec_0').required = isNew; if (!isNew) form.unit_cost.value = option?.dataset.cost || 0; else form.unit_cost.value = 0; const hasFile = form.product_photo_file.files.length || form.product_photo_camera.files.length; if (!hasFile) { const imagePath = isNew ? '' : option?.dataset.image || ''; const preview = form.querySelector('[data-photo-preview]'); const url = productImageUrl(imagePath); preview.innerHTML = url ? `<img src="${url}" alt="Foto produk" />` : '<span>Foto belum tersedia · opsional</span>'; } syncTotal(); };
   const syncSupplierFields = () => { const fresh = form.supplier_pick.value === '__new__'; form.querySelector('.new-supplier-fields').hidden = !fresh; form.supplier_name.required = fresh; };
   const syncDebtFields = () => {
     const total = Number(form.quantity.value || 0) * Number(form.unit_cost.value || 0);
