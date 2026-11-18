@@ -1976,3 +1976,9 @@ body:has(.modal-backdrop, dialog[open], .prayer-panel:not([hidden])) .guardian-w
 .intake-batch-status-summary { display:flex; flex-wrap:wrap; gap:4px; max-width:260px; }
 .intake-batch-status-summary .pill { white-space:normal; }
 .intake-batch-status-actions { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.barcode-search-preview:empty { display: none; }
+.barcode-scanner { padding: 12px; border: 1px solid #c7d8cd; background: #f5faf6; width: 100%; max-width: 640px; margin: 8px auto; }
+.barcode-scanner .camera-wrap { width: 100%; max-height: 300px; overflow: hidden; background: #101a15; }
+.barcode-scanner video { display: block; width: 100%; max-height: 300px; object-fit: contain; }
+.barcode-scanner .actions-cell { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.barcode-scanner [data-scan-status] { margin: 0 0 8px; font-size: 12px; }

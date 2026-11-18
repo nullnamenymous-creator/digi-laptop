@@ -556,6 +556,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'finance') await financePage(page);
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
+    if (page.isConnected) bindPageBarcodeSearch(page);
     const longTables = {
       dashboard: 'section .table-wrap',
       receiving: '[data-intake-history] .table-wrap',
@@ -3640,44 +3641,24 @@ async function warrantyPage(page) {
 }
 
 async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8', 'code_39', 'upc_a', 'upc_e', 'qr_code'], onDetected = () => input.form?.requestSubmit()) {
-  if (!('BarcodeDetector' in window)) return toast('Browser ini belum mendukung scan barcode kamera. Masukkan kodenya manual.', true);
-  let stream;
   try {
-    const detector = new BarcodeDetector({ formats });
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    if (!host.isConnected) {
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-    host.innerHTML = '<div class="camera-wrap"><video autoplay playsinline muted></video></div><button class="small-btn" id="stop-scan">Tutup kamera</button>';
-    const video = host.querySelector('video'); video.srcObject = stream;
-    let active = true;
-    const observer = new MutationObserver(() => { if (!video.isConnected) stop(); });
-    const stop = () => {
-      active = false;
-      observer.disconnect();
-      stream.getTracks().forEach(track => track.stop());
-      host.innerHTML = '';
-    };
-    observer.observe(document.body, { childList: true, subtree: true });
-    host.querySelector('#stop-scan').addEventListener('click', stop);
-    const scan = async () => {
-      if (!active) return;
-      let values;
-      try { values = await detector.detect(video); } catch {}
-      if (!active) return;
-      if (values?.length) {
-        input.value = values[0].rawValue;
-        stop();
-        onDetected();
-        return;
-      }
-      requestAnimationFrame(scan);
-    };
-    video.addEventListener('playing', scan, { once: true });
-  } catch (error) {
-    stream?.getTracks().forEach(track => track.stop());
-    toast(error.message || 'Kamera tidak dapat dibuka.', true);
+    const { startCameraScanner } = await import('./barcode-scanner.js');
+    await startCameraScanner(host, input, formats, onDetected, toast);
+  } catch (error) { toast(error.message || 'Pemindai belum bisa dimuat. Coba lagi atau ketik kode manual.', true); }
+}
+
+function bindPageBarcodeSearch(page) {
+  for (const id of ['tech-unit-search','qc-result-search','parts-stock-search','inventory-search','sale-product-search']) {
+    const input = page.querySelector('#' + id);
+    if (!input || input.dataset.cameraBound) continue;
+    input.dataset.cameraBound = '1';
+    const button = document.createElement('button');button.type = 'button';button.className = 'btn';button.textContent = 'Scan barcode';
+    button.setAttribute('aria-label', 'Cari barang dengan kamera barcode');
+    input.insertAdjacentElement('afterend', button);
+    const host = document.createElement('div');host.className='barcode-search-preview';
+    const panel = input.closest('.panel');
+    (panel?.querySelector('.panel-head') || input.parentElement).insertAdjacentElement('afterend',host);
+    button.addEventListener('click',()=>startScanner(host,input,['code_128'],()=>{}));
   }
 }
 
