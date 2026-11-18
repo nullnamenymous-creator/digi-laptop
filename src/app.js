@@ -1167,23 +1167,52 @@ async function fetchInventory() {
   return { products: state.products, stock };
 }
 
+function intakeBatchStatusSummary(batch) {
+  const counts = new Map();
+  const laptop = String(batch.products?.category || '').toLowerCase() === 'laptop';
+  for (const item of batch.stock_items || []) {
+    const key = qcTrackingStatus(item);
+    const quantity = laptop ? 1 : Number(item.quantity || batch.unit_count || 1);
+    counts.set(key, (counts.get(key) || 0) + quantity);
+  }
+  const sorted = [...counts].sort((a,b) => b[1]-a[1]);
+  return `<div class="intake-batch-status-summary">${sorted.slice(0,2).map(([key,count]) => `<span class="pill">${count} ${esc(qcTrackingLabels[key] || stockStatusText[key] || key)}</span>`).join('') || '<span class="field-hint">Unit tidak tersedia</span>'}${sorted.length > 2 ? `<span class="field-hint">+${sorted.slice(2).reduce((sum,row)=>sum+row[1],0)} unit dengan status lainnya</span>` : ''}</div>`;
+}
+
+async function openIntakeBatchUnits(batch, trigger) {
+  trigger.disabled = true;
+  try {
+    const units = await fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,quantity,branch_id,status,qc_stage,qc_at,qc_started_at,products(name,category)')
+      .eq('organization_id', state.organization.id).eq('intake_batch_id', batch.id).order('created_at'));
+    if (!trigger.isConnected) return;
+    const host = openModal('Detail unit penerimaan ' + batch.id.slice(0,8).toUpperCase(), `${batch.products?.name || 'Barang'} · ${Number(batch.unit_count)} unit diterima`,
+      `<div class="form-grid"><div class="field"><label>Cari barcode, serial, atau produk</label><input type="search" id="batch-unit-search" /></div><div class="field"><label>Status</label><select id="batch-unit-status"><option value="">Semua status</option>${[...new Set(units.map(qcTrackingStatus))].map(key=>`<option value="${esc(key)}">${esc(qcTrackingLabels[key] || stockStatusText[key] || key)}</option>`).join('')}</select></div></div>
+      <div class="table-wrap"><table><thead><tr><th>BARCODE / UNIT</th><th>STATUS</th><th>LOKASI SEKARANG</th></tr></thead><tbody>${units.map(item=>`<tr data-batch-unit-status="${esc(qcTrackingStatus(item))}" data-batch-unit-search="${esc([item.barcode,item.serial_number,item.products?.name].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${item.id}">${esc(item.barcode)} · Detail</button><div>${esc(item.products?.name || 'Barang')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(qcTrackingLabels[qcTrackingStatus(item)] || stockStatusText[item.status] || item.status)}</td><td>${esc(branchName(item.branch_id))}</td></tr>`).join('')}<tr data-batch-units-empty><td colspan="3">Tidak ada unit yang cocok.</td></tr></tbody></table></div>`,null);
+    const body = host.querySelector('tbody'), rows = [...host.querySelectorAll('[data-batch-unit-status]')], search = host.querySelector('#batch-unit-search'), status = host.querySelector('#batch-unit-status');
+    const render = () => filterPagedRows(body,rows,row => (!status.value || row.dataset.batchUnitStatus === status.value) && row.dataset.batchUnitSearch.includes(search.value.trim().toLowerCase()),body.querySelector('[data-batch-units-empty]'));
+    search.addEventListener('input',render); status.addEventListener('change',render); render(); bindQcUnitDetails(host);
+  } catch(error) { toast(error.message || 'Detail batch belum bisa dimuat.',true); }
+  finally { trigger.disabled = false; }
+}
+
 async function receivingPage(page) {
   if (!canIntake()) throw new Error('Halaman ini hanya untuk pemilik dan operator penerimaan.');
   const [products, batches, queue, suppliers] = await Promise.all([
     fetchAllRows(supabase.from('products').select('*').order('name')).then((rows) => rows.filter((product) => !product.archived_at)),
-    supabase.from('intake_batches').select('id,product_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,unit_count,created_at,products(name,sku,category),suppliers(name,initials),stock_items(status,barcode,qc_stage,qc_at,qc_started_at)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20),
+    supabase.from('intake_batches').select('id,product_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,unit_count,created_at,products(name,sku,category),suppliers(name,initials),stock_items(status,barcode,quantity,qc_stage,qc_at,qc_started_at)').eq('branch_id', state.branchId).order('created_at', { ascending: false }).limit(20),
     fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,supplier_barcode,product_id,intake_batch_id,created_at,products(name)').eq('branch_id', state.branchId).eq('status', 'pending_qc').order('created_at', { ascending: false })),
     fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone').order('name')),
   ]);
   if (batches.error) throw batches.error;
   const pending = queue;
-  const batchRows = (batches.data || []).map((batch) => `<tr><td class="product-name">${esc(batch.id.slice(0, 8).toUpperCase())}<div class="field-hint">${new Date(batch.created_at).toLocaleString('id-ID')}</div></td><td>${esc(batch.products?.name || 'Barang')}</td><td>${esc(batch.suppliers?.name || batch.supplier || '—')} ${batch.suppliers?.initials ? `<span class="pill blue">${esc(batch.suppliers.initials)}</span>` : ''}<div class="field-hint">${esc(batch.invoice_number || '')}</div></td><td>${batch.unit_count} unit</td><td>${(batch.stock_items || []).map(item => `<div><b>${esc(item.barcode || '-')}</b><div class="field-hint">${esc(qcTrackingLabels[qcTrackingStatus(item)] || item.status)}</div></div>`).join('') || 'Unit tidak tersedia'}<button type="button" class="small-btn" data-intake-qc="${batch.id}">Lihat progres QC</button></td><td><button class="small-btn" data-print-batch="${batch.id}">Cetak label</button>${canManage() ? ` <button class="small-btn" data-edit-intake="${batch.id}">Edit</button> <button class="small-btn" data-delete-intake="${batch.id}">Hapus</button> <button type="button" class="small-btn" data-cancel-wrong-intake="${batch.id}">Batalkan salah input</button>` : ''}</td></tr>`).join('');
+  const batchRows = (batches.data || []).map((batch) => `<tr><td class="product-name">${esc(batch.id.slice(0, 8).toUpperCase())}<div class="field-hint">${new Date(batch.created_at).toLocaleString('id-ID')}</div></td><td>${esc(batch.products?.name || 'Barang')}</td><td>${esc(batch.suppliers?.name || batch.supplier || '—')} ${batch.suppliers?.initials ? `<span class="pill blue">${esc(batch.suppliers.initials)}</span>` : ''}<div class="field-hint">${esc(batch.invoice_number || '')}</div></td><td>${batch.unit_count} unit</td><td>${intakeBatchStatusSummary(batch)}<div class="intake-batch-status-actions"><button type="button" class="small-btn" data-intake-units="${batch.id}">Detail unit</button><button type="button" class="small-btn" data-intake-qc="${batch.id}">Lihat progres QC</button></div></td><td><button class="small-btn" data-print-batch="${batch.id}">Cetak label</button>${canManage() ? ` <button class="small-btn" data-edit-intake="${batch.id}">Edit</button> <button class="small-btn" data-delete-intake="${batch.id}">Hapus</button> <button type="button" class="small-btn" data-cancel-wrong-intake="${batch.id}">Batalkan salah input</button>` : ''}</td></tr>`).join('');
   page.innerHTML = `${header('Penerimaan & barcode', 'Catat supplier, jumlah, modal, dan pembayaran barang yang baru datang.', `<button class="btn primary" id="new-intake">＋ Buat penerimaan</button>`)}
     <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">Pindai & cek</div><div class="card-sub">Teknisi mengerjakan halaman QC & repair</div></article></div>
     <section class="panel table-panel" data-intake-history><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari kode unit / barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button>${canManage() ? ` <button type="button" class="small-btn" data-edit-intake-unit="${item.id}">Edit</button> <button type="button" class="small-btn" data-delete-intake-unit="${item.id}">Hapus</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
   page.querySelector('#new-intake').addEventListener('click', () => intakeBatchModal(products, suppliers));
   page.querySelectorAll('[data-intake-qc]').forEach(button => button.addEventListener('click', () => { state.qcSearchQuery = button.dataset.intakeQc; state.qcView = 'results'; showPage('quality'); }));
+  page.querySelectorAll('[data-intake-units]').forEach(button => button.addEventListener('click', () => { const batch = batches.data.find(row => row.id === button.dataset.intakeUnits); if (batch) openIntakeBatchUnits(batch,button); }));
   if (canManage()) {
     const history = document.createElement('button');
     history.type = 'button'; history.className = 'btn'; history.textContent = 'Riwayat pembatalan';

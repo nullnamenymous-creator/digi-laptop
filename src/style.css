@@ -1972,3 +1972,7 @@ body:has(.modal-backdrop, dialog[open], .prayer-panel:not([hidden])) .guardian-w
   .guardian-shield { animation: none; }
 }
 @media print { .guardian-widget { display: none; } }
+
+.intake-batch-status-summary { display:flex; flex-wrap:wrap; gap:4px; max-width:260px; }
+.intake-batch-status-summary .pill { white-space:normal; }
+.intake-batch-status-actions { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
