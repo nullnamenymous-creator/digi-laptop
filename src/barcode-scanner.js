@@ -4,11 +4,11 @@ let currentScanner;
 export async function startCameraScanner(host, input, formats, onDetected, notify) {
   currentScanner?.();
   if (!host?.isConnected || !input?.isConnected) return;
-  let active = true, stream, timer, observer;
-  host.innerHTML = `<section class="barcode-scanner"><p data-scan-status role="status">Arahkan barcode ke kamera. Pastikan seluruh garis terlihat dan label cukup terang.</p><div class="camera-wrap"><video autoplay playsinline muted></video></div><div class="actions-cell"><button type="button" class="small-btn" data-scan-flip>Ganti kamera</button><button type="button" class="small-btn" data-scan-torch hidden>Lampu</button><label class="small-btn">Scan foto<input type="file" accept="image/*" capture="environment" data-scan-photo hidden /></label><button type="button" class="small-btn" data-scan-stop>Tutup pemindai</button></div></section>`;
+  let active = true, stream, timer, observer, photoVersion = 0, cameraVersion = 0;
+  host.innerHTML = `<section class="barcode-scanner"><p data-scan-status role="status">Arahkan barcode ke kamera. Pastikan seluruh garis terlihat dan label cukup terang.</p><div class="camera-wrap"><video autoplay playsinline muted></video></div><div class="actions-cell"><button type="button" class="small-btn" data-scan-flip>Ganti kamera</button><button type="button" class="small-btn" data-scan-torch hidden>Lampu</button><label class="small-btn">Scan foto<input type="file" accept="image/*" data-scan-photo hidden /></label><button type="button" class="small-btn" data-scan-stop>Tutup pemindai</button></div><div data-scan-photo-editor></div><div class="scanner-manual"><label>Kode pada label<input type="text" data-scan-manual placeholder="Contoh: DL-631A6897121E" autocomplete="off" spellcheck="false" /></label><button type="button" class="small-btn" data-scan-use-code>Gunakan kode</button></div></section>`;
   const panel = host.firstElementChild, video = panel.querySelector('video'), status = panel.querySelector('[data-scan-status]');
   video.muted = true;
-  const releaseCamera = () => { clearTimeout(timer); stream?.getTracks().forEach(track=>track.stop()); stream = null; video.srcObject = null; };
+  const releaseCamera = () => { cameraVersion++; clearTimeout(timer); stream?.getTracks().forEach(track=>track.stop()); stream = null; video.srcObject = null; };
   const stop = () => {
     if (!active) return;
     active = false; releaseCamera(); observer?.disconnect();
@@ -16,7 +16,7 @@ export async function startCameraScanner(host, input, formats, onDetected, notif
     if (currentScanner === stop) currentScanner = null;
     panel.remove();
   };
-  const onHidden = () => { if (document.hidden) stop(); };
+  const onHidden = () => { if (document.hidden) releaseCamera(); };
   currentScanner = stop;
   observer = new MutationObserver(()=>{ if(!panel.isConnected || !input.isConnected)stop(); });
   observer.observe(document.body,{childList:true,subtree:true});
@@ -65,27 +65,46 @@ export async function startCameraScanner(host, input, formats, onDetected, notif
       }
       if(active)timer=setTimeout(scan,220);
     };
+    panel.querySelector('[data-scan-use-code]').onclick=()=>{
+      const code=panel.querySelector('[data-scan-manual]').value.trim();
+      const valid=formats.includes('qr_code') ? /^DLW-[a-zA-Z0-9_-]{8,80}$/.test(code) : /^DL-[a-zA-Z0-9_-]{4,80}$/.test(code);
+      if(!valid){status.textContent='Masukkan kode lengkap yang tercetak pada label. Barcode unit diawali DL-, QR garansi diawali DLW-.';return;}
+      deliver(code);
+    };
     panel.querySelector('[data-scan-photo]').onchange=async event=>{
       const file=event.target.files?.[0]; if(!file || !active)return;
-      releaseCamera(); const url=URL.createObjectURL(file);
+      const version=++photoVersion;
+      releaseCamera();const url=URL.createObjectURL(file);
+      const live=()=>active && photoVersion===version;
       try {
         const image=new Image();image.src=url;await image.decode();
-        if(!active)return;
-        let result;
-        draw(image,image.naturalWidth,image.naturalHeight);
-        try { result=decodeCanvas(canvas); } catch { draw(image,image.naturalWidth,image.naturalHeight,true);result=decodeCanvas(canvas); }
-        deliver(result.getText());
-      } catch { if(active)status.textContent='Barcode belum terbaca dari foto. Ambil foto lebih dekat dan fokus, seluruh barcode terlihat, atau masukkan kodenya manual.'; }
+        if(!live())return;
+        const {readBarcodePhoto,barcodePhotoEditor}=await import('./barcode-photo.js');
+        if(!live())return;
+        status.textContent='Membaca barcode dari foto…';
+        const value=await readBarcodePhoto(image,decodeCanvas,live);
+        if(!live())return;
+        if(value){deliver(value);return;}
+        status.textContent='Barcode belum terbaca. Pilih area label pada foto di bawah, atau ketik kode yang tercetak pada label.';
+        barcodePhotoEditor(panel.querySelector('[data-scan-photo-editor]'),image,async region=>{
+          if(!live())return;
+          status.textContent='Membaca area label…';
+          const found=await readBarcodePhoto(image,decodeCanvas,live,region);
+          if(!live())return;
+          if(found)deliver(found);
+          else status.textContent='Garis barcode pada area ini belum terbaca. Jika pecah, buram, atau terputus, gunakan kode tertulis; perbesaran tidak bisa memulihkan garis yang hilang.';
+        });
+      } catch { if(live())status.textContent='Foto tidak dapat dibaca. Pilih JPG/PNG yang tersimpan di galeri atau masukkan kode label manual.'; }
       finally { URL.revokeObjectURL(url);event.target.value=''; }
     };
     let facing='environment',opening=false;
     const openCamera = async () => {
       if(opening || !active)return;
-      opening=true;releaseCamera();
+      opening=true;releaseCamera();const version=cameraVersion;
       try {
         if(!navigator.mediaDevices?.getUserMedia)throw new Error('Camera unavailable');
         const next=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:1920},height:{ideal:1080}}});
-        if(!active){next.getTracks().forEach(track=>track.stop());return;}
+        if(!active || version!==cameraVersion){next.getTracks().forEach(track=>track.stop());return;}
         stream=next; video.srcObject=next;await video.play();
         if(!active)return;
         const track=next.getVideoTracks()[0],capabilities=track.getCapabilities?.() || {};
