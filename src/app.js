@@ -1458,7 +1458,8 @@ async function printBarcodeLabels(items, printable = null) {
     JsBarcode(svg, item.barcode, { format: 'CODE128', displayValue: false, font: 'Arial', fontSize: 9, height: 64, margin: 12, lineColor: '#000000', background: '#ffffff' });
     const supplier = barcodeSupplierInitials(item);
     const qr = await QRCode.toString(item.barcode, { type: 'svg', errorCorrectionLevel: 'M', margin: 4 });
-    return `<article class="label"><div class="linear-label"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong>${svg.outerHTML}<small class="barcode-value">${esc(item.barcode)}</small></div><div class="qr-label"><div class="unit-qr">${qr}</div><div class="qr-label-text"><strong>Digital Laptop${supplier ? ` · ${esc(supplier)}` : ''}</strong><small class="barcode-value">${esc(item.barcode)}</small><small>QR UNIT STOK</small></div></div></article>`;
+    const codeLines = String(item.barcode).match(/.{1,9}/g) || [];
+    return `<article class="label"><div class="linear-label"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong>${svg.outerHTML}<small class="barcode-value">${esc(item.barcode)}</small></div><div class="qr-label"><div class="unit-qr">${qr}</div><div class="qr-label-text"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong><small class="barcode-value" aria-label="${esc(item.barcode)}">${codeLines.map(line=>`<span>${esc(line)}</span>`).join('')}</small></div></div></article>`;
   }))).join('');
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem('digi-label-settings')) || {}; } catch {}
@@ -1475,9 +1476,9 @@ async function printBarcodeLabels(items, printable = null) {
     body.unit-qr-mode .linear-label{display:none}body.unit-qr-mode .qr-label{display:flex}
     .unit-qr{width:var(--qr-size,11mm);height:var(--qr-size,11mm);flex:none;background:#fff}
     .label .unit-qr svg,.roll .label .unit-qr svg{display:block;width:100%;height:100%;max-height:none;aspect-ratio:1}
-    .qr-label-text{min-width:0;text-align:left;display:flex;flex-direction:column;gap:.4mm}
-    .qr-label-text .barcode-value,.roll .qr-label-text .barcode-value{white-space:normal;overflow-wrap:anywhere;font-size:7pt;line-height:1.15;margin:0}
-    .qr-label-text strong{font-size:6pt;letter-spacing:0}.roll .qr-label-text strong{display:block}
+    .qr-label-text{min-width:0;flex:1;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:.7mm;align-self:center}
+    .qr-label-text .barcode-value,.roll .qr-label-text .barcode-value{white-space:normal;font:600 6.2pt/1.2 monospace;letter-spacing:0;margin:0;display:block;overflow-wrap:normal}.qr-label-text .barcode-value span{display:block;white-space:nowrap;font:inherit;margin:0}
+    .qr-label-text strong{font:700 6pt/1.1 Arial;letter-spacing:0;white-space:nowrap}.roll .qr-label-text strong{display:block}
     .qr-label-text small{font-size:5pt}
     #label-warning{width:100%;color:#8c3d00;font-size:12px}
   </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Jenis label<select id="label-kind"><option value="barcode">Barcode garis (lama)</option><option value="qr">QR unit — disarankan untuk HP</option></select></label><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option><option value="roll33">Roll 33 × 15 mm · 3 kolom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><div class="roll-settings" id="roll-settings" hidden>
