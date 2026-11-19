@@ -1450,15 +1450,16 @@ function intakeBatchModal(products, suppliers, kind = 'Laptop') {
 async function printBarcodeLabels(items, printable = null) {
   if (!printable) printable = window.open('', '_blank', 'width=980,height=820');
   if (!printable) return toast('Izinkan pop-up untuk membuka pratinjau barcode.', true);
-  let JsBarcode;
-  try { ({ default: JsBarcode } = await import('jsbarcode')); }
+  let JsBarcode, QRCode;
+  try { [{ default: JsBarcode }, { default: QRCode }] = await Promise.all([import('jsbarcode'), import('qrcode')]); }
   catch { printable.close(); return toast('Modul cetak barcode gagal dimuat. Coba lagi.', true); }
-  const labels = items.map((item) => {
+  const labels = (await Promise.all(items.map(async (item) => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    JsBarcode(svg, item.barcode, { format: 'CODE128', displayValue: false, font: 'Arial', fontSize: 9, height: 48, margin: 1, lineColor: '#17201b' });
+    JsBarcode(svg, item.barcode, { format: 'CODE128', displayValue: false, font: 'Arial', fontSize: 9, height: 64, margin: 12, lineColor: '#000000', background: '#ffffff' });
     const supplier = barcodeSupplierInitials(item);
-    return `<article class="label"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong>${svg.outerHTML}<small class="barcode-value">${esc(item.barcode)}</small></article>`;
-  }).join('');
+    const qr = await QRCode.toString(item.barcode, { type: 'svg', errorCorrectionLevel: 'M', margin: 4 });
+    return `<article class="label"><div class="linear-label"><strong>DL${supplier ? ` · ${esc(supplier)}` : ''}</strong>${svg.outerHTML}<small class="barcode-value">${esc(item.barcode)}</small></div><div class="qr-label"><div class="unit-qr">${qr}</div><div class="qr-label-text"><strong>Digital Laptop${supplier ? ` · ${esc(supplier)}` : ''}</strong><small class="barcode-value">${esc(item.barcode)}</small><small>QR UNIT STOK</small></div></div></article>`;
+  }))).join('');
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem('digi-label-settings')) || {}; } catch {}
   const isLaptopBatch=items.every((item)=>item.products?.category==='Laptop');
@@ -1469,16 +1470,27 @@ async function printBarcodeLabels(items, printable = null) {
     .roll .label{border:0;padding:0 1mm;justify-content:flex-start;color:#000}
     .roll .label strong{display:none}.roll .label svg{height:8mm;max-height:none;flex:none}
     .roll .barcode-value{margin-top:1mm;font-size:7pt;letter-spacing:0}
-  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option><option value="roll33">Roll 33 × 15 mm · 3 kolom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><div class="roll-settings" id="roll-settings" hidden>
+    .linear-label{display:flex;flex-direction:column;align-items:center;width:100%;height:100%;justify-content:center}
+    .qr-label{display:none;width:100%;height:100%;align-items:center;justify-content:center;gap:1mm}
+    body.unit-qr-mode .linear-label{display:none}body.unit-qr-mode .qr-label{display:flex}
+    .unit-qr{width:var(--qr-size,11mm);height:var(--qr-size,11mm);flex:none;background:#fff}
+    .label .unit-qr svg,.roll .label .unit-qr svg{display:block;width:100%;height:100%;max-height:none;aspect-ratio:1}
+    .qr-label-text{min-width:0;text-align:left;display:flex;flex-direction:column;gap:.4mm}
+    .qr-label-text .barcode-value,.roll .qr-label-text .barcode-value{white-space:normal;overflow-wrap:anywhere;font-size:7pt;line-height:1.15;margin:0}
+    .qr-label-text strong{font-size:6pt;letter-spacing:0}.roll .qr-label-text strong{display:block}
+    .qr-label-text small{font-size:5pt}
+    #label-warning{width:100%;color:#8c3d00;font-size:12px}
+  </style></head><body><div class="toolbar"><strong class="count">${isLaptopBatch?`${items.length} barcode unik laptop`:`${items.length} barcode lot · ${Number(items[0]?.quantity||1)} unit stok`}</strong><label>Jenis label<select id="label-kind"><option value="barcode">Barcode garis (lama)</option><option value="qr">QR unit — disarankan untuk HP</option></select></label><label>Ukuran kertas<select id="paper"><option>A4</option><option>A5</option><option>Letter</option><option value="custom">Kustom</option><option value="roll33">Roll 33 × 15 mm · 3 kolom</option></select></label><label>Lebar label (mm)<input id="lw" type="number" min="20" max="200" value="50"></label><label>Tinggi label (mm)<input id="lh" type="number" min="15" max="100" value="24"></label><label>Kolom per baris<input id="cols" type="number" min="1" max="8" value="3"></label><div class="roll-settings" id="roll-settings" hidden>
     <label>Lebar roll (mm)<input id="roll-width" type="number" min="99" max="120" step="0.1" value="104"></label>
     <label>Jarak kolom (mm)<input id="roll-gap" type="number" min="0" max="5" step="0.1" value="0"></label>
     <label>Margin kiri (mm)<input id="roll-left" type="number" min="0" max="10" step="0.1" value="2.5"></label>
     <label>Margin atas (mm)<input id="roll-top" type="number" min="0" max="4" step="0.1" value="1"></label>
-    </div><button id="print">Cetak barcode</button></div><div class="status" style="padding:0 20px 8px"><span id="layout-hint">Atur dimensi label dan kertas.</span> Printer dipilih melalui dialog cetak perangkat. ${mobilePrintHint()}</div><main class="sheets" id="sheets">${labels}</main><script>
+    </div><button id="print">Cetak label</button><p id="label-warning"></p></div><div class="status" style="padding:0 20px 8px"><span id="layout-hint">Atur dimensi label dan kertas.</span> Printer dipilih melalui dialog cetak perangkat. ${mobilePrintHint()}</div><main class="sheets" id="sheets">${labels}</main><script>
   const $ = id => document.getElementById(id);
   const presets = { A4: [210,297], A5: [148,210], Letter: [216,279] };
   const saved = ${JSON.stringify(prefs).replaceAll('<', '\\u003c')};
   const labels = [...document.querySelectorAll('.label')];
+  $('label-kind').value = saved.kind === 'qr' ? 'qr' : 'barcode';
   const rollFields = ['roll-width','roll-gap','roll-left','roll-top'];
   for (const [id, key] of [['paper','paper'],['lw','width'],['lh','height'],['cols','cols']]) {
     if (saved[key]) $(id).value = saved[key];
@@ -1492,10 +1504,13 @@ async function printBarcodeLabels(items, printable = null) {
   };
   function layout() {
     const paper = $('paper').value;
+    const qr = $('label-kind').value === 'qr';
+    document.body.classList.toggle('unit-qr-mode', qr);
     const roll = paper === 'roll33';
     const width = number('lw', 50), height = number('lh', 24), cols = Math.floor(number('cols', 3));
     const rollWidth = number('roll-width', 104), gap = number('roll-gap', 0), left = number('roll-left', 2.5), top = number('roll-top', 1);
     const fits = left + 99 + 2 * gap <= rollWidth + 0.001;
+    $('label-warning').textContent = qr ? 'QR berisi kode unit yang sama. Tidak mengubah data barang, QC, mutasi, atau transaksi. Ini QR stok, bukan QR garansi.' : roll || width < 50 ? 'Barcode garis panjang pada label kecil berisiko terlalu rapat. Untuk kamera HP, pilih QR unit dengan kode yang sama. Label bergaris putus perlu dicetak ulang.' : '';
     $('roll-settings').hidden = !roll;
     for (const id of ['lw','lh','cols']) $(id).closest('label').hidden = roll;
     $('layout-hint').textContent = roll
@@ -1510,7 +1525,7 @@ async function printBarcodeLabels(items, printable = null) {
     const wrap = $('sheets');
     wrap.replaceChildren();
     for (const label of labels) {
-      const barcode = label.querySelector('svg');
+      const barcode = label.querySelector('.linear-label svg');
       if (roll) barcode.setAttribute('preserveAspectRatio', 'none');
       else barcode.removeAttribute('preserveAspectRatio');
     }
@@ -1520,6 +1535,7 @@ async function printBarcodeLabels(items, printable = null) {
       const dimensions = {
         '--cols': roll ? 3 : cols, '--lw': (roll ? 33 : width) + 'mm', '--lh': (roll ? 15 - top : height) + 'mm',
         '--barcode-h': Math.max(9, height * .70) + 'mm',
+        '--qr-size': (roll ? Math.max(8, Math.min(12, 15-top-1)) : Math.max(8, Math.min(height-3,width*.45))) + 'mm',
         '--roll-gap': gap + 'mm', '--roll-left': left + 'mm', '--roll-top': top + 'mm',
       };
       for (const [key, value] of Object.entries(dimensions)) sheet.style.setProperty(key, value);
@@ -1531,10 +1547,10 @@ async function printBarcodeLabels(items, printable = null) {
     const style = $('dynamic') || document.head.appendChild(Object.assign(document.createElement('style'), {id:'dynamic'}));
     style.textContent = '@page{size:' + (roll || paper === 'custom' ? pageWidth + 'mm ' + pageHeight + 'mm' : paper) + ';margin:0}';
     localStorage.setItem('digi-label-settings', JSON.stringify({
-      paper, width, height, cols, 'roll-width': rollWidth, 'roll-gap': gap, 'roll-left': left, 'roll-top': top,
+      paper, width, height, cols, kind: $('label-kind').value, 'roll-width': rollWidth, 'roll-gap': gap, 'roll-left': left, 'roll-top': top,
     }));
   }
-  ['paper','lw','lh','cols',...rollFields].forEach(id => $(id).addEventListener('input', layout));
+  ['label-kind','paper','lw','lh','cols',...rollFields].forEach(id => $(id).addEventListener('input', layout));
   $('print').onclick = () => window.print();
   layout();</script></body></html>`);
   printable.document.close();

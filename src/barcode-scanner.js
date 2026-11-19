@@ -2,6 +2,9 @@
 let currentScanner;
 
 export async function startCameraScanner(host, input, formats, onDetected, notify) {
+  const unitOnly = formats.length === 1 && formats[0] === 'code_128';
+  const warrantyOnly = formats.length === 1 && formats[0] === 'qr_code';
+  if (unitOnly) formats = ['code_128', 'qr_code'];
   currentScanner?.();
   if (!host?.isConnected || !input?.isConnected) return;
   let active = true, stream, timer, observer, photoVersion = 0, cameraVersion = 0;
@@ -24,6 +27,10 @@ export async function startCameraScanner(host, input, formats, onDetected, notif
   panel.querySelector('[data-scan-stop]').onclick = stop;
   const deliver = value => {
     if(!active || !input.isConnected || !value?.trim())return;
+    if ((unitOnly && !/^DL-[a-zA-Z0-9_-]+$/.test(value.trim())) || (warrantyOnly && !/^DLW-[a-zA-Z0-9_-]+$/.test(value.trim()))) {
+      status.textContent = unitOnly ? 'Ini bukan kode unit stok. Pindai barcode atau QR label unit yang diawali DL-.' : 'Gunakan QR garansi yang diawali DLW-. QR unit stok tidak berlaku untuk garansi.';
+      return;
+    }
     input.value=value.trim(); stop();
     input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true}));
     Promise.resolve().then(()=>onDetected()).catch(error=>notify(error.message || 'Barcode terbaca, tetapi aksi berikutnya gagal.',true));
@@ -67,7 +74,7 @@ export async function startCameraScanner(host, input, formats, onDetected, notif
     };
     panel.querySelector('[data-scan-use-code]').onclick=()=>{
       const code=panel.querySelector('[data-scan-manual]').value.trim();
-      const valid=formats.includes('qr_code') ? /^DLW-[a-zA-Z0-9_-]{8,80}$/.test(code) : /^DL-[a-zA-Z0-9_-]{4,80}$/.test(code);
+      const valid=warrantyOnly ? /^DLW-[a-zA-Z0-9_-]{8,80}$/.test(code) : /^DL-[a-zA-Z0-9_-]{4,80}$/.test(code);
       if(!valid){status.textContent='Masukkan kode lengkap yang tercetak pada label. Barcode unit diawali DL-, QR garansi diawali DLW-.';return;}
       deliver(code);
     };
