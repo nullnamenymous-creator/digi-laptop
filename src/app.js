@@ -385,6 +385,7 @@ function openModal(title, subtitle, body, onSubmit, submitLabel = 'Simpan') {
     }
   });
   bindPageBarcodeSearch(host);
+  compactMobileControls(host);
   return host;
 }
 function branchField(name = 'branch_id', value = state.branchId, centralOnly = false) {
@@ -558,6 +559,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'branches') await branchesPage(page);
     else if (name === 'reports') await reportsPage(page);
     if (page.isConnected) bindPageBarcodeSearch(page);
+    if (page.isConnected) compactMobileControls(page);
     const longTables = {
       dashboard: 'section .table-wrap',
       receiving: '[data-intake-history] .table-wrap',
@@ -3675,6 +3677,32 @@ async function openStockByBarcode(code) {
     if(!unit)return toast('Unit tidak ditemukan di cabang yang sedang dibuka. Periksa kode pada label.',true);
     await openQcUnitDetail(unit.id);
   } catch(error){toast(error.message || 'Unit belum dapat dicari. Coba lagi.',true);}
+}
+
+function compactMobileControls(page) {
+  if (!window.matchMedia('(max-width: 740px)').matches) return;
+  page.querySelectorAll('.inventory-controls').forEach(controls=>{
+    if(controls.querySelector('.mobile-filter-drawer'))return;
+    const filters=[...controls.children].filter(element=>element.matches('select,input[type="number"]'));
+    if(filters.length<4)return;
+    const drawer=document.createElement('details');drawer.className='mobile-filter-drawer';
+    const summary=document.createElement('summary');summary.textContent='Filter produk';
+    const fields=document.createElement('div');fields.className='mobile-filter-fields';
+    const defaults=new Map(filters.map(field=>[field,field.tagName==='SELECT' ? [...field.options].find(option=>option.defaultSelected)?.value || field.options[0]?.value : field.defaultValue]));
+    filters.forEach(field=>{
+      const label=document.createElement('label');
+      const text=document.createElement('span');text.textContent=field.getAttribute('aria-label') || field.placeholder || field.options?.[0]?.textContent || 'Filter';
+      label.append(text,field);fields.append(label);
+    });
+    const update=()=>{const count=filters.filter(field=>field.value!==String(defaults.get(field) ?? '')).length;summary.textContent='Filter produk'+(count?' · '+count+' aktif':'');};
+    drawer.append(summary,fields);controls.append(drawer);drawer.addEventListener('input',update);drawer.addEventListener('change',update);update();
+  });
+  page.querySelectorAll('input[data-camera-bound="1"]').forEach(input=>{
+    const button=input.nextElementSibling;
+    if(!button?.matches('button') || input.closest('.mobile-scan-controls'))return;
+    const row=document.createElement('div');row.className='mobile-scan-controls';
+    input.before(row);row.append(input,button);
+  });
 }
 
 function bindPageBarcodeSearch(page) {

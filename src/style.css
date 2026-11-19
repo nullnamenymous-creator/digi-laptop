@@ -1987,3 +1987,60 @@ body:has(.modal-backdrop, dialog[open], .prayer-panel:not([hidden])) .guardian-w
 .scanner-manual { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 12px; }
 .scanner-manual label { flex: 1; min-width: 160px; }
 .scanner-manual input { display: block; width: 100%; }
+/* Compact operational screens and scrollable dialogs on phones. */
+@media (max-width: 740px) {
+  .app .page { padding: 14px 10px 24px; }
+  .app .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .app .page-head > *, .app .panel-head > * { min-width: 0; }
+  .app .page-head h1 { font-size: 21px; line-height: 1.25; }
+  .app .page-head p { margin-top: 5px; line-height: 1.5; }
+  .app .head-actions { display: flex; flex-wrap: wrap; width: 100%; gap: 6px; }
+  .app .head-actions > .btn { flex: 1 1 140px; text-align: center; white-space: normal; }
+  .app .panel-head { align-items: stretch; gap: 8px; }
+  .app .panel-head > .search, .app .panel-head > .field { flex: 1 1 100%; width: 100%; }
+  .app .panel-head .panel-sub { line-height: 1.5; }
+  .app .cards { gap: 8px; }
+  .app .card { padding: 11px; }
+  .app .card-value { font-size: clamp(16px, 4.4vw, 21px); line-height: 1.3; overflow-wrap: anywhere; }
+  .app .card-label, .app .card-sub { line-height: 1.45; }
+  .app .table-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  .app table td, .app table th { padding: 9px 10px; }
+  .app .actions-cell { gap: 6px; flex-wrap: wrap; }
+  .app .inventory-controls { width: 100%; gap: 8px; }
+  .mobile-scan-controls { display: flex; align-items: stretch; gap: 6px; width: 100%; min-width: 0; grid-column: 1 / -1; flex: 1 1 100%; }
+  .mobile-scan-controls > input { flex: 1 1 0; min-width: 0; width: 0; font-size: 16px; }
+  .inventory-controls .mobile-scan-controls > input { flex: 1 1 0; min-width: 0; width: 0; }
+  .mobile-scan-controls > button { flex: 0 0 auto; max-width: 116px; padding-inline: 10px; white-space: normal; line-height: 1.25; }
+  .mobile-filter-drawer { width: 100%; flex: 1 1 100%; border: 1px solid var(--line); background: #f8faf6; }
+  .mobile-filter-drawer > summary { padding: 10px 12px; min-height: 44px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .mobile-filter-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; border-top: 1px solid var(--line); }
+  .mobile-filter-drawer:not([open]) > .mobile-filter-fields { display: none; }
+  .mobile-filter-fields > label { display: grid; gap: 4px; min-width: 0; font-size: 11px; color: var(--muted); }
+  .mobile-filter-fields select, .mobile-filter-fields input { width: 100%; min-width: 0; max-width: 100%; font-size: 16px; }
+  body:has(.modal-backdrop) { overflow: hidden; }
+  .modal-backdrop { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); align-items: center; }
+  .modal, .modal.compact-product-modal { width: 100%; max-width: 100%; max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 14px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border-radius: 12px; scroll-padding-block: 90px 76px; }
+  .modal-head { position: sticky; top: -14px; z-index: 3; background: #fff; margin: -14px -14px 12px; padding: 12px 14px; gap: 8px; }
+  .modal-head > div { min-width: 0; }
+  .modal-head h2 { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+  .modal-head p { font-size: 12px; margin-top: 4px; }
+  .modal-close { min-width: 44px; width: 44px; height: 44px; flex: 0 0 44px; }
+  .modal-actions { position: sticky; bottom: -14px; z-index: 2; margin: 14px -14px -14px; padding: 10px 14px max(10px, env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -3px 12px #1738220a; }
+  .modal-actions > .btn { flex: 1 1 130px; min-height: 46px; white-space: normal; line-height: 1.35; }
+  .modal .form-grid { gap: 10px; }
+  .modal .field { min-width: 0; gap: 4px; }
+  .modal input:not([type="checkbox"]):not([type="radio"]), .modal select, .modal textarea { max-width: 100%; font-size: 16px; }
+  .modal .field label { font-size: 12px; line-height: 1.4; }
+  .modal .notice { overflow-wrap: anywhere; line-height: 1.55; }
+  .modal .photo-picker-preview { max-height: 130px; }
+  .modal .transfer-line-row { grid-template-columns: minmax(0, 1fr) 76px; }
+  .modal .transfer-line-row > button { grid-column: 1 / -1; justify-self: end; }
+  .modal .table-wrap { max-width: 100%; overflow-x: auto; }
+}
+@media (min-width: 741px) {
+  .mobile-filter-drawer { display: contents; }
+  .mobile-filter-drawer > summary, .mobile-filter-fields > label > span { display: none; }
+  .mobile-filter-drawer:not([open]) > .mobile-filter-fields, .mobile-filter-fields, .mobile-filter-fields > label { display: contents; }
+  .mobile-scan-controls { display: flex; gap: 6px; min-width: 0; }
+  .mobile-scan-controls > input { min-width: 0; }
+}
