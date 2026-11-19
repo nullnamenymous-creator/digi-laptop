@@ -384,6 +384,7 @@ function openModal(title, subtitle, body, onSubmit, submitLabel = 'Simpan') {
       notice.textContent = error.message || 'Tidak bisa menyimpan data.';
     }
   });
+  bindPageBarcodeSearch(host);
   return host;
 }
 function branchField(name = 'branch_id', value = state.branchId, centralOnly = false) {
@@ -730,12 +731,14 @@ async function centralDashboardPage(page) {
   }
   const unitCount = row => (row.stock_transfer_items || []).reduce((total, item) => total + Number(item.quantity), 0);
   page.innerHTML = `${header('Operasional Cabang Pusat', 'Penerimaan, pemeriksaan, dan distribusi stok ke cabang penjualan.', '<button class="btn primary" data-open-transfer>Kirim ke cabang</button>')}
+    <section class="panel"><form id="central-unit-finder" class="finder-controls"><input id="central-unit-search" type="search" placeholder="Cari unit dengan barcode / QR label" aria-label="Cari unit berdasarkan barcode" required /><button class="btn" type="submit">Cari unit</button></form></section>
     <section class="cards laptop-unit-summary">${cards.map(([label, count, action]) => `<button type="button" class="card unit-summary-button" data-central-page="${action}"><span class="card-label">${label}</span><span class="card-value">${count} <small>unit</small></span></button>`).join('')}</section>
     <div class="notice">${quantity('awaiting_qc_handover')} unit lolos QC menunggu penerimaan fisik, belum termasuk stok siap distribusi. <button class="small-btn" type="button" data-open-handover>Buka serah terima QC</button></div>
     ${canSelectBranches() ? branchStockSection : ''}
     ${canManage() ? bestSellingSection : ''}
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Distribusi per cabang</div><div class="panel-sub">Jumlah pengiriman dari Cabang Pusat</div></div></div><div class="table-wrap"><table><thead><tr><th>Cabang tujuan</th><th>Menunggu diterima</th><th>Sudah diterima</th></tr></thead><tbody>${state.branches.filter(branch => !branch.is_central).map(branch => `<tr><td>${esc(branch.name)}</td><td>${pending.filter(row => row.destination_branch_id === branch.id).length}</td><td>${received.get(branch.id) || 0}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Mutasi menunggu diterima</div></div><div class="table-wrap"><table><thead><tr><th>Nomor mutasi</th><th>Tujuan</th><th>Jumlah unit</th><th>Tanggal kirim</th></tr></thead><tbody>${pending.map(row => `<tr><td>${esc(row.transfer_number)}</td><td>${esc(branchName(row.destination_branch_id))}</td><td>${unitCount(row)}</td><td>${new Date(row.created_at).toLocaleString('id-ID')}</td></tr>`).join('') || '<tr><td colspan="4">Tidak ada mutasi dalam perjalanan.</td></tr>'}</tbody></table></div></section>`;
+  page.querySelector('#central-unit-finder').addEventListener('submit',event=>{event.preventDefault();openStockByBarcode(page.querySelector('#central-unit-search').value.trim());});
   if (canManage()) page.insertAdjacentHTML('beforeend', ownerReferralSection);
   showOwnerBranchStock(page.querySelector('[data-owner-branch-stock]'));
   showOwnerReferrals(page.querySelector('[data-owner-referrals]'));
@@ -968,7 +971,7 @@ async function technicianWorkflowPage(page, stage) {
 async function partsStockPage(page) {
   if (!atCentral() || !(canManage() || isCentralAdmin() || canTechnician())) throw new Error('Stok sparepart ini hanya untuk petugas Cabang Pusat.');
   const branchId=state.branchId;
-  const stock=await fetchAllRows(supabase.from('stock_items').select('id,barcode,quantity,acquisition_cost,products(name,sku,category)').eq('branch_id',branchId).eq('status','available').gt('quantity',0).order('created_at'));
+  const stock=await fetchAllRows(supabase.from('stock_items').select('id,product_id,barcode,quantity,acquisition_cost,products(name,sku,category)').eq('branch_id',branchId).eq('status','available').gt('quantity',0).order('created_at'));
   if(!page.isConnected || state.branchId!==branchId)return;
   const parts=stock.filter(item=>String(item.products?.category || '').toLowerCase()!=='laptop');
   page.innerHTML=`${header('Sparepart Pusat','Stok tersedia untuk perbaikan unit. Ambil sparepart dari tombol pada unit di halaman Menunggu sparepart atau Repair fisik.',canIntake()?'<button class="btn primary" id="parts-intake">Catat sparepart masuk</button>':'')}
@@ -979,7 +982,7 @@ async function partsStockPage(page) {
   if (canIntake()) {
     const catalog = (await fetchAllRows(supabase.from('products').select('*').eq('organization_id',state.organization.id).eq('category','Sparepart').order('name'))).filter(product=>!product.archived_at);
     if(!page.isConnected || state.branchId!==branchId)return;
-    page.insertAdjacentHTML('beforeend',`<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Kelola data sparepart</div><div class="panel-sub">Edit identitas dan harga. Hapus hanya data yang belum mempunyai riwayat stok atau transaksi. Untuk salah penerimaan, gunakan pembatalan di halaman Penerimaan.</div></div><input type="search" id="part-master-search" class="search" placeholder="Cari nama atau SKU sparepart" /></div><div class="table-wrap"><table><thead><tr><th>SPAREPART</th><th>SPESIFIKASI</th><th>AKSI</th></tr></thead><tbody id="part-master-body">${catalog.map(product=>`<tr data-part-master="${esc([product.name,product.sku,product.model].join(' ').toLowerCase())}"><td>${esc(product.name)}<div class="field-hint">${esc(product.sku)}</div></td><td>${esc(product.model || '—')}</td><td><div class="actions-cell"><button class="small-btn" data-edit-part="${product.id}">Edit</button><button class="small-btn" data-delete-part="${product.id}">Hapus</button></div></td></tr>`).join('')}<tr data-part-master-empty><td colspan="3">Belum ada data sparepart yang cocok.</td></tr></tbody></table></div></section>`);
+    page.insertAdjacentHTML('beforeend',`<section class="panel table-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">Kelola data sparepart</div><div class="panel-sub">Edit identitas dan harga. Hapus hanya data yang belum mempunyai riwayat stok atau transaksi. Untuk salah penerimaan, gunakan pembatalan di halaman Penerimaan.</div></div><input type="search" id="part-master-search" class="search" placeholder="Cari nama atau SKU sparepart" /></div><div class="table-wrap"><table><thead><tr><th>SPAREPART</th><th>SPESIFIKASI</th><th>AKSI</th></tr></thead><tbody id="part-master-body">${catalog.map(product=>`<tr data-part-master="${esc([product.name,product.sku,product.model,...parts.filter(item=>item.product_id===product.id).map(item=>item.barcode)].join(' ').toLowerCase())}"><td>${esc(product.name)}<div class="field-hint">${esc(product.sku)}</div></td><td>${esc(product.model || '—')}</td><td><div class="actions-cell"><button class="small-btn" data-edit-part="${product.id}">Edit</button><button class="small-btn" data-delete-part="${product.id}">Hapus</button></div></td></tr>`).join('')}<tr data-part-master-empty><td colspan="3">Belum ada data sparepart yang cocok.</td></tr></tbody></table></div></section>`);
     const masterBody=page.querySelector('#part-master-body'),masterRows=[...masterBody.querySelectorAll('[data-part-master]')],masterSearch=page.querySelector('#part-master-search');
     const renderMaster=()=>filterPagedRows(masterBody,masterRows,row=>row.dataset.partMaster.includes(masterSearch.value.trim().toLowerCase()),masterBody.querySelector('[data-part-master-empty]'));
     masterSearch.addEventListener('input',renderMaster);renderMaster();
@@ -1189,7 +1192,7 @@ async function repairPartModal(repairId, returnPage = state.page) {
   if (result.error) return toast(result.error.message, true);
   const parts = (result.data || []).filter((item) => String(item.products?.category || '').toLowerCase() !== 'laptop');
   if (!parts.length) return toast('Belum ada stok sparepart tersedia di cabang ini. Tambah melalui Penerimaan & Barcode.');
-  openModal('Pakai sparepart', 'Pemakaian mengurangi stok cabang dan tercatat pada pekerjaan repair ini.', `<div class="form-grid"><div class="field full"><label>Sparepart</label><select name="part_stock_item_id" required>${parts.map((item) => `<option value="${item.id}">${esc(item.products?.name || 'Sparepart')} · ${item.quantity} unit · ${esc(item.barcode)}</option>`).join('')}</select></div><div class="field"><label>Jumlah terpakai</label><input name="quantity" type="number" min="1" value="1" required /></div></div>`, async (form) => { const { error } = await supabase.rpc('take_qc_sparepart', { _request_id: requestId, _repair_id: repairId, _stock_id: form.get('part_stock_item_id'), _quantity: Number(form.get('quantity')) }); if (error) throw error; toast('Pemakaian sparepart tercatat dan stok diperbarui.'); await showPage(returnPage); }, 'Catat pemakaian');
+  openModal('Pakai sparepart', 'Pemakaian mengurangi stok cabang dan tercatat pada pekerjaan repair ini.', `<div class="form-grid"><div class="field full"><label>Sparepart</label><select name="part_stock_item_id" data-stock-picker required>${parts.map((item) => `<option data-barcode="${esc(item.barcode)}" value="${item.id}">${esc(item.products?.name || 'Sparepart')} · ${item.quantity} unit · ${esc(item.barcode)}</option>`).join('')}</select></div><div class="field"><label>Jumlah terpakai</label><input name="quantity" type="number" min="1" value="1" required /></div></div>`, async (form) => { const { error } = await supabase.rpc('take_qc_sparepart', { _request_id: requestId, _repair_id: repairId, _stock_id: form.get('part_stock_item_id'), _quantity: Number(form.get('quantity')) }); if (error) throw error; toast('Pemakaian sparepart tercatat dan stok diperbarui.'); await showPage(returnPage); }, 'Catat pemakaian');
 }
 
 async function fetchInventory() {
@@ -2019,21 +2022,21 @@ function bindRestoreUnitButtons(page, units, products) {
 
 async function inventoryArchivePage(page) {
   const organizationId = state.organization.id;
-  const [products, withdrawn] = await Promise.all([
+  const [products, archiveStock] = await Promise.all([
     fetchAllRows(supabase.from('products').select('id,name,sku,category,archived_at').eq('organization_id', organizationId).order('name')),
-    fetchAllRows(supabase.from('stock_items').select('id,product_id,branch_id,barcode,acquisition_cost')
-      .eq('organization_id', organizationId).eq('status', 'withdrawn').order('barcode')),
+    fetchAllRows(supabase.from('stock_items').select('id,product_id,branch_id,barcode,acquisition_cost,status')
+      .eq('organization_id', organizationId).order('barcode')),
   ]);
   if (!page.isConnected || !canManage() || !state.inventoryArchiveOpen) return;
   const archived = products.filter(product => product.archived_at);
   const productById = new Map(products.map(product => [product.id, product]));
-  const units = withdrawn.filter(unit => productById.get(unit.product_id)?.category?.trim().toLowerCase() === 'laptop');
+  const units = archiveStock.filter(unit => unit.status==='withdrawn' && productById.get(unit.product_id)?.category?.trim().toLowerCase() === 'laptop');
   page.innerHTML = `${header('Arsip produk & unit', 'Semua cabang · produk yang diarsipkan dan unit yang dikeluarkan lewat koreksi.',
     '<button type="button" class="btn" data-inventory-back>Kembali ke Produk & stok</button>')}
     <div class="field"><label for="inventory-archive-search">Cari produk atau barcode</label><input type="search" id="inventory-archive-search" placeholder="Nama, SKU, atau barcode" /></div>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Produk diarsipkan</div></div>
       <div class="table-wrap"><table><thead><tr><th>Produk / SKU</th><th>Diarsipkan</th><th>Aksi</th></tr></thead><tbody>
-      ${archived.map(product => `<tr data-archive-row><td><b>${esc(product.name)}</b><div class="field-hint">${esc(product.sku || '')}</div></td>
+      ${archived.map(product => `<tr data-archive-row data-archive-search="${esc([product.name,product.sku,...archiveStock.filter(unit=>unit.product_id===product.id).map(unit=>unit.barcode)].join(' ').toLowerCase())}"><td><b>${esc(product.name)}</b><div class="field-hint">${esc(product.sku || '')}</div></td>
       <td>${new Date(product.archived_at).toLocaleDateString('id-ID')}</td><td><button type="button" class="small-btn" data-unarchive-product="${esc(product.id)}">Aktifkan produk</button></td></tr>`).join('')}
       <tr data-archive-empty><td colspan="3">Tidak ada produk arsip yang cocok.</td></tr></tbody></table></div></section>
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Unit yang dikeluarkan</div></div>
@@ -2052,7 +2055,7 @@ async function inventoryArchivePage(page) {
   const filter = () => {
     const query = search.value.trim().toLowerCase();
     tables.forEach(({ table, rows, empty }) => filterPagedRows(table, rows,
-      row => row.textContent.toLowerCase().includes(query), empty));
+      row => (row.dataset.archiveSearch || row.textContent.toLowerCase()).includes(query), empty));
   };
   search.addEventListener('input', filter);
   filter();
@@ -3580,7 +3583,7 @@ async function partsModal(ticketId) {
   const stock = checkError(await supabase.from('stock_items').select('id,product_id,barcode,quantity,products(name,sku,cost_price)').eq('branch_id', state.branchId).eq('status', 'available').gt('quantity', 0));
   const available = stock || [];
   if (!available.length) return toast('Tidak ada stok sparepart tersedia di cabang ini.', true);
-  openModal('Pakai sparepart', 'Penggunaan sparepart akan mengurangi stok dan tercatat di tiket servis.', `<div class="form-grid"><div class="field full"><label>Sparepart</label><select name="stock_item_id" required>${available.map((item) => `<option value="${item.id}">${esc(item.products?.name || 'Produk')} · ${item.quantity} unit · ${esc(item.barcode)}</option>`).join('')}</select></div><div class="field"><label>Jumlah</label><input name="quantity" type="number" value="1" min="1" required /></div></div>`, async (form) => {
+  openModal('Pakai sparepart', 'Penggunaan sparepart akan mengurangi stok dan tercatat di tiket servis.', `<div class="form-grid"><div class="field full"><label>Sparepart</label><select name="stock_item_id" data-stock-picker required>${available.map((item) => `<option data-barcode="${esc(item.barcode)}" value="${item.id}">${esc(item.products?.name || 'Produk')} · ${item.quantity} unit · ${esc(item.barcode)}</option>`).join('')}</select></div><div class="field"><label>Jumlah</label><input name="quantity" type="number" value="1" min="1" required /></div></div>`, async (form) => {
     const { error } = await supabase.rpc('use_service_part', { _ticket_id: ticketId, _stock_item_id: form.get('stock_item_id'), _quantity: Number(form.get('quantity')) });
     if (error) throw error; toast('Sparepart dicatat dan stok diperbarui.'); await showPage('service');
   }, 'Catat sparepart');
@@ -3664,8 +3667,30 @@ async function startScanner(host, input, formats = ['code_128', 'ean_13', 'ean_8
   } catch (error) { toast(error.message || 'Pemindai belum bisa dimuat. Coba lagi atau ketik kode manual.', true); }
 }
 
+async function openStockByBarcode(code) {
+  const branchId=state.branchId,organizationId=state.organization.id;
+  try {
+    const unit=checkError(await supabase.from('stock_items').select('id').eq('organization_id',organizationId).eq('branch_id',branchId).eq('barcode',code).maybeSingle());
+    if(state.branchId!==branchId || state.organization.id!==organizationId)return;
+    if(!unit)return toast('Unit tidak ditemukan di cabang yang sedang dibuka. Periksa kode pada label.',true);
+    await openQcUnitDetail(unit.id);
+  } catch(error){toast(error.message || 'Unit belum dapat dicari. Coba lagi.',true);}
+}
+
 function bindPageBarcodeSearch(page) {
-  for (const id of ['tech-unit-search','qc-result-search','parts-stock-search','inventory-search','sale-product-search']) {
+  const picker=page.querySelector('select[data-stock-picker]');
+  if(picker && !page.querySelector('#part-picker-search')){
+    picker.closest('.field').insertAdjacentHTML('beforebegin','<div class="field full"><label>Scan barcode / QR sparepart</label><input type="search" id="part-picker-search" placeholder="Kode barcode lot sparepart" autocomplete="off" /><small class="field-hint" data-part-picker-status>Scan hanya memilih lot. Stok berkurang setelah Catat pemakaian.</small></div>');
+    const search=page.querySelector('#part-picker-search'),hint=page.querySelector('[data-part-picker-status]');
+    search.addEventListener('input',()=>{
+      const code=search.value.trim().toUpperCase();if(!code)return;
+      const option=[...picker.options].find(item=>item.dataset.barcode?.toUpperCase()===code);
+      picker.value=option?.value || '';
+      hint.textContent=option ? 'Dipilih: '+option.textContent : 'Kode tidak ditemukan di daftar sparepart tersedia pada cabang ini.';
+      picker.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+  }
+  for (const id of ['finder-search','central-unit-search','tech-unit-search','qc-result-search','parts-stock-search','inventory-search','sale-product-search','transfer-unit-search','unit-search','intake-search','handover-search','batch-unit-search','inventory-archive-search','part-picker-search','part-master-search']) {
     const input = page.querySelector('#' + id);
     if (!input || input.dataset.cameraBound) continue;
     input.dataset.cameraBound = '1';
@@ -3675,7 +3700,33 @@ function bindPageBarcodeSearch(page) {
     const host = document.createElement('div');host.className='barcode-search-preview';
     const panel = input.closest('.panel');
     (panel?.querySelector('.panel-head') || input.parentElement).insertAdjacentElement('afterend',host);
-    button.addEventListener('click',()=>startScanner(host,input,['code_128'],()=>{}));
+    button.addEventListener('click',()=>startScanner(host,input,['code_128'],async()=>{
+      const filters = id==='inventory-search' ? {'inventory-category':'all','inventory-brand':'all','inventory-stock':'branch','inventory-min-price':'','inventory-max-price':''}
+        : id==='unit-search' ? {'unit-status-filter':'all'}
+        : id==='qc-result-search' ? {'qc-result-status':''}
+        : id==='batch-unit-search' ? {'batch-unit-status':''} : {};
+      for(const [filterId,value] of Object.entries(filters)){
+        const filter=page.querySelector('#'+filterId);
+        if(filter){filter.value=value;filter.dispatchEvent(new Event(filter.tagName==='SELECT'?'change':'input',{bubbles:true}));}
+      }
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+      if(id==='central-unit-search')return openStockByBarcode(input.value.trim());
+      if(id==='tech-unit-search'){
+        const branchId=state.branchId,pageName=state.page,code=input.value.trim();
+        const unit=checkError(await supabase.from('stock_items').select('id,branch_id,status').eq('organization_id',state.organization.id).eq('branch_id',branchId).eq('barcode',code).maybeSingle());
+        if(!input.isConnected || state.branchId!==branchId || state.page!==pageName)return;
+        if(!unit)return toast('Unit tidak ditemukan di cabang yang sedang dibuka. Periksa kode pada label.',true);
+        const stages={pending_qc:'qc_new',waiting_parts:'qc_parts',repair_needed:'qc_repair',repairing:'qc_repair',scrap:'qc_scrap',not_sellable:'qc_scrap',awaiting_qc_handover:'qc_dispatch'};
+        const next=stages[unit.status];
+        if(next && next!==pageName && rolePages().includes(next)){
+          await showPage(next);
+          if(state.branchId!==branchId || state.page!==next)return;
+          const search=document.querySelector('#tech-unit-search');
+          if(search){search.value=code;search.dispatchEvent(new Event('input',{bubbles:true}));}
+          toast('Unit ditemukan di halaman '+pageLabel(next)+'.');
+        } else if(!next) await openQcUnitDetail(unit.id);
+      }
+    }));
   }
 }
 
