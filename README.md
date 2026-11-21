@@ -13,22 +13,22 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 
 ## Akun dan cabang
 
-- Buat akun pertama melalui **Buat akun**. Setelah konfirmasi email dan masuk, lengkapi penyiapan DIGITAL LAPTOP JOMBANG serta nama cabang yang benar.
-- Pemilik membuka **Pengaturan Aplikasi → Tambah akun**, lalu mengisi nama, email, password, role **Operator** atau **QC**, dan cabang. Akun langsung aktif. Dari daftar anggota, pemilik dapat mengubah data/akses/password atau menghapus akun.
+- Masuk menggunakan email dan kata sandi akun yang sudah dibuat. Untuk mendapatkan akun, hubungi admin toko.
+- Pemilik membuka **Pengaturan Aplikasi → Tambah akun**, lalu mengisi nama, email, password, role **Admin Pusat**, **Operator**, atau **Teknisi**, dan cabang. Akun langsung aktif. Dari daftar anggota, pemilik dapat mengubah data/akses/password atau menghapus akun.
 
 ## Alur penerimaan, QC, dan repair
 
-1. Pemilik/operator mencatat penerimaan di **Penerimaan & barcode**. Laptop mendapatkan barcode stok unik per unit; lembar label dapat dicetak sekaligus sebelum laptop masuk rak. Produk selain laptop langsung masuk stok.
-2. Teknisi membuka **QC & repair**, memindai barcode stok, memasukkan serial/barcode supplier, dan mencatat hasil pemeriksaan. Unit laptop belum tersedia bagi kasir sampai lolos QC.
-3. Unit bermasalah masuk papan repair. Teknisi mencatat progres, memakai sparepart dari stok cabang, lalu mengirim unit ke QC akhir. Hanya unit yang lolos QC akhir masuk stok jual.
+1. Pemilik mencatat supplier dan jumlah laptop borongan di **Penerimaan & barcode**. Sistem membuat barcode unik per laptop dan mencetak semua label; satu batch boleh berisi merek dan model yang berbeda.
+2. Admin Pusat memindai barcode satu per satu untuk mencatat produk/model, spesifikasi, modal tunai per unit, serial, dan kondisi/minus. Biaya pembelian tunai masuk ke Keuangan dan modal stok setelah dicatat di QC.
+3. Unit yang perlu perbaikan diteruskan ke antrean teknisi. Teknisi mencatat progres dan sparepart, lalu menyerahkan unit kembali ke Admin Pusat untuk QC akhir dan serah terima fisik. Unit normal juga menunggu konfirmasi serah terima sebelum siap dijual atau dimutasi.
 4. Saat laptop bergaransi terjual, sistem membuat **kode QR garansi internal** yang berbeda dari barcode stok. Staf dapat mencetak QR dan memindainya dari halaman **Garansi** untuk melihat status, tanggal berlaku, pelanggan, dan nomor nota. Pelanggan tidak perlu memindai QR.
 5. Semua halaman mengacu pada data cabang yang sama. Perubahan penerimaan, QC, repair, penjualan, dan stok disiarkan ke anggota tim secara langsung.
 
 ## Pelanggan, supplier, dan keuangan
 
-- Barang baru dapat dibuat langsung di form **Penerimaan & barcode**; tidak perlu membuat produk lebih dulu. Supplier terdaftar dipilih otomatis; supplier baru dapat dibuat di form yang sama. Dua huruf awal nama supplier dipakai sebagai awalan barcode, misalnya **AS-DL-…** untuk Asep.
+- Form penerimaan laptop hanya meminta supplier dan jumlah. Supplier terdaftar dapat dipilih atau dibuat; data supplier disimpan di tab **Supplier**. Dua huruf awal nama supplier dipakai pada label barcode, misalnya **AS-DL-…** untuk Asep.
 - Penjualan dapat dicatat lunas atau tempo. Piutang penjualan dan servis dikelola bersama kontak pada tab **Pelanggan**; pembayaran berikutnya memperbarui saldo dan kas masuk.
-- Penerimaan barang mencatat nilai nota, pembayaran awal, dan jatuh tempo. Sisa hutang tampil pada tab **Supplier**; pelunasan tercatat sebagai kas keluar.
+- Semua pembelian laptop borongan bersifat tunai. Admin Pusat mencatat modal per unit saat QC; sistem menghitung total belanja batch dan mencatat satu pengeluaran pembelian. Tab **Supplier** hanya menyimpan data kontak supplier.
 - Halaman **Keuangan** mencatat pengeluaran dan pemasukan lain, merangkum kas masuk/keluar bulan ini, serta menyediakan filter **Semua cabang** untuk pemilik. Operator hanya melihat cabangnya.
 - Produk baru wajib memiliki foto. Foto dapat dipilih dari file PC/galeri ponsel atau diambil langsung dengan kamera; produk lama dapat dilengkapi dari tombol **Foto/Ganti foto**. Gambar tersimpan di Supabase Storage dan dipakai di halaman stok.
 - Beranda menampilkan laptop terlaris dan stok laptop siap jual per merek berdasarkan cabang terpilih. Daftar produk mendukung filter merek dan urutan harga terendah/tertinggi.
@@ -36,9 +36,10 @@ Project Supabase target: `pklfnrxcczvphxzzmrwx` (region Singapore). Skema dan Ro
 
 ## Akses berdasarkan role
 
-- **Pemilik:** dashboard, penerimaan & barcode, produk & stok, garansi, pelanggan & supplier, keuangan, dan pengelolaan cabang/operator. Tidak ada menu kasir atau QC & repair.
+- **Pemilik:** dashboard, penerimaan & barcode, QC & repair, produk & stok, garansi, pelanggan & supplier, keuangan, dan pengelolaan cabang/operator. Tidak ada menu kasir.
+- **Admin Pusat:** penerimaan laptop borongan, QC awal dan akhir, serah terima fisik, stok Pusat, mutasi, dan katalog.
 - **Operator:** dashboard, penerimaan & barcode, produk & stok, kasir, servis pelanggan, garansi, pelanggan & supplier, dan keuangan untuk cabangnya.
-- **Teknisi:** halaman QC & repair serta antrean servis pelanggan untuk cabangnya. Teknisi hanya mengubah tiket yang ditugaskan kepadanya atau belum ditugaskan.
+- **Teknisi:** antrean perbaikan laptop dan servis pelanggan untuk Cabang Pusat/cabangnya. QC awal borongan dilakukan Admin Pusat; teknisi mengerjakan unit yang diteruskan ke antrean repair.
 
 ## Deploy ke Vercel
 
@@ -55,4 +56,4 @@ Setelah deploy pertama, tambahkan domain custom di **Project Settings → Domain
 - Foto kondisi awal dan bukti penyerahan servis diunggah ke bucket privat `service-evidence`.
 - PWA meng-cache kerangka app untuk membuka layar saat offline. Kasir dapat menyimpan antrean transaksi di perangkat dan mengirimkannya saat koneksi kembali; penerimaan, stok, QC, servis, dan keuangan tetap membutuhkan koneksi. Antrean lokal hanya ada di perangkat itu, dan konflik stok harus diperiksa operator.
 
-- Total nota barang masuk dihitung otomatis di database dari jumlah unit dikali harga modal per unit. Nilai sisa masuk ke saldo hutang supplier; harga modal per unit produk terdaftar otomatis terisi sebagai nilai awal.
+- Migrasi `20261120120000_bulk_laptop_intake_cash_qc.sql` menambahkan penerimaan laptop borongan, pencatatan QC per barcode, dan pengeluaran tunai pembelian. Jalankan migrasi ini pada Supabase sebelum memakai versi aplikasi yang menggunakannya.

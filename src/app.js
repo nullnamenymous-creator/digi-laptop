@@ -28,21 +28,22 @@ const managedBranchStorageKey = (orgId) => `digi-selected-branch:${orgId}${isCen
 const canManageOpeningStock = () => canManage() || (isCentralAdmin() && atCentral());
 const canIntake = () => atCentral() && (canManage() || isCentralAdmin());
 const canStockQc = () => atCentral() && ['owner','technician','central_admin'].includes(state.profile?.role);
+const canAdminQc = () => atCentral() && (canManage() || isCentralAdmin());
 const canEditProducts = () => canManage() || isCentralAdmin();
 const readyStockLabel = () => atCentral() ? 'Siap didistribusikan' : 'Siap jual';
 const rolePages = () => {
   const role = state.profile?.role;
-  if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality', 'qc_handover', 'parts_stock'] : [])];
+  if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality', 'qc_new', 'qc_handover', 'parts_stock'] : [])];
   if (role === 'investor') return ['reports'];
-  if (role === 'technician') return canStockQc() ? ['qc_new','qc_parts','qc_repair','qc_scrap','qc_dispatch','quality','parts_stock','service'] : ['service'];
-  if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality','qc_handover','parts_stock'] : [])];
+  if (role === 'technician') return canStockQc() ? ['qc_parts','qc_repair','quality','parts_stock','service'] : ['service'];
+  if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality','qc_new','qc_handover','parts_stock'] : [])];
   if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','contacts','reports'];
   return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty', ...(role === 'operator' ? ['contacts'] : []), 'reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
 const stockStatusText = { awaiting_qc_handover: 'Lolos QC · menunggu terima fisik', reserved_online: 'Dipesan online', withdrawn: 'Dikeluarkan lewat koreksi', pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
-const pages = { orders: ['Pesanan online', '▣'], dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], qc_handover: ['Serah terima hasil QC', '▣'], qc_new: ['Barang baru masuk', '▤'], qc_parts: ['Menunggu sparepart', '▧'], qc_repair: ['Repair fisik', '⌁'], qc_scrap: ['Scrap / kanibal', '▣'], qc_dispatch: ['Serah terima ke Admin', '⇄'], parts_stock: ['Sparepart Pusat', '▧'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
+const pages = { orders: ['Pesanan online', '▣'], dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], qc_handover: ['Serah terima hasil QC', '▣'], qc_new: ['Terima Laptop Borongan', '▤'], qc_parts: ['Menunggu sparepart', '▧'], qc_repair: ['Repair fisik', '⌁'], qc_scrap: ['Scrap / kanibal', '▣'], qc_dispatch: ['Serah terima ke Admin', '⇄'], parts_stock: ['Sparepart Pusat', '▧'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
 
 function toast(message, error = false) {
   const old = document.querySelector('.toast');
@@ -217,7 +218,7 @@ function showShell() {
   const navHtml = permittedPages.map(([key, [, icon]]) => `<button class="nav-button${state.page === key ? ' active' : ''}" data-page="${key}"><span class="nav-icon">${icon}</span>${pageLabel(key)}</button>`).join('');
   const mobilePages = {
     operator: [['dashboard', 'Beranda'], ['cashier', 'Kasir'], ['inventory', 'Stok'], ['service', 'Servis'], ['contacts', 'Pelanggan']],
-    technician: canStockQc() ? [['qc_new', 'Masuk'], ['qc_parts', 'Sparepart'], ['qc_repair', 'Repair'], ['qc_dispatch', 'Serah terima']] : [['service', 'Servis']],
+    technician: canStockQc() ? [['qc_parts', 'Sparepart'], ['qc_repair', 'Repair'], ['quality', 'Progres QC']] : [['service', 'Servis']],
   }[state.profile.role] || [];
   const mobileNav = mobilePages.length ? `<nav class="staff-bottom-nav" aria-label="Navigasi cepat petugas">
     ${mobilePages.filter(([key]) => rolePages().includes(key)).map(([key, label]) => `<button type="button" data-page="${key}" ${state.page === key ? 'aria-current="page"' : ''}><span aria-hidden="true">${pages[key][1]}</span>${label}</button>`).join('')}
@@ -412,7 +413,7 @@ function bindProductPhotoPicker(form) {
 function selectedProductPhoto(formData) { return formData.get('product_photo_file')?.size ? formData.get('product_photo_file') : formData.get('product_photo_camera')?.size ? formData.get('product_photo_camera') : null; }
 
 async function loadCashierProducts() {
-  const columns = 'id,name,sku,brand,model,retail_price,reseller_price,image_path,is_public';
+  const columns = 'id,name,sku,brand,model,category,retail_price,reseller_price,image_path,is_public';
   const query = (fields) => fetchAllRows(supabase.from('products').select(fields).order('name'));
   try {
     return await query(`${columns},catalog_discount`);
@@ -871,15 +872,15 @@ async function beginStockQc(item) {
   if (!item) return;
   const pageName = state.page, branchId = state.branchId;
   try {
-    checkError(await supabase.rpc('start_stock_qc', {_stock_item_id: item.id}));
+    if (!canAdminQc()) checkError(await supabase.rpc('start_stock_qc', {_stock_item_id: item.id}));
     if (state.page !== pageName || state.branchId !== branchId) return;
-    await showPage(pageName);
-    if (state.page === pageName && state.branchId === branchId) stockQcModal(item);
+    if (!canAdminQc()) await showPage(pageName);
+    if (state.page === pageName && state.branchId === branchId) await stockQcModal(await fetchQcUnit(item.id));
   } catch (error) { toast(error.message || 'Pemeriksaan belum bisa dimulai.', true); }
 }
 
 async function fetchQcUnit(id) {
-  return checkError(await supabase.from('stock_items').select('*,products(name,sku,category,specifications),intake_batches(invoice_number),stock_repairs(id,status,issue,resolution,labor_cost,updated_at,stock_repair_parts(id,product_name,quantity,cost,external_supplier,paid_at))')
+  return checkError(await supabase.from('stock_items').select('*,products(name,sku,category,specifications),intake_batches(invoice_number,product_id,products(sku)),stock_repairs(id,status,issue,resolution,labor_cost,updated_at,stock_repair_parts(id,product_name,quantity,cost,external_supplier,paid_at))')
     .eq('organization_id', state.organization.id).eq('id', id).single());
 }
 
@@ -908,7 +909,7 @@ function completeQcRepairModal(repairId) {
   openModal('Selesai dan serahkan ke Admin Pusat', 'Pastikan sparepart terpasang dan uji fungsi akhir selesai. Unit tetap belum siap mutasi sampai admin menerima fisiknya.',
     '<div class="form-grid"><div class="field full"><label>Hasil pengerjaan dan uji fungsi</label><textarea name="resolution" required minlength="5" maxlength="2000"></textarea></div><div class="field"><label>Ongkos jasa / repair luar yang dibayar sekarang</label><input type="number" name="labor" min="0" max="1000000000" value="0" required /><small>Isi 0 untuk pekerjaan internal tanpa pembayaran jasa baru.</small></div><label class="full"><input type="checkbox" name="final_check" required /> Saya telah menguji fungsi akhir dan memastikan unit normal.</label></div>', async form => {
       checkError(await supabase.rpc('complete_qc_repair', {_repair_id: repairId,_resolution: String(form.get('resolution') || '').trim(),_labor_cost: Number(form.get('labor')),_final_check: form.get('final_check') === 'on'}));
-      toast('Pengerjaan dan uji akhir tersimpan. Menunggu penerimaan fisik Admin Pusat.'); await showPage('qc_dispatch');
+      toast('Pengerjaan dan uji akhir tersimpan. Unit masuk antrean QC akhir Admin Pusat.'); await showPage('quality');
     }, 'Selesai & kirim serah terima');
 }
 
@@ -916,24 +917,24 @@ function scrapQcUnitModal(id) {
   openModal('Pindahkan ke scrap / kanibal', 'Unit diblokir dari penjualan dan mutasi. Modal serta riwayatnya tetap tersimpan; ini bukan penghapusan aset.',
     '<div class="field"><label>Alasan dan kondisi unit</label><textarea name="reason" required minlength="5" maxlength="2000"></textarea></div>', async form => {
       checkError(await supabase.rpc('scrap_qc_unit', {_unit_id: id,_reason: String(form.get('reason') || '').trim()}));
-      toast('Unit masuk scrap / kanibal dan tidak dapat dijual.'); await showPage('qc_scrap');
+      toast('Unit masuk scrap / kanibal dan tidak dapat dijual.'); await showPage('quality');
     }, 'Simpan sebagai scrap');
 }
 
 async function technicianWorkflowPage(page, stage) {
-  if (!canTechnician() || !canStockQc()) throw new Error('Halaman pekerjaan hanya untuk Teknisi Pusat.');
+  if (stage === 'qc_new' ? !canAdminQc() : !canTechnician() || !canStockQc()) throw new Error(stage === 'qc_new' ? 'QC laptop borongan hanya untuk Admin Pusat dan Pemilik.' : 'Halaman pekerjaan hanya untuk Teknisi Pusat.');
   const branchId = state.branchId;
   const [units, jobs] = await Promise.all([
     fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,supplier,supplier_barcode,created_at,intake_batch_id,status,qc_stage,qc_at,qc_started_at,qc_notes,acquisition_cost,products(name,sku,category)').eq('branch_id',branchId).order('created_at')),
     fetchAllRows(supabase.from('stock_repairs').select('id,stock_item_id,issue,status,resolution,labor_cost,updated_at,stock_repair_parts(id,product_name,quantity,cost,external_supplier,paid_at)').eq('branch_id',branchId).order('updated_at',{ascending:false})),
   ]);
   if (!page.isConnected || state.branchId !== branchId) return;
-  const stages = {qc_new:['Barang baru masuk',['pending_qc']],qc_parts:['Menunggu sparepart',['waiting_parts']],qc_repair:['Repair fisik',['repair_needed','repairing']],qc_scrap:['Scrap / kanibal',['scrap','not_sellable']],qc_dispatch:['Serah terima ke Admin Pusat',['awaiting_qc_handover']]};
+  const stages = {qc_new:['Terima Laptop Borongan',['pending_qc']],qc_parts:['Menunggu sparepart',['waiting_parts']],qc_repair:['Repair fisik',['repair_needed','repairing']],qc_scrap:['Scrap / kanibal',['scrap','not_sellable']],qc_dispatch:['Serah terima ke Admin Pusat',['awaiting_qc_handover']]};
   const [title,statuses] = stages[stage];
   const rows = units.filter(unit => String(unit.products?.category || '').toLowerCase()==='laptop' && statuses.includes(unit.status));
   const jobFor = unit => jobs.find(job => job.stock_item_id===unit.id && ['repair_needed','repairing','waiting_parts','pending_final_qc'].includes(job.status));
   const messages = {
-    qc_new:'Setiap laptop borongan muncul sendiri dengan barcode unik. Tentukan hasil cek untuk meneruskan unit ke tahap berikutnya.',
+    qc_new:'Admin Pusat memindai tiap barcode laptop borongan, mencatat model, spesifikasi, kondisi, dan modal per unit. Unit lolos langsung masuk stok siap jual/mutasi; unit bermasalah diteruskan ke antrean teknisi.',
     qc_parts:'Ambil sparepart dari stok Pusat dan catat pemasangannya. Setelah normal dan uji fungsi akhir lulus, kirim ke antrean serah terima.',
     qc_repair:'Catat progres repair fisik dan biaya terkait. Selesai pengerjaan tetap harus dikonfirmasi dengan uji fungsi akhir.',
     qc_scrap:'Unit ini tidak dapat dijual atau dimutasi. Riwayat dan modal dipertahankan. Pembongkaran part menjadi stok baru belum dilakukan otomatis.',
@@ -945,7 +946,7 @@ async function technicianWorkflowPage(page, stage) {
     <div class="table-wrap"><table><thead><tr><th>BARCODE / DETAIL</th><th>STATUS / CATATAN</th><th>MODAL UNIT</th><th>AKSI</th></tr></thead><tbody>
     ${rows.map(unit => {
       const job = jobFor(unit), parts=(job?.stock_repair_parts || []), cost=jobs.filter(j=>j.stock_item_id===unit.id).reduce((n,j)=>n+Number(j.labor_cost || 0)+(j.stock_repair_parts || []).reduce((m,p)=>m+Number(p.cost || 0),0),0);
-      const actions = stage==='qc_new' ? `<button type="button" class="small-btn" data-tech-check="${unit.id}">Periksa unit</button>`
+      const actions = stage==='qc_new' ? `<button type="button" class="small-btn" data-tech-check="${unit.id}">Input data QC</button>`
         : ['qc_parts','qc_repair'].includes(stage) && job ? `${job.status==='repair_needed' ? `<button type="button" class="small-btn" data-tech-start="${job.id}">Mulai repair</button>` : ''}<button type="button" class="small-btn" data-tech-part="${job.id}">Ambil sparepart Pusat</button><button type="button" class="small-btn" data-tech-external="${job.id}">Beli dari luar</button><button type="button" class="small-btn" data-tech-finish="${job.id}">Selesai & serahkan</button>${stage==='qc_repair' ? `<button type="button" class="small-btn" data-tech-wait="${job.id}">Menunggu sparepart</button>` : ''}<button type="button" class="small-btn danger" data-tech-scrap="${unit.id}">Scrap / kanibal</button>`
         : ['qc_parts','qc_repair'].includes(stage) ? 'Pekerjaan repair tidak ditemukan. Hubungi Pemilik untuk memeriksa riwayat unit.' : stage==='qc_dispatch' ? 'Menunggu scan penerimaan fisik admin' : 'Tidak dapat dijual';
       return `<tr data-tech-search="${esc([unit.barcode,unit.intake_batch_id,unit.serial_number,unit.products?.name,unit.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${unit.id}">${esc(unit.barcode)} Â· Detail</button><div>${esc(unit.products?.name || 'Laptop')}</div><small>Penerimaan ${esc(unit.intake_batch_id?.slice(0,8).toUpperCase() || '-')} Â· ${esc(unit.serial_number || 'Tanpa serial')}</small></td>
@@ -1005,8 +1006,8 @@ async function partsStockPage(page) {
   }
   page.querySelector('#parts-intake')?.addEventListener('click',async()=>{
     try {
-      const [products,suppliers]=await Promise.all([fetchAllRows(supabase.from('products').select('*').order('name')),fetchAllRows(supabase.from('suppliers').select('id,name,initials,phone').order('name'))]);
-      intakeBatchModal(products,suppliers,'Sparepart');
+      const products=await fetchAllRows(supabase.from('products').select('*').order('name'));
+      intakeBatchModal(products,[],'Sparepart');
     }catch(error){toast(error.message,true);}
   });
 }
@@ -1014,10 +1015,10 @@ async function partsStockPage(page) {
 function sparepartEditModal(product) {
   if(!canIntake() || product.category!=='Sparepart')return;
   const branchId=state.branchId,organizationId=state.organization.id;
-  openModal('Edit sparepart','Perubahan master tidak mengubah modal lot yang sudah diterima atau biaya sparepart yang sudah dipakai teknisi.',`<div class="form-grid">${[['name','Nama sparepart'],['brand','Merek'],['model','Spesifikasi / kompatibilitas']].map(([key,label])=>`<div class="field ${key==='model'?'full':''}"><label>${label}</label><input name="${key}" value="${esc(product[key] || '')}" ${key==='name'?'required':''} /></div>`).join('')}${[['retail_price','Harga end user'],['reseller_price','Harga reseller']].map(([key,label])=>`<div class="field"><label>${label}</label><input name="${key}" type="number" min="0" value="${Number(product[key] || 0)}" required /></div>`).join('')}</div>`,async form=>{
+  openModal('Edit sparepart','Sparepart hanya untuk kebutuhan toko dan teknisi, bukan untuk dijual. Perubahan nama tidak mengubah modal stok yang sudah diterima.',`<div class="form-grid">${[['name','Nama sparepart'],['brand','Merek'],['model','Spesifikasi / kompatibilitas']].map(([key,label])=>`<div class="field ${key==='model'?'full':''}"><label>${label}</label><input name="${key}" value="${esc(product[key] || '')}" ${key==='name'?'required':''} /></div>`).join('')}</div>`,async form=>{
     if(!canIntake() || state.branchId!==branchId || state.organization.id!==organizationId)throw new Error('Akses edit sparepart berubah. Buka kembali halaman sparepart.');
-    const changes={name:String(form.get('name')).trim(),brand:String(form.get('brand')).trim(),model:String(form.get('model')).trim(),retail_price:Number(form.get('retail_price')),reseller_price:Number(form.get('reseller_price'))};
-    if(!changes.name || [changes.retail_price,changes.reseller_price].some(value=>!Number.isFinite(value)||value<0))throw new Error('Nama wajib diisi dan harga harus nol atau lebih.');
+    const changes={name:String(form.get('name')).trim(),brand:String(form.get('brand')).trim(),model:String(form.get('model')).trim(),retail_price:0,reseller_price:0,is_public:false};
+    if(!changes.name)throw new Error('Nama sparepart wajib diisi.');
     checkError(await supabase.from('products').update(changes).eq('id',product.id).eq('organization_id',organizationId).eq('category','Sparepart').select('id').single());
     toast('Data sparepart diperbarui.');await showPage('parts_stock');
   },'Simpan perubahan');
@@ -1119,7 +1120,7 @@ async function qcResultsPanel() {
     <input class="search" id="qc-result-search" type="search" placeholder="Cari kode penerimaan, barcode, produk, atau serial" aria-label="Cari unit dan kode penerimaan" />
     <label>Status <select id="qc-result-status" class="status-select"><option value="">Semua status</option>${Object.entries(labels).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div>
     <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${canManage() ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
-    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum ada hasil QC'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canTechnician() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${qcTrackingStatus(item) === 'checking' ? 'Lanjutkan QC' : 'Periksa unit'}</button>` : ''}</td></tr>`).join('')}
+    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}</td></tr>`).join('')}
     <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${canManage() ? 5 : 4}"><div class="empty">Tidak ada unit yang cocok dengan pencarian atau status ini.</div></td></tr></tbody></table></div>
   </section>`;
 }
@@ -1161,10 +1162,70 @@ function bindExternalPartPayments(page) {
   }));
 }
 
-function stockQcModal(item) {
+async function stockQcModal(item) {
   if (!item) return;
   const finalQc = item.qc_stage === 'final';
-  openModal(finalQc ? 'Pemeriksaan QC akhir' : 'Pemeriksaan laptop masuk', finalQc ? 'Luluskan unit ke antrean serah terima fisik, kembalikan untuk perbaikan, atau tandai sebagai scrap/retur.' : 'Pilih hasil sortir. Menunggu RAM/SSD masuk antrean tunggu part; laptop mati bisa dipisahkan sebagai kandidat scrap.', `<div class="notice">${esc(item.barcode)} · ${esc(item.products?.name || 'Laptop')} · modal beli ${money(item.acquisition_cost)}</div><div class="form-grid"><div class="field"><label>Barcode pemasok</label><input name="supplier_barcode" value="${esc(item.supplier_barcode || '')}" placeholder="Barcode bawaan supplier" /></div><div class="field"><label>Nomor seri laptop</label><input name="serial_number" value="${esc(item.serial_number || '')}" placeholder="SN / serial unit" /></div><div class="field full"><label>Hasil pemeriksaan</label><select name="decision"><option value="available">Lolos QC · menunggu serah terima fisik</option>${finalQc ? '' : '<option value="waiting_parts">Butuh RAM / HDD / SSD · tunggu part</option>'}<option value="repair_needed">Perlu repair teknisi</option><option value="not_sellable">Karantina / retur supplier</option><option value="scrap">Scrap / kanibal part · tidak dijual</option></select></div><div class="field full"><label>Catatan kondisi / kerusakan</label><textarea name="notes" rows="4" required placeholder="Contoh: hidup normal, tanpa RAM dan SSD; atau mati, casing retak berat"></textarea></div></div>`, async (form) => { const { error } = await supabase.rpc('decide_stock_qc', { _stock_item_id: item.id, _decision: form.get('decision'), _notes: String(form.get('notes')).trim(), _serial_number: String(form.get('serial_number')).trim(), _supplier_barcode: String(form.get('supplier_barcode')).trim() }); if (error) throw error; toast(form.get('decision') === 'available' ? 'Unit lolos QC. Menunggu scan dan penerimaan fisik Admin Pusat.' : 'Hasil sortir tersimpan pada unit ini.'); await showPage(form.get('decision') === 'available' ? 'qc_dispatch' : form.get('decision') === 'waiting_parts' ? 'qc_parts' : form.get('decision') === 'repair_needed' ? 'qc_repair' : 'qc_scrap'); }, 'Simpan hasil QC');
+  const isBulkIntake = item.intake_batches?.products?.sku === 'DL-BORONGAN-UNASSIGNED';
+  const products = isBulkIntake && !finalQc
+    ? (await fetchAllRows(supabase.from('products').select('id,name,sku,brand,model,cost_price,retail_price,reseller_price,warranty_months,specifications,image_path,archived_at').eq('organization_id',state.organization.id).eq('category','Laptop').order('name'))).filter(product => !product.archived_at && product.sku !== 'DL-BORONGAN-UNASSIGNED')
+    : [];
+  const productOptions = products.map(product => `<option value="${product.id}">${esc(product.name)} · ${esc(product.sku)}</option>`).join('');
+  const newFields = isBulkIntake && !finalQc ? `<div class="qc-new-product form-grid full" hidden><div class="field"><label>Merek</label><input name="new_brand" /></div><div class="field"><label>Model / tipe</label><input name="new_model" /></div>${productCopyFields(null)}${productPhotoPicker('',true)}</div>` : '';
+  const modelField = isBulkIntake && !finalQc
+    ? `<div class="field full"><label>Produk / model laptop</label><select name="product_pick"><option value="__new__">＋ Catat model baru</option>${productOptions}</select></div>${newFields}`
+    : `<div class="notice full">${esc(item.products?.name || 'Laptop')} · modal beli ${money(item.acquisition_cost)}</div>`;
+  const host = openModal(isBulkIntake ? (finalQc ? 'QC akhir laptop' : 'QC laptop borongan') : (finalQc ? 'Pemeriksaan QC akhir' : 'Pemeriksaan laptop masuk'), isBulkIntake && !finalQc
+    ? 'Periksa barcode ini satu per satu. Catat model, spesifikasi, modal tunai, kondisi/minus, lalu teruskan unit normal ke serah terima atau unit bermasalah ke teknisi.'
+    : finalQc ? 'Luluskan unit ke antrean serah terima fisik, kembalikan untuk perbaikan, atau tandai sebagai scrap/retur.' : 'Pilih hasil sortir dan catat kondisi unit.',
+    `<div class="form-grid"><div class="notice full"><b>Barcode unit (sudah ditempel): ${esc(item.barcode)}</b> · Supplier: ${esc(item.supplier || '—')}</div>${modelField}${isBulkIntake && !finalQc ? '<div class="field"><label>Modal beli tunai per unit</label><input name="unit_cost" type="number" min="1" step="1" required /></div>' : ''}<div class="field full"><label>Hasil pemeriksaan</label><select name="decision"><option value="available">${isBulkIntake ? 'Lolos QC · masuk stok siap jual / mutasi' : 'Lolos QC · menunggu serah terima fisik'}</option><option value="repair_needed">Perlu repair teknisi</option><option value="waiting_parts">Butuh RAM / HDD / SSD · tunggu part</option><option value="not_sellable">Karantina / retur supplier</option><option value="scrap">Scrap / kanibal part · tidak dijual</option></select></div><div class="field full"><label>Kondisi / minus unit</label><textarea name="notes" rows="4" required placeholder="Contoh: hidup normal, baterai drop; atau mati, casing retak berat. Tulis 'Normal' bila tidak ada minus."></textarea></div></div>`, async (form) => {
+      let productId = item.product_id;
+      let newProduct = null;
+      let unitCost = Number(item.acquisition_cost || 0);
+      if (isBulkIntake) {
+        if (!finalQc) {
+          const pick = String(form.get('product_pick') || '__new__');
+          unitCost = Number(form.get('unit_cost'));
+          if (pick === '__new__') {
+            const brand = String(form.get('new_brand') || '').trim();
+            const model = String(form.get('new_model') || '').trim();
+            const image = selectedProductPhoto(form);
+            if (!brand || !model) throw new Error('Merek dan model wajib diisi untuk model baru.');
+            if (!image) throw new Error('Tambahkan foto model baru dari kamera atau galeri.');
+            const imagePath = await uploadProductPhoto(image, crypto.randomUUID());
+            newProduct = {name:`${brand} ${model}`.trim(),brand,model,specifications:productCopyValues(form).specifications,image_path:imagePath,warranty_months:1};
+            productId = null;
+          } else {
+            productId = pick;
+          }
+        }
+        const { error } = await supabase.rpc('record_bulk_laptop_qc', {
+          _stock_item_id:item.id,_product_id:productId,_new_product:newProduct,_unit_cost:unitCost,
+          _decision:form.get('decision'),_notes:String(form.get('notes') || '').trim(),
+          _serial_number:String(item.serial_number || '').trim(),_supplier_barcode:String(form.get('supplier_barcode') || item.supplier_barcode || '').trim(),
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.rpc('decide_stock_qc', { _stock_item_id: item.id, _decision: form.get('decision'), _notes: String(form.get('notes')).trim(), _serial_number: String(item.serial_number || '').trim(), _supplier_barcode: String(item.supplier_barcode || '').trim() });
+        if (error) throw error;
+      }
+      const decision = form.get('decision');
+      toast(decision === 'available' ? (isBulkIntake ? 'QC lolos. Unit langsung masuk stok siap jual atau mutasi.' : 'QC tersimpan. Unit menunggu serah terima fisik Admin Pusat.') : ['repair_needed','waiting_parts'].includes(decision) ? 'QC tersimpan. Unit masuk antrean teknisi.' : 'Hasil QC tersimpan.');
+      await showPage(decision === 'available' && !isBulkIntake ? 'qc_handover' : canAdminQc() ? 'qc_new' : decision === 'waiting_parts' ? 'qc_parts' : decision === 'repair_needed' ? 'qc_repair' : 'quality');
+    }, 'Simpan hasil QC');
+  if (isBulkIntake && !finalQc) {
+    const form = host.querySelector('#active-modal');
+    const pick = form.querySelector('[name="product_pick"]');
+    const newProductFields = form.querySelector('.qc-new-product');
+    const syncProductPick = () => {
+      const isNew = pick.value === '__new__';
+      newProductFields.hidden = !isNew;
+      form.new_brand.required = isNew;
+      form.new_model.required = isNew;
+    };
+    pick.addEventListener('change', syncProductPick);
+    bindProductPhotoPicker(form);
+    syncProductPick();
+  }
 }
 
 async function externalRepairPartModal(repairId, returnPage = state.page) {
@@ -1244,15 +1305,16 @@ async function receivingPage(page) {
   ]);
   if (batches.error) throw batches.error;
   const pending = queue;
-  const batchRows = (batches.data || []).map((batch) => `<tr><td class="product-name">${esc(batch.id.slice(0, 8).toUpperCase())}<div class="field-hint">${new Date(batch.created_at).toLocaleString('id-ID')}</div></td><td>${esc(batch.products?.name || 'Barang')}</td><td>${esc(batch.suppliers?.name || batch.supplier || '—')} ${batch.suppliers?.initials ? `<span class="pill blue">${esc(batch.suppliers.initials)}</span>` : ''}<div class="field-hint">${esc(batch.invoice_number || '')}</div></td><td>${batch.unit_count} unit</td><td>${intakeBatchStatusSummary(batch)}<div class="intake-batch-status-actions"><button type="button" class="small-btn" data-intake-units="${batch.id}">Detail unit</button><button type="button" class="small-btn" data-intake-qc="${batch.id}">Lihat progres QC</button></div></td><td><button class="small-btn" data-print-batch="${batch.id}">Cetak label</button>${canManage() ? ` <button class="small-btn" data-edit-intake="${batch.id}">Edit</button> <button class="small-btn" data-delete-intake="${batch.id}">Hapus</button> <button type="button" class="small-btn" data-cancel-wrong-intake="${batch.id}">Batalkan salah input</button>` : ''}</td></tr>`).join('');
-  page.innerHTML = `${header('Penerimaan & barcode', 'Catat supplier, jumlah, modal, dan pembayaran barang yang baru datang.', `<button class="btn primary" id="new-intake">＋ Buat penerimaan</button>`)}
-    <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">Pindai & cek</div><div class="card-sub">Teknisi mengerjakan halaman QC & repair</div></article></div>
-    <section class="panel table-panel" data-intake-history><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan barang</div><div class="panel-sub">Label dicetak dari barcode setiap unit. Status belum menjadi stok jual sampai lolos QC.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>PRODUK</th><th>PEMASOK</th><th>JUMLAH</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat barang datang untuk menghitung stok, modal, hutang supplier, dan membuat barcode.</div></td></tr>'}</tbody></table></div></section>
+  const batchRows = (batches.data || []).map((batch) => { const isBulkLaptop = batch.products?.sku === 'DL-BORONGAN-UNASSIGNED'; return `<tr><td class="product-name">${esc(batch.id.slice(0, 8).toUpperCase())}<div class="field-hint">${new Date(batch.created_at).toLocaleString('id-ID')}</div></td><td>${esc(batch.suppliers?.name || batch.supplier || '—')} ${batch.suppliers?.initials ? `<span class="pill blue">${esc(batch.suppliers.initials)}</span>` : ''}</td><td>${batch.unit_count} unit</td><td><b>${money(batch.total_amount)}</b><div class="field-hint">Modal unit hasil QC</div></td><td>${intakeBatchStatusSummary(batch)}<div class="intake-batch-status-actions"><button type="button" class="small-btn" data-intake-units="${batch.id}">Detail barcode</button><button type="button" class="small-btn" data-intake-qc="${batch.id}">Lihat progres QC</button></div></td><td><button class="small-btn" data-print-batch="${batch.id}">Cetak barcode</button>${canManage() ? `${isBulkLaptop ? '' : ` <button class="small-btn" data-edit-intake="${batch.id}">Edit</button>`} <button class="small-btn" data-delete-intake="${batch.id}">Hapus</button>${isBulkLaptop ? '' : ` <button type="button" class="small-btn" data-cancel-wrong-intake="${batch.id}">Batalkan salah input</button>`}` : ''}</td></tr>`; }).join('');
+  page.innerHTML = `${header('Penerimaan & barcode', 'Input laptop borongan berdasarkan supplier dan jumlah. Model, spesifikasi, modal tunai, dan minus dicatat Admin Pusat saat QC.', `<button class="btn primary" id="new-intake">＋ Input laptop borongan</button>`)}
+    <div class="cards"><article class="card"><div class="card-label">Unit menunggu QC Admin Pusat<span class="card-icon">▤</span></div><div class="card-value">${pending.length}</div><div class="card-sub">Cabang ${esc(branchName(state.branchId))}</div></article><article class="card"><div class="card-label">Penerimaan terbaru<span class="card-icon">▦</span></div><div class="card-value">${(batches.data || []).length}</div><div class="card-sub">20 penerimaan terakhir</div></article><article class="card"><div class="card-label">Alur berikutnya<span class="card-icon">→</span></div><div class="card-value" style="font-size:18px">QC per barcode</div><div class="card-sub">Unit bermasalah diteruskan ke antrean teknisi</div></article></div>
+    <section class="panel table-panel" data-intake-history><div class="panel-head"><div><div class="panel-title">Riwayat penerimaan laptop</div><div class="panel-sub">Satu penerimaan dapat berisi berbagai merek dan model. Setiap unit memiliki barcode sendiri.</div></div></div><div class="table-wrap"><table><thead><tr><th>KODE / WAKTU</th><th>SUPPLIER</th><th>JUMLAH</th><th>TOTAL BELANJA</th><th>STATUS UNIT</th><th>AKSI</th></tr></thead><tbody>${batchRows || '<tr><td colspan="6"><div class="empty"><b>Belum ada penerimaan</b>Catat supplier dan jumlah laptop untuk membuat barcode per unit.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Unit menunggu pemeriksaan</div><div class="panel-sub">Cetak ulang label satuan jika ada yang rusak atau hilang.</div></div><input class="search" id="intake-search" placeholder="Cari kode unit / barcode atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE</th><th>PRODUK</th><th>BATCH</th><th>DITERIMA</th><th>AKSI</th></tr></thead><tbody id="intake-rows">${pending.map((item) => `<tr><td class="product-name">${esc(item.barcode)}</td><td>${esc(item.products?.name || 'Produk')}</td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '—')}</td><td>${new Date(item.created_at).toLocaleString('id-ID')}</td><td><button class="small-btn" data-print-one="${item.id}">Cetak label</button>${canManage() ? ` <button type="button" class="small-btn" data-edit-intake-unit="${item.id}">Edit</button> <button type="button" class="small-btn" data-delete-intake-unit="${item.id}">Hapus</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">Tidak ada unit yang menunggu QC.</div></td></tr>'}</tbody></table></div></section>`;
-  page.querySelector('#new-intake').textContent = 'Terima laptop';
-  page.querySelector('#new-intake').insertAdjacentHTML('afterend','<button class="btn" id="new-parts-intake">Terima sparepart</button>');
+  page.querySelector('#new-intake').textContent = 'Input laptop borongan';
+  page.querySelector('#new-intake').insertAdjacentHTML('afterend',`${canAdminQc() ? '<button class="btn" id="open-bulk-qc">Terima Laptop Borongan</button> ' : ''}<button class="btn" id="new-parts-intake">Terima sparepart</button>`);
+  page.querySelector('#open-bulk-qc')?.addEventListener('click', () => showPage('qc_new'));
   page.querySelector('#new-parts-intake').addEventListener('click', () => intakeBatchModal(products, suppliers, 'Sparepart'));
-  page.querySelector('#new-intake').addEventListener('click', () => intakeBatchModal(products, suppliers));
+  page.querySelector('#new-intake').addEventListener('click', () => bulkLaptopIntakeModal(suppliers));
   page.querySelectorAll('[data-intake-qc]').forEach(button => button.addEventListener('click', () => { state.qcSearchQuery = button.dataset.intakeQc; state.qcView = 'results'; showPage('quality'); }));
   page.querySelectorAll('[data-intake-units]').forEach(button => button.addEventListener('click', () => { const batch = batches.data.find(row => row.id === button.dataset.intakeUnits); if (batch) openIntakeBatchUnits(batch,button); }));
   if (canManage()) {
@@ -1383,10 +1445,12 @@ function setupSparepartFields(form) {
 }
 
 function intakeBatchModal(products, suppliers, kind = 'Laptop') {
+  if (kind === 'Laptop') return bulkLaptopIntakeModal(suppliers);
+  if (kind === 'Sparepart') return cashSparepartIntakeModal(products, suppliers);
   products = products.filter(product => !product.archived_at && (kind === 'Sparepart' ? product.category === 'Sparepart' : String(product.category).toLowerCase() === 'laptop'));
   const options = products.map((p) => `<option value="${p.id}" data-cost="${Number(p.cost_price || 0)}" data-image="${esc(p.image_path || '')}">${esc(p.name)} · ${esc(p.sku)}</option>`).join('');
   const supplierOptions = suppliers.map((supplier,index) => `<option value="${supplier.id}" data-name="${esc(supplier.name)}" data-phone="${esc(supplier.phone || '')}" ${index === 0 ? 'selected' : ''}>${esc(supplier.name)} · ${esc(supplier.initials)}</option>`).join('');
-  const host = openModal('Catat barang masuk', 'Satu penerimaan mengelompokkan barang dari supplier/nota yang sama, menghitung modal dan hutangnya, serta menautkan barcode unit atau lot.', `<div class="intake-layout"><div class="form-grid">${branchField('branch_id', state.branchId, true)}<div class="field"><label>Produk / barang</label><select name="product_id" required>${options}<option value="__new__">＋ Barang baru, belum ada di produk</option></select></div><div class="field"><label>Jumlah unit masuk</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Laptop: barcode unik tiap unit. Sparepart: satu stok lot sesuai jumlah.</small></div><div class="new-product-fields form-grid full" hidden><div class="field"><label>Nama barang baru</label><input name="new_name" placeholder="Contoh: Lenovo ThinkPad T14" /></div><div class="field"><label>SKU (opsional)</label><input name="new_sku" placeholder="Dibuat otomatis kalau kosong" /></div><div class="field"><label>Brand</label><input name="new_brand" /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Laptop</option><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field intake-sale-price" hidden><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field intake-sale-price" hidden><label>Harga reseller (opsional)</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div></div>${productPhotoPicker(products[0]?.image_path || '', false)}</div><div class="form-grid"><div class="field full"><label>Supplier</label><select name="supplier_pick"><option value="__new__">＋ Supplier baru</option>${supplierOptions}</select></div><div class="new-supplier-fields form-grid full"><div class="field"><label>Nama supplier baru</label><input name="supplier_name" placeholder="Contoh: Asep" required /></div><div class="field"><label>Telepon supplier</label><input name="supplier_phone" placeholder="Opsional" /></div></div><div class="field"><label>No. invoice / nota</label><input name="invoice_number" placeholder="Opsional" /></div><div class="field"><label>Modal beli per unit</label><small class="field-hint">Dipakai untuk menghitung tagihan supplier dan modal stok.</small><input name="unit_cost" type="number" min="0" value="0" required /></div><div class="field"><label>Total tagihan supplier · jumlah × modal/unit</label><input name="total_amount" type="text" value="Rp 0" readonly /></div><div class="field"><label>Dibayar sekarang</label><input name="amount_paid" type="number" min="0" value="0" step="1" required /><small class="field-hint" data-intake-balance aria-live="polite"></small><button type="button" class="small-btn" data-pay-in-full>Bayar lunas</button></div><div class="field debt-date" hidden><label>Jatuh tempo hutang</label><input name="due_date" type="date" /></div></div></div><div class="notice" style="margin-top:12px">Sisa tagihan otomatis dihitung dari total penerimaan dikurangi pembayaran awal. Laptop masuk antrean QC. Harga jual dan reseller diatur di Produk & stok setelah pemeriksaan.</div>`, async (form) => {
+  const host = openModal('Catat sparepart masuk', 'Satu penerimaan mengelompokkan barang dari supplier/nota yang sama, menghitung modal dan hutangnya, serta menautkan barcode lot.', `<div class="intake-layout"><div class="form-grid">${branchField('branch_id', state.branchId, true)}<div class="field"><label>Produk / barang</label><select name="product_id" required>${options}<option value="__new__">＋ Barang baru, belum ada di produk</option></select></div><div class="field"><label>Jumlah unit masuk</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Sparepart: satu stok lot sesuai jumlah.</small></div><div class="new-product-fields form-grid full" hidden><div class="field"><label>Nama barang baru</label><input name="new_name" placeholder="Contoh: SSD Samsung 256GB" /></div><div class="field"><label>SKU (opsional)</label><input name="new_sku" placeholder="Dibuat otomatis kalau kosong" /></div><div class="field"><label>Brand</label><input name="new_brand" /></div><div class="field"><label>Tipe</label><input name="new_model" /></div><div class="field"><label>Kategori</label><select name="new_category"><option>Sparepart</option><option>Aksesori</option><option>Lainnya</option></select></div><div class="field intake-sale-price" hidden><label>Harga end user</label><input name="new_retail" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div><div class="field intake-sale-price" hidden><label>Harga reseller (opsional)</label><input name="new_reseller" ${isCentralAdmin() ? 'readonly' : ''} type="number" min="0" value="0" /></div></div>${productPhotoPicker(products[0]?.image_path || '', false)}</div><div class="form-grid"><div class="field full"><label>Supplier</label><select name="supplier_pick"><option value="__new__">＋ Supplier baru</option>${supplierOptions}</select></div><div class="new-supplier-fields form-grid full"><div class="field"><label>Nama supplier baru</label><input name="supplier_name" placeholder="Contoh: Asep" required /></div><div class="field"><label>Telepon supplier</label><input name="supplier_phone" placeholder="Opsional" /></div></div><div class="field"><label>No. invoice / nota</label><input name="invoice_number" placeholder="Opsional" /></div><div class="field"><label>Modal beli per unit</label><small class="field-hint">Dipakai untuk menghitung tagihan supplier dan modal stok.</small><input name="unit_cost" type="number" min="0" value="0" required /></div><div class="field"><label>Total tagihan supplier · jumlah × modal/unit</label><input name="total_amount" type="text" value="Rp 0" readonly /></div><div class="field"><label>Dibayar sekarang</label><input name="amount_paid" type="number" min="0" value="0" step="1" required /><small class="field-hint" data-intake-balance aria-live="polite"></small><button type="button" class="small-btn" data-pay-in-full>Bayar lunas</button></div><div class="field debt-date" hidden><label>Jatuh tempo hutang</label><input name="due_date" type="date" /></div></div></div><div class="notice" style="margin-top:12px">Sisa tagihan otomatis dihitung dari total penerimaan dikurangi pembayaran awal. Sparepart langsung masuk stok lot. Harga jual dan reseller diatur di Produk & stok.</div>`, async (form) => {
     const printWindow = window.open('', '_blank', 'width=760,height=720');
     const isNew = form.get('product_id') === '__new__';
     const existingProduct = products.find((product) => product.id === form.get('product_id'));
@@ -1450,6 +1514,73 @@ function intakeBatchModal(products, suppliers, kind = 'Laptop') {
   form.unit_cost.addEventListener('input', () => { syncTotal(); syncDebtFields(); });
   form.amount_paid.addEventListener('input', syncDebtFields);
   syncProductFields(); syncSupplierFields(); syncTotal(); syncDebtFields();
+}
+
+function cashSparepartIntakeModal(products, suppliers) {
+  products = products.filter(product => !product.archived_at && product.category === 'Sparepart');
+  const options = products.map(product => `<option value="${product.id}" data-cost="${Number(product.cost_price || 0)}" data-image="${esc(product.image_path || '')}">${esc(product.name)} · ${esc(product.sku)}</option>`).join('');
+  const host = openModal('Catat sparepart masuk', 'Untuk stok kebutuhan toko dan teknisi. Sparepart tidak dijual.', `<input type="hidden" name="branch_id" value="${esc(state.branchId)}" /><div class="form-grid"><div class="field full"><label>Nama barang</label><select name="product_id" required>${options}<option value="__new__">＋ Nama barang baru</option></select></div><div class="field full new-part-name" hidden><label>Nama barang</label><input name="new_name" placeholder="Contoh: SSD 128GB NVMe" /></div><div class="field"><label>Jumlah barang</label><input name="quantity" type="number" min="1" max="500" value="1" required /></div><div class="field"><label>Harga produk per unit</label><input name="unit_price" type="number" min="1" step="1" value="0" required /></div><div class="field full"><label>TOTAL</label><input name="total_amount" type="text" value="Rp 0" readonly /></div></div>`, async form => {
+    const isNew = form.get('product_id') === '__new__';
+    const name = String(isNew ? form.get('new_name') : products.find(product => product.id === form.get('product_id'))?.name || '').trim();
+    const quantity = Number(form.get('quantity'));
+    const unitPrice = Number(form.get('unit_price'));
+    if (!name) throw new Error('Nama barang wajib diisi.');
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 500) throw new Error('Jumlah barang harus antara 1 dan 500.');
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) throw new Error('Harga produk per unit harus lebih dari nol.');
+    const { error } = await supabase.rpc('receive_internal_sparepart', {
+      _branch_id: form.get('branch_id'), _product_id: isNew ? null : form.get('product_id'),
+      _new_product_name: isNew ? name : null, _quantity: quantity, _unit_price: unitPrice,
+    });
+    if (error) throw error;
+    toast(`${quantity} ${name} masuk ke stok sparepart. Total ${money(quantity * unitPrice)} tercatat di arus kas.`);
+    await showPage('parts_stock');
+  }, 'Simpan sparepart');
+  const form = host.querySelector('#active-modal');
+  const product = form.querySelector('[name="product_id"]');
+  const newName = form.querySelector('.new-part-name');
+  const price = form.querySelector('[name="unit_price"]');
+  const syncProduct = () => {
+    const isNew = product.value === '__new__';
+    const selected = product.selectedOptions[0];
+    newName.hidden = !isNew;
+    form.new_name.required = isNew;
+    if (!isNew) price.value = selected?.dataset.cost || '0';
+    syncTotal();
+  };
+  const syncTotal = () => { form.total_amount.value = money(Math.max(0, Number(form.quantity.value || 0)) * Math.max(0, Number(price.value || 0))); };
+  product.addEventListener('change', syncProduct);
+  form.quantity.addEventListener('input', syncTotal);
+  price.addEventListener('input', syncTotal);
+  syncProduct();
+}
+
+function bulkLaptopIntakeModal(suppliers) {
+  const supplierOptions = suppliers.map((supplier, index) => `<option value="${supplier.id}" data-name="${esc(supplier.name)}" data-phone="${esc(supplier.phone || '')}" ${index === 0 ? 'selected' : ''}>${esc(supplier.name)}${supplier.initials ? ` · ${esc(supplier.initials)}` : ''}</option>`).join('');
+  const host = openModal('Input laptop borongan', 'Masukkan supplier dan jumlah laptop. Barcode unik dibuat untuk setiap unit; merek, spesifikasi, modal, dan kondisi dicatat Admin Pusat saat QC.', `<input type="hidden" name="branch_id" value="${esc(centralBranch()?.id || state.branchId)}" /><div class="form-grid"><div class="field full"><label>Supplier</label><select name="supplier_pick"><option value="__new__">＋ Supplier baru</option>${supplierOptions}</select></div><div class="new-supplier-fields form-grid full"><div class="field"><label>Nama supplier</label><input name="supplier_name" placeholder="Nama supplier" required /></div><div class="field"><label>Nomor telepon</label><input name="supplier_phone" placeholder="Opsional" /></div></div><div class="field"><label>Jumlah laptop</label><input name="quantity" type="number" min="1" max="500" value="1" required /><small class="field-hint">Satu barcode unik untuk setiap laptop, termasuk jika merek dan modelnya berbeda.</small></div></div><div class="notice" style="margin-top:12px">Pembelian dicatat sebagai tunai. Tidak ada hutang supplier. Total modal dan pengeluaran tercatat setelah Admin Pusat memasukkan modal tiap unit saat QC.</div>`, async (form) => {
+    const printWindow = window.open('', '_blank', 'width=760,height=720');
+    const selected = form.get('supplier_pick');
+    const supplier = selected === '__new__' ? String(form.get('supplier_name') || '').trim() : host.querySelector(`select[name="supplier_pick"] option[value="${CSS.escape(selected)}"]`)?.dataset.name || '';
+    const phone = selected === '__new__' ? String(form.get('supplier_phone') || '').trim() : host.querySelector(`select[name="supplier_pick"] option[value="${CSS.escape(selected)}"]`)?.dataset.phone || '';
+    if (!supplier) { printWindow?.close(); throw new Error('Supplier wajib dipilih atau dibuat.'); }
+    const { data: batchId, error } = await supabase.rpc('receive_bulk_laptop_batch', {
+      _branch_id: form.get('branch_id'), _supplier_name: supplier, _supplier_phone: phone, _quantity: Number(form.get('quantity')),
+    });
+    if (error) { printWindow?.close(); throw error; }
+    const { data, error: itemError } = await supabase.from('stock_items').select('barcode,supplier,quantity,suppliers(initials),products(name,sku,category)').eq('intake_batch_id', batchId).order('created_at');
+    if (itemError) { printWindow?.close(); throw itemError; }
+    if (printWindow) printBarcodeLabels(data || [], printWindow);
+    else toast('Penerimaan tersimpan. Izinkan pop-up, lalu cetak barcode dari riwayat penerimaan.');
+    toast(`${Number(form.get('quantity'))} barcode laptop dibuat untuk supplier ${supplier}.`);
+    await showPage('receiving');
+  }, 'Simpan & cetak barcode');
+  const form = host.querySelector('#active-modal');
+  const syncSupplier = () => {
+    const fresh = form.supplier_pick.value === '__new__';
+    form.querySelector('.new-supplier-fields').hidden = !fresh;
+    form.supplier_name.required = fresh;
+  };
+  form.supplier_pick.addEventListener('change', syncSupplier);
+  syncSupplier();
 }
 
 async function printBarcodeLabels(items, printable = null) {
@@ -2188,8 +2319,7 @@ function bindOpeningHistory(panel, batches, branchId, openPamphlet) {
 
 async function transfersPage(page) {
   const branchId = state.branchId;
-  let query = supabase.from('stock_transfers').select('*').order('created_at', { ascending: false }).limit(200);
-  if (isCentralAdmin() && !atCentral()) query = query.eq('destination_branch_id', branchId);
+  const query = supabase.from('stock_transfers').select('*').order('created_at', { ascending: false }).limit(200);
   const { data: transfers, error } = await query;
   if (error) throw error;
   const rows = transfers || [];
@@ -2200,11 +2330,11 @@ async function transfersPage(page) {
   items.forEach((item) => itemsByTransfer.set(item.transfer_id, [...(itemsByTransfer.get(item.transfer_id) || []), item]));
   const inTransit = rows.filter((row) => row.status === 'in_transit').length;
   if (!page.isConnected || state.branchId !== branchId) return;
-  page.innerHTML = `${header('Mutasi stok antar cabang', 'Cabang tujuan mengonfirmasi barang yang dikirim dari Pusat.', canManage() || (isCentralAdmin() && atCentral()) ? '<button class="btn primary" id="new-stock-transfer">+ Kirim ke cabang</button>' : '')}
+  page.innerHTML = `${header('Mutasi stok antar cabang', 'Pemilik dan Admin Pusat dapat mengirim stok antar cabang. Cabang tujuan mengonfirmasi barang saat tiba.', canManage() || isCentralAdmin() ? '<button class="btn primary" id="new-stock-transfer">+ Kirim mutasi</button>' : '')}
     <div class="cards"><article class="card"><div class="card-label">Menunggu diterima</div><div class="card-value">${inTransit}</div><div class="card-sub">Barang sedang dalam perjalanan</div></article><article class="card"><div class="card-label">Riwayat mutasi</div><div class="card-value">${rows.length}</div><div class="card-sub">Maksimal 200 catatan terbaru</div></article><article class="card"><div class="card-label">Aturan stok</div><div class="card-value" style="font-size:18px">Kirim → Terima</div><div class="card-sub">Stok tujuan bertambah setelah dikonfirmasi</div></article></div>
     <section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Riwayat mutasi barang</div><div class="panel-sub">Laptop mempertahankan barcode. Mutasi sebagian lot sparepart membuat barcode lot baru di cabang tujuan.</div></div><input class="search" type="search" id="transfer-unit-search" aria-label="Cari kode unit, produk, atau nomor mutasi" placeholder="Cari kode unit atau mutasi" /></div><div class="table-wrap"><table><thead><tr><th>NO. / WAKTU</th><th>ASAL → TUJUAN</th><th>BARANG</th><th>STATUS</th><th>CATATAN</th><th>AKSI</th></tr></thead><tbody>${rows.map((transfer) => {
       const transferItems = itemsByTransfer.get(transfer.id) || [];
-      const canReceive = transfer.status === 'in_transit' && (canManage() || (isCentralAdmin() ? branchId : state.profile.branch_id) === transfer.destination_branch_id);
+      const canReceive = transfer.status === 'in_transit' && (canManage() || isCentralAdmin() || state.profile.branch_id === transfer.destination_branch_id);
       const cancelled = transfer.status === 'cancelled';
       const status = cancelled ? 'Dibatalkan' : transfer.status === 'received' ? 'Diterima' : 'Dalam perjalanan';
       const cancelAction = canSelectBranches() && !cancelled
@@ -2274,12 +2404,12 @@ async function transfersPage(page) {
 
 async function transferModal() {
   const owner = canManage();
-  const sourceId = centralBranch()?.id;
-  if ((!owner && !(isCentralAdmin() && atCentral())) || !sourceId) return toast('Asal mutasi harus Cabang Pusat.', true);
-  const sourceField = owner
-    ? `<div class="field"><label>Cabang asal</label><select name="source_branch_id" id="transfer-source" required>${state.branches.filter((branch) => branch.is_central).map((branch) => `<option value="${branch.id}" ${branch.id === sourceId ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}</select></div>`
-    : `<input type="hidden" name="source_branch_id" value="${sourceId}" /><div class="field"><label>Cabang asal</label><input value="${esc(branchName(sourceId))}" readonly /></div>`;
-  const host = openModal('Kirim mutasi stok', 'Stok keluar dari cabang asal saat mutasi dikirim. Cabang tujuan perlu menghitung dan mengonfirmasi barang saat tiba.', `<div class="form-grid">${sourceField}<div class="field"><label>Cabang tujuan</label><select name="destination_branch_id" id="transfer-destination" required></select></div><div class="field full"><label>Catatan (opsional)</label><input name="note" maxlength="1000" placeholder="Contoh: pengiriman unit ke cabang Malang" /></div><div class="field full"><label for="transfer-barcode">Scan barcode stok</label><div class="transfer-scan-controls"><input id="transfer-barcode" type="text" autocomplete="off" spellcheck="false" placeholder="Scan barcode, atau ketik lalu tekan Enter" /><button class="btn" type="button" id="transfer-scan-add">Tambah barcode</button><button class="btn" type="button" id="transfer-camera">Kamera</button></div><div id="transfer-camera-preview"></div><small class="field-hint" id="transfer-scan-status" role="status">Gunakan barcode internal pada label stok.</small></div><div class="field full"><label>Daftar barang</label><div class="transfer-lines" id="transfer-lines"></div><button class="btn" type="button" id="add-transfer-line">＋ Tambah barang</button><small class="field-hint">Laptop dipindah per unit/barcode. Sparepart dapat dipindah sebagian dari satu lot.</small></div></div>`, async (form) => {
+  const sourceId = state.branches.some((branch) => branch.id === state.branchId && branch.is_active) ? state.branchId : centralBranch()?.id;
+  const allowed = owner || isCentralAdmin();
+  const activeBranches = state.branches.filter((branch) => branch.is_active);
+  if (!allowed || !sourceId || activeBranches.length < 2) return toast('Mutasi lintas cabang hanya untuk Pemilik/Admin Pusat dan memerlukan dua cabang aktif.', true);
+  const sourceField = `<div class="field"><label>Cabang asal</label><select name="source_branch_id" id="transfer-source" required>${activeBranches.map((branch) => `<option value="${branch.id}" ${branch.id === sourceId ? 'selected' : ''}>${esc(branch.name)}</option>`).join('')}</select></div>`;
+  const host = openModal('Kirim mutasi stok', 'Pilih cabang asal dan tujuan. Stok keluar dari asal saat dikirim dan baru tersedia di tujuan setelah dikonfirmasi diterima.', `<div class="form-grid">${sourceField}<div class="field"><label>Cabang tujuan</label><select name="destination_branch_id" id="transfer-destination" required></select></div><div class="field full"><label>Catatan (opsional)</label><input name="note" maxlength="1000" placeholder="Contoh: pengiriman unit ke cabang Malang" /></div><div class="field full"><label for="transfer-barcode">Scan barcode stok</label><div class="transfer-scan-controls"><input id="transfer-barcode" type="text" autocomplete="off" spellcheck="false" placeholder="Scan barcode, atau ketik lalu tekan Enter" /><button class="btn" type="button" id="transfer-scan-add">Tambah barcode</button><button class="btn" type="button" id="transfer-camera">Kamera</button></div><div id="transfer-camera-preview"></div><small class="field-hint" id="transfer-scan-status" role="status">Gunakan barcode internal pada label stok cabang asal.</small></div><div class="field full"><label>Daftar barang</label><div class="transfer-lines" id="transfer-lines"></div><button class="btn" type="button" id="add-transfer-line">＋ Tambah barang</button><small class="field-hint">Laptop dipindah per unit/barcode. Sparepart dapat dipindah sebagian dari satu lot.</small></div></div>`, async (form) => {
     const sourceBranchId = String(form.get('source_branch_id') || sourceId);
     const destinationBranchId = String(form.get('destination_branch_id') || '');
     if (!destinationBranchId || destinationBranchId === sourceBranchId) throw new Error('Cabang asal dan tujuan harus berbeda.');
@@ -2312,7 +2442,7 @@ async function transferModal() {
   const getSource = () => String(form.elements.namedItem('source_branch_id').value);
   const refreshDestinations = () => {
     const previous = destinationSelect.value;
-    const options = state.branches.filter((branch) => branch.id !== getSource());
+    const options = state.branches.filter((branch) => branch.is_active && branch.id !== getSource());
     destinationSelect.innerHTML = options.map((branch) => `<option value="${branch.id}" ${branch.id === previous ? 'selected' : ''}>${esc(branch.name)}</option>`).join('');
     if (!options.some((branch) => branch.id === previous)) destinationSelect.value = options[0]?.id || '';
   };
@@ -2348,7 +2478,7 @@ async function transferModal() {
     if (!code) return;
     const item = stockRows.find(row => row.barcode.toUpperCase() === code);
     if (stockLoading) scanStatus.textContent = 'Daftar stok sedang dimuat. Coba lagi sebentar.';
-    else if (!item) scanStatus.textContent = 'Barcode tidak ditemukan di stok Pusat yang siap dikirim.';
+    else if (!item) scanStatus.textContent = 'Barcode tidak ditemukan di stok cabang asal yang siap dikirim.';
     else if (lineValues.some(line => line.stock_item_id === item.id)) scanStatus.textContent = 'Barcode ini sudah masuk daftar kirim.';
     else if (lineValues.filter(line => line.stock_item_id).length >= 100) scanStatus.textContent = 'Satu mutasi maksimal 100 baris barang.';
     else {
@@ -3043,7 +3173,7 @@ async function cashierPage(page) {
   catch(error){if(navigator.onLine)throw error;const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');if(!cached)throw new Error('Data kasir belum tersimpan di perangkat ini. Buka halaman kasir saat online dahulu.');({products,customers,stock}=cached);sales=[];}
   if (state.branchId !== branchId || state.page !== 'cashier') return;
   const available=new Map();stock.forEach(item=>available.set(item.product_id,(available.get(item.product_id)||0)+Number(item.quantity)));
-  const availableProducts=products.filter(product=>(available.get(product.id)||0)>0);
+  const availableProducts=products.filter(product=>String(product.category||'').toLowerCase()!=='sparepart'&&(available.get(product.id)||0)>0);
   const queueKey=`digi-sale-outbox:${state.organization.id}:${branchId}`,readQueue=()=>JSON.parse(localStorage.getItem(queueKey)||'[]'),saveQueue=(q)=>localStorage.setItem(queueKey,JSON.stringify(q));
   let cart=[];
   page.innerHTML=`${header('Kasir',`Transaksi ${branchName(branchId)} · beberapa produk per struk${navigator.onLine?'':' · mode offline'}`)}<div class="cashier-pos"><section class="panel cashier-catalog"><div class="panel-head"><div><div class="panel-title">Produk siap jual · ${esc(branchName(branchId))}</div><div class="panel-sub">Klik produk untuk menambahkannya ke keranjang.</div></div><span class="pill" id="cashier-catalog-count" aria-live="polite"></span></div><div class="cashier-search"><input id="sale-product-search" aria-label="Cari produk, SKU, barcode, atau serial" placeholder="Cari nama, SKU, barcode, atau serial…" autocomplete="off" maxlength="160" /></div><div class="cashier-products" id="cashier-catalog-items"></div></section><section class="panel cashier-checkout"><div class="panel-head"><div><div class="panel-title">Transaksi baru</div></div><span class="pill ${navigator.onLine?'':'gray'}">${navigator.onLine?'Online':'Offline'}</span></div><form id="sale-form">
@@ -3486,7 +3616,7 @@ async function serviceIntakeModal() {
         _customer_name: String(form.get('customer_name')).trim(),
         _customer_phone: String(form.get('customer_phone')).trim(),
         _device_name: String(form.get('device_name')).trim(),
-        _serial_number: String(form.get('serial_number')).trim(),
+        _serial_number: String(item.serial_number || '').trim(),
         _complaint: String(form.get('complaint')).trim(),
         _estimated_cost: Number(form.get('estimated_cost') || 0),
         _assigned_technician_id: assignedTechnicianId,
@@ -3744,7 +3874,7 @@ function bindPageBarcodeSearch(page) {
         const unit=checkError(await supabase.from('stock_items').select('id,branch_id,status').eq('organization_id',state.organization.id).eq('branch_id',branchId).eq('barcode',code).maybeSingle());
         if(!input.isConnected || state.branchId!==branchId || state.page!==pageName)return;
         if(!unit)return toast('Unit tidak ditemukan di cabang yang sedang dibuka. Periksa kode pada label.',true);
-        const stages={pending_qc:'qc_new',waiting_parts:'qc_parts',repair_needed:'qc_repair',repairing:'qc_repair',scrap:'qc_scrap',not_sellable:'qc_scrap',awaiting_qc_handover:'qc_dispatch'};
+        const stages={pending_qc:'qc_new',waiting_parts:'qc_parts',repair_needed:'qc_repair',repairing:'qc_repair',scrap:'quality',not_sellable:'quality',awaiting_qc_handover:'qc_handover'};
         const next=stages[unit.status];
         if(next && next!==pageName && rolePages().includes(next)){
           await showPage(next);
@@ -3855,7 +3985,7 @@ async function reportsPage(page) {
     return { id:ticket.id, branch_id:ticket.branch_id, branch:ticket.branches?.name, date:ticket.handed_over_at, kind:'Servis selesai', label:ticket.ticket_number, value:Number(ticket.final_cost || 0), cost, profitImpact:Number(ticket.final_cost || 0)-cost, direction:'income' };
   });
   const otherIncomeCategory = 'Pemasukan lain';
-  const excludedPurchasePayments = new Set(['Pembayaran pembelian','Pembayaran hutang supplier']);
+  const excludedPurchasePayments = new Set(['Pembayaran pembelian','Pembayaran hutang supplier','Pembelian laptop tunai','Pembelian sparepart internal']);
   const cashRows = cash.map((entry) => {
     const purchasePayment = entry.direction === 'expense' && (excludedPurchasePayments.has(entry.category) || ['stock_repair_external_part','stock_repair'].includes(entry.source_type));
     const otherIncome = entry.direction === 'income' && entry.category === otherIncomeCategory;
@@ -3890,7 +4020,7 @@ async function reportsPage(page) {
   const grossProfit=salesTotal+serviceTotal-hppTotal, netProfit=grossProfit+otherIncomeTotal-expenseTotal;
   const rangeLabel = range === 'daily' ? '7 hari terakhir' : range === 'weekly' ? '8 minggu terakhir' : range === 'monthly' ? '12 bulan terakhir' : '5 tahun terakhir';
   const branchOptions = canSelectBranches() ? `<select id="report-branch" class="branch-select"><option value="all" ${state.reportBranch==='all'?'selected':''}>Semua cabang</option>${state.branches.map(branch=>`<option value="${branch.id}" ${state.reportBranch===branch.id?'selected':''}>${esc(branch.name)}</option>`).join('')}</select>` : '';
-  page.innerHTML = `${header('Laporan laba & arus kas',`Rekap ${rangeLabel}. Laba memakai modal barang tersimpan dan belum memasukkan pembayaran hutang sebagai biaya baru.`,`<select id="report-range" class="branch-select"><option value="daily" ${range==='daily'?'selected':''}>Harian</option><option value="weekly" ${range==='weekly'?'selected':''}>Mingguan</option><option value="monthly" ${range==='monthly'?'selected':''}>Bulanan</option><option value="yearly" ${range==='yearly'?'selected':''}>Tahunan</option></select>${branchOptions}`)}
+  page.innerHTML = `${header('Laporan laba & arus kas',`Rekap ${rangeLabel}. Pembelian laptop tunai muncul di arus kas; laba memakai modal unit ketika laptop terjual.`,`<select id="report-range" class="branch-select"><option value="daily" ${range==='daily'?'selected':''}>Harian</option><option value="weekly" ${range==='weekly'?'selected':''}>Mingguan</option><option value="monthly" ${range==='monthly'?'selected':''}>Bulanan</option><option value="yearly" ${range==='yearly'?'selected':''}>Tahunan</option></select>${branchOptions}`)}
     ${canManage() ? `<section class="panel report-stock-value" aria-labelledby="report-stock-title">
       <div class="panel-head"><div><div class="panel-title" id="report-stock-title">Ringkasan nilai stok</div>
       <div class="panel-sub">Posisi stok saat ini · ${reportBranchId === 'all' ? 'Semua cabang' : esc(branchName(reportBranchId))}</div></div></div>
@@ -3910,7 +4040,7 @@ async function reportsPage(page) {
       ${financeSummaryCard('gross', 'Laba kotor', money(grossProfit), 'Sebelum biaya operasional')}
     </div>
     <details class="panel profit-note finance-profit-note"><summary>Perhitungan laba ${estimatedCostLines || missingCostLines ? '<span class="profit-warning">· Ada modal estimasi atau kosong</span>' : ''}</summary>
-      <span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional (termasuk komisi mediator). Pembelian stok dan pembayaran hutang supplier tidak dihitung sebagai biaya sampai barangnya terjual.</span>
+      <span>Laba kotor = omzet produk + omzet servis − HPP. Laba operasional = laba kotor + pemasukan lain − biaya operasional (termasuk komisi mediator). Pembelian stok tunai memengaruhi arus kas, lalu masuk ke HPP saat barangnya terjual.</span>
       ${estimatedCostLines || missingCostLines ? `<span class="profit-warning">${estimatedCostLines} baris memakai perkiraan modal katalog. ${missingCostLines} baris belum memiliki data modal.</span>` : '<span class="profit-ok">Seluruh barang terjual memiliki modal tercatat.</span>'}
     </details>
     <section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Rekap ${range==='daily'?'per hari':range==='weekly'?'per minggu':range==='monthly'?'per bulan':'per tahun'}</div><div class="panel-sub">Pilih periode untuk membuka transaksi, HPP, dan dampak labanya.</div></div></div><div class="table-wrap"><table><thead><tr><th>PERIODE</th><th>CATATAN</th><th>OMZET PRODUK</th><th>OMZET SERVIS</th><th>HPP</th><th>BIAYA OPERASIONAL</th><th>LABA OPERASIONAL</th><th>DETAIL</th></tr></thead><tbody>${[...buckets.values()].sort((a,b)=>b.key.localeCompare(a.key)).map(bucket=>`<tr><td class="product-name">${esc(bucket.key)}</td><td>${bucket.count}</td><td>${money(bucket.sales)}</td><td>${money(bucket.services)}</td><td>${money(bucket.hpp+bucket.serviceCost)}</td><td>${money(bucket.operatingExpense)}</td><td><b>${money(bucket.sales+bucket.services-bucket.hpp-bucket.serviceCost+bucket.otherIncome-bucket.operatingExpense)}</b></td><td><button class="small-btn" data-report-detail="${esc(bucket.key)}">Lihat detail</button></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Belum ada transaksi pada periode ini.</div></td></tr>'}</tbody></table></div></section>`;
@@ -4197,15 +4327,15 @@ async function contactsPage(page, type) {
     const relatedDebt = supplierMode ? payables.filter((batch) => matchesSupplier(batch, item)) : receivables.filter((entry) => matchesCustomer(entry, item));
     const balance = relatedDebt.reduce((sum, entry) => sum + entry.remaining, 0);
     const whatsapp = supplierMode ? '' : customerWhatsAppNumber(item.phone);
-    return `<tr class="contact-row" data-contact-detail="${item.id}"><td class="product-name">${supplierMode ? `<span class="pill blue">${esc(item.initials)}</span> ` : ''}<button class="contact-open" type="button" data-open-contact="${item.id}">${esc(item.name)}<span>Detail →</span></button></td><td>${esc(item.phone || '—')}</td>${supplierMode ? `<td>${esc(item.address || '—')}</td>` : `<td>${esc(item.email || '—')}</td>`}<td><b>${money(balance)}</b></td>${showContactActions ? `<td><div class="actions-cell">
+    return `<tr class="contact-row" data-contact-detail="${item.id}"><td class="product-name">${supplierMode ? `<span class="pill blue">${esc(item.initials)}</span> ` : ''}<button class="contact-open" type="button" data-open-contact="${item.id}">${esc(item.name)}<span>Detail →</span></button></td><td>${esc(item.phone || '—')}</td>${supplierMode ? `<td>${esc(item.address || '—')}</td>` : `<td>${esc(item.email || '—')}</td>`}${supplierMode ? '' : `<td><b>${money(balance)}</b></td>`}${showContactActions ? `<td><div class="actions-cell">
       ${whatsapp ? `<a class="small-btn" href="https://wa.me/${whatsapp}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ''}
       ${canManage() ? `<button class="small-btn" type="button" data-edit-contact="${item.id}">Edit</button><button class="small-btn" type="button" data-delete-contact="${item.id}">Hapus</button>` : ''}</div></td>` : ''}</tr>`;
   }).join('');
   const contactsTabs = canManage() ? `<div class="contact-tabs"><button class="contact-tab${supplierMode ? ' active' : ''}" data-contact-tab="suppliers">Supplier <span>${suppliers.length}</span></button><button class="contact-tab${!supplierMode ? ' active' : ''}" data-contact-tab="customers">Pelanggan <span>${customers.length}</span></button></div>` : '';
-  const supplierDebt = supplierMode ? `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa tagihan dihitung dari total invoice dikurangi pembayaran yang sudah dicatat.</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL TAGIHAN</th><th>DIBAYAR</th><th>SISA HUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay-batch="${batch.id}">Bayar</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>` : `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis untuk pelanggan.</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / NOTA</th><th>CABANG</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA PIUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect-contact="${entry.id}" data-source="${entry.source_type}">Terima</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>`;
+  const supplierDebt = supplierMode ? '' : `<section class="panel table-panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis untuk pelanggan.</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / NOTA</th><th>CABANG</th><th>TOTAL</th><th>DIBAYAR</th><th>SISA PIUTANG</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect-contact="${entry.id}" data-source="${entry.source_type}">Terima</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Belum ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>`;
   const totalDebt = supplierMode ? payables.reduce((sum, batch) => sum + batch.remaining, 0) : 0;
   const totalReceivable = supplierMode ? 0 : receivables.reduce((sum, entry) => sum + entry.remaining, 0);
-  page.innerHTML = `${header(pageLabel('contacts'), canManage() ? 'Satu tempat untuk kontak, barcode supplier, dan saldo tagihan.' : 'Kontak pelanggan dan riwayat transaksi cabang ini.', `${!supplierMode && canManage() ? '<button class="btn" type="button" id="customer-broadcast">Broadcast WhatsApp</button>' : ''}<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan · ${supplierMode ? `total hutang terbuka ${money(totalDebt)}` : `total piutang terbuka ${money(totalReceivable)}`} · pilih nama untuk detail</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th><th>${supplierMode ? 'SISA HUTANG' : 'SISA PIUTANG'}</th>${showContactActions ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${showContactActions ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan kontak untuk menghubungkan transaksi dan tagihan.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
+  page.innerHTML = `${header(pageLabel('contacts'), supplierMode ? 'Simpan dan kelola data supplier untuk seluruh cabang.' : canManage() ? 'Kelola pelanggan dan piutang transaksi.' : 'Kontak pelanggan dan riwayat transaksi cabang ini.', `${!supplierMode && canManage() ? '<button class="btn" type="button" id="customer-broadcast">Broadcast WhatsApp</button>' : ''}<button class="btn primary" id="new-contact">＋ Tambah ${supplierMode ? 'supplier' : 'pelanggan'}</button>`)}${contactsTabs}<section class="panel table-panel"><div class="panel-head"><div><div class="panel-title">Daftar ${supplierMode ? 'supplier' : 'pelanggan'}</div><div class="panel-sub">${(rowsData || []).length} kontak tersimpan${supplierMode ? ' · pilih nama untuk melihat data supplier' : ` · total piutang terbuka ${money(totalReceivable)}`}</div></div><input class="search" id="contact-search" placeholder="Cari nama atau telepon" /></div><div class="table-wrap"><table><thead><tr><th>NAMA</th><th>TELEPON</th><th>${supplierMode ? 'ALAMAT' : 'EMAIL'}</th>${supplierMode ? '' : '<th>SISA PIUTANG</th>'}${showContactActions ? '<th>AKSI</th>' : ''}</tr></thead><tbody id="contact-rows">${rows || `<tr><td colspan="${supplierMode ? 4 : showContactActions ? 5 : 4}"><div class="empty"><b>Belum ada ${supplierMode ? 'supplier' : 'pelanggan'}</b>Tambahkan ${supplierMode ? 'data supplier' : 'kontak pelanggan'}.</div></td></tr>`}</tbody></table></div></section>${supplierDebt}`;
   page.querySelectorAll('[data-contact-tab]').forEach((button) => button.addEventListener('click', async () => { state.contactTab = button.dataset.contactTab; await contactsPage(page, state.contactTab); }));
   const contactBody = page.querySelector('#contact-rows');
   const contactRows = [...contactBody.querySelectorAll('tr')];
@@ -4222,6 +4352,10 @@ async function contactsPage(page, type) {
   page.querySelectorAll('[data-open-contact]').forEach((button) => button.addEventListener('click', () => {
     const contact = rowsData.find((row) => row.id === button.dataset.openContact);
     if (!contact) return;
+    if (supplierMode) {
+      openModal('Detail supplier', 'Data supplier tersimpan untuk digunakan pada penerimaan tunai.', `<div class="contact-detail-grid"><div><small>NAMA</small><b>${esc(contact.name)}</b></div><div><small>KODE BARCODE</small><b>${esc(contact.initials || '—')}</b></div><div><small>TELEPON</small><b>${esc(contact.phone || '—')}</b></div><div class="full"><small>ALAMAT</small><b>${esc(contact.address || '—')}</b></div><div class="full"><small>CATATAN</small><b>${esc(contact.notes || '—')}</b></div></div>`, null);
+      return;
+    }
     const relatedBatches = supplierMode ? batches.filter((batch) => matchesSupplier(batch, contact)) : [];
     const relatedSales = supplierMode ? [] : sales.filter((sale) => matchesCustomer(sale, contact));
     const relatedServices = supplierMode ? [] : serviceTickets.filter(ticket => matchesCustomer(ticket, contact));
@@ -4318,21 +4452,19 @@ async function financePage(page) {
   let cashQuery = supabase.from('cash_transactions').select('id,branch_id,direction,category,amount,description,source_type,source_id,created_at,branches(name),customers(name),suppliers(name)').gte('created_at', monthIso).order('created_at', { ascending: false });
   let salesQuery = supabase.from('sales').select('id,branch_id,receipt_number,customer_name,total,paid_amount,due_date,created_at,customers(name),branches(name)').order('created_at', { ascending: false });
   let serviceQuery = supabase.from('service_tickets').select('id,branch_id,ticket_number,customer_name,final_cost,paid_amount,due_date,created_at,branches(name)').eq('status','handed_over').order('created_at', { ascending: false });
-  let purchasesQuery = supabase.from('intake_batches').select('id,branch_id,supplier,supplier_id,invoice_number,total_amount,amount_paid,due_date,created_at,suppliers(name),branches(name)').order('created_at', { ascending: false });
-  if (filter !== 'all') { cashQuery = cashQuery.eq('branch_id', filter); salesQuery = salesQuery.eq('branch_id', filter); serviceQuery = serviceQuery.eq('branch_id', filter); purchasesQuery = purchasesQuery.eq('branch_id', filter); }
+  if (filter !== 'all') { cashQuery = cashQuery.eq('branch_id', filter); salesQuery = salesQuery.eq('branch_id', filter); serviceQuery = serviceQuery.eq('branch_id', filter); }
   let commissionQuery = supabase.from('sale_commissions')
     .select('sale_id,branch_id,mediator_name,amount,sales(receipt_number)').is('settled_at', null)
     .order('sale_id');
   if (filter !== 'all') commissionQuery = commissionQuery.eq('branch_id', filter);
-  const [cash,sales,services,purchases,commissions] = await Promise.all([
-    fetchAllRows(cashQuery),fetchAllRows(salesQuery),fetchAllRows(serviceQuery),fetchAllRows(purchasesQuery),
+  const [cash,sales,services,commissions] = await Promise.all([
+    fetchAllRows(cashQuery),fetchAllRows(salesQuery),fetchAllRows(serviceQuery),
     fetchAllRows(commissionQuery, 'sale_id')
   ]);
   const incomes = cash.filter((entry) => entry.direction === 'income').reduce((sum, entry) => sum + Number(entry.amount), 0);
   const expenses = cash.filter((entry) => entry.direction === 'expense').reduce((sum, entry) => sum + Number(entry.amount), 0);
   const receivables = [...sales.filter((sale) => Number(sale.total) > Number(sale.paid_amount)).map((sale) => ({ ...sale, source_type: 'sale', label: sale.receipt_number, total_due: Number(sale.total), paid: Number(sale.paid_amount) })), ...services.filter((ticket) => Number(ticket.final_cost) > Number(ticket.paid_amount)).map((ticket) => ({ ...ticket, source_type: 'service_ticket', label: ticket.ticket_number, total_due: Number(ticket.final_cost), paid: Number(ticket.paid_amount) }))].map((entry) => ({ ...entry, remaining: entry.total_due-entry.paid }));
-  const payables = purchases.filter((purchase) => Number(purchase.total_amount) > Number(purchase.amount_paid)).map((purchase) => ({ ...purchase, remaining: Number(purchase.total_amount)-Number(purchase.amount_paid) }));
-  const receivableTotal = receivables.reduce((sum,item)=>sum+item.remaining,0); const payableTotal = payables.reduce((sum,item)=>sum+item.remaining,0);
+  const receivableTotal = receivables.reduce((sum,item)=>sum+item.remaining,0);
   const commissionTotal = commissions.reduce((sum,item)=>sum+Number(item.amount),0);
   const branchTotals = new Map((filter === 'all' ? state.branches : []).map((branch) => [branch.id,{ name: branch.name, income: 0, expense: 0 }]));
   cash.forEach((entry) => { const id = entry.branch_id; const row = branchTotals.get(id) || { name: entry.branches?.name || branchName(id), income: 0, expense: 0 }; row[entry.direction] += Number(entry.amount); branchTotals.set(id,row); });
@@ -4342,10 +4474,9 @@ async function financePage(page) {
   page.innerHTML = `${header('Keuangan cabang', `Arus kas bulan ${monthStart.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}. Pemasukan dan pengeluaran dihitung dari uang yang benar-benar dibayar.`, `${branchControl}<button class="btn" id="add-income">＋ Pemasukan</button><button class="btn primary" id="add-expense">− Pengeluaran</button>`)}
     <div class="cards finance-summary">
       ${financeSummaryCard('income', 'Kas masuk bulan ini', money(incomes), 'Penjualan dibayar, cicilan, dan pemasukan lain')}
-      ${financeSummaryCard('expense', 'Kas keluar bulan ini', money(expenses), 'Pembelian, hutang supplier, dan operasional')}
+      ${financeSummaryCard('expense', 'Kas keluar bulan ini', money(expenses), 'Pembelian tunai dan biaya operasional')}
       ${financeSummaryCard('balance', 'Sisa kas bersih', money(incomes-expenses), 'Kas masuk dikurangi kas keluar')}
       ${financeSummaryCard('receivables', 'Piutang pelanggan', money(receivableTotal), `${receivables.length} tagihan belum lunas · semua periode`)}
-      ${financeSummaryCard('payables', 'Hutang supplier', money(payableTotal), `${payables.length} tagihan belum lunas · semua periode`)}
       ${financeSummaryCard('commissions', 'Komisi belum dibayar', money(commissionTotal), `${commissions.length} komisi mediator · semua periode`)}
     </div>
     <div class="finance-view-tabs" role="group" aria-label="Rincian keuangan">
@@ -4353,12 +4484,10 @@ async function financePage(page) {
       ${filter === 'all' ? '<button type="button" class="btn" data-finance-tab="branches">Ringkasan cabang</button>' : ''}
       <button type="button" class="btn" data-finance-tab="cash">Arus kas</button>
       <button type="button" class="btn" data-finance-tab="receivables">Piutang pelanggan</button>
-      <button type="button" class="btn" data-finance-tab="payables">Hutang supplier</button>
       <button type="button" class="btn" data-finance-tab="commissions">Komisi mediator</button>
     </div>
     ${filter === 'all' ? `<section class="panel table-panel" data-finance-view="branches"><div class="panel-head"><div><div class="panel-title">Ringkasan per cabang</div><div class="panel-sub">Angka bulan ini untuk semua cabang toko</div></div></div><div class="table-wrap"><table><thead><tr><th>CABANG</th><th>KAS MASUK</th><th>KAS KELUAR</th><th>BERSIH</th></tr></thead><tbody>${[...branchTotals.entries()].map(([id,row]) => `<tr><td class="product-name">${esc(row.name)}</td><td>${money(row.income)}</td><td>${money(row.expense)}</td><td>${money(row.income-row.expense)}</td></tr>`).join('') || '<tr><td colspan="4">Belum ada transaksi bulan ini.</td></tr>'}</tbody></table></div></section>` : ''}
     <section class="panel table-panel" data-finance-view="receivables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Piutang pelanggan</div><div class="panel-sub">Sisa pembayaran penjualan dan servis</div></div></div><div class="table-wrap"><table><thead><tr><th>PELANGGAN / STRUK</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${receivables.map((entry) => `<tr><td class="product-name">${esc(entry.customers?.name || entry.customer_name || 'Pelanggan')}<div class="field-hint">${esc(entry.label)} · ${entry.source_type === 'sale' ? 'Penjualan' : 'Servis'}</div></td><td>${esc(entry.branches?.name || branchName(entry.branch_id))}</td><td>${money(entry.total_due)}</td><td>${money(entry.paid)}</td><td><b>${money(entry.remaining)}</b></td><td>${entry.due_date ? new Date(`${entry.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-collect="${entry.id}" data-source="${entry.source_type}">Terima pembayaran</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada piutang pelanggan terbuka.</div></td></tr>'}</tbody></table></div></section>
-    <section class="panel table-panel" data-finance-view="payables" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Hutang supplier</div><div class="panel-sub">Sisa pembayaran untuk batch barang masuk</div></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER / NOTA</th><th>CABANG</th><th>TOTAL</th><th>SUDAH DIBAYAR</th><th>SISA</th><th>JATUH TEMPO</th><th></th></tr></thead><tbody>${payables.map((batch) => `<tr><td class="product-name">${esc(batch.suppliers?.name || batch.supplier || 'Supplier')}<div class="field-hint">${esc(batch.invoice_number || batch.id.slice(0,8).toUpperCase())}</div></td><td>${esc(batch.branches?.name || branchName(batch.branch_id))}</td><td>${money(batch.total_amount)}</td><td>${money(batch.amount_paid)}</td><td><b>${money(batch.remaining)}</b></td><td>${batch.due_date ? new Date(`${batch.due_date}T00:00:00`).toLocaleDateString('id-ID') : '—'}</td><td><button class="small-btn" data-pay="${batch.id}">Bayar supplier</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">Tidak ada hutang supplier terbuka.</div></td></tr>'}</tbody></table></div></section>
     <section class="panel table-panel" data-finance-view="commissions" style="margin-top:14px">
       <div class="panel-head"><div><div class="panel-title">Komisi belum dibayar</div><div class="panel-sub">Total ${money(commissionTotal)}</div></div></div>
       <div class="table-wrap"><table><thead><tr><th>MEDIATOR</th><th>NOTA</th><th>CABANG</th><th>KOMISI</th><th></th></tr></thead>
@@ -4396,7 +4525,7 @@ async function financePage(page) {
   cashFilters.forEach((button) => button.addEventListener('click', () => selectView('cash', button.dataset.cashFilter)));
   page.querySelectorAll('[data-finance-metric]').forEach((card) => card.addEventListener('click', () => {
     const metric = card.dataset.financeMetric;
-    if (['receivables', 'payables', 'commissions'].includes(metric)) selectView(metric);
+    if (['receivables', 'commissions'].includes(metric)) selectView(metric);
     else selectView('cash', metric === 'balance' ? 'all' : metric);
   }));
   const initialView = viewTabs.some((tab) => tab.dataset.financeTab === cachedView?.name)
@@ -4419,7 +4548,6 @@ async function financePage(page) {
       button.disabled = false;
     }
   }));
-  page.querySelectorAll('[data-pay]').forEach((button) => button.addEventListener('click', () => partyPaymentModal('intake_batch', payables.find((batch) => batch.id === button.dataset.pay), payables.find((batch) => batch.id === button.dataset.pay).remaining)));
 }
 
 function startStorefrontSlides(hero) {
