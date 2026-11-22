@@ -53,6 +53,7 @@ create table if not exists public.products (
   reseller_price numeric(14,2) not null default 0 check (reseller_price >= 0),
   warranty_months integer not null default 12 check (warranty_months >= 0),
   is_public boolean not null default false,
+  archived_at timestamptz,
   created_at timestamptz not null default now(),
   unique (organization_id, sku)
 );
@@ -2608,6 +2609,37 @@ grant execute on function public.restore_digi_laptop_backup(jsonb) to authentica
 begin;
 
 alter table public.intake_batches add column if not exists bulk_laptop_intake boolean not null default false;
+
+create or replace function private.guard_archived_product_stock()
+returns trigger language plpgsql security invoker set search_path = '' as $$
+declare
+  v_archived_at timestamptz;
+begin
+  if new.quantity > 0 then
+    select p.archived_at into v_archived_at
+    from public.products p
+    where p.id = new.product_id
+    for share;
+
+    if v_archived_at is not null and not (
+      new.status = 'pending_qc'
+      and exists (
+        select 1
+        from public.intake_batches b
+        join public.products p on p.id = b.product_id
+        where b.id = new.intake_batch_id
+          and b.bulk_laptop_intake
+          and p.id = new.product_id
+          and p.sku = 'DL-BORONGAN-UNASSIGNED'
+      )
+    ) then
+      raise exception 'Produk sudah diarsipkan dan tidak bisa ditambahkan ke stok.';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.guard_archived_product_stock() from public, anon, authenticated;
 
 -- Laptop borongan is received before the individual models and unit costs are
 -- known. A hidden placeholder keeps the existing stock foreign keys intact
