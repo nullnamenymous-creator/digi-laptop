@@ -89,8 +89,9 @@ export async function downloadProductCatalog({ store, branch, products }) {
   const rows = 4;
   const perPage = columns * rows;
   const cardWidth = (width - margin * 2 - gapX * (columns - 1)) / columns;
-  const bannerHeight = (width - margin * 2) / 3;
-  const cardHeight = (height - 22 - bannerHeight - 26 - 32 - gapY * (rows - 1)) / rows;
+  const bannerWidth = (width - margin * 2) * 0.72;
+  const bannerHeight = bannerWidth / 3;
+  const cardHeight = (height - 22 - bannerHeight - 26 - 40 - gapY * (rows - 1)) / rows;
   const pageCount = Math.ceil(products.length / perPage);
   const today = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date());
   const bannerResponse = await fetch('/catalog-header-banner.png');
@@ -108,7 +109,8 @@ export async function downloadProductCatalog({ store, branch, products }) {
     const page = pdf.addPage(PageSizes.A4);
     const top = height - 22;
     const bannerY = top - bannerHeight;
-    page.drawImage(banner, { x: margin, y: bannerY, width: width - margin * 2, height: bannerHeight });
+    page.drawRectangle({ x: margin, y: bannerY, width: width - margin * 2, height: bannerHeight, color: colors.pale });
+    page.drawImage(banner, { x: (width - bannerWidth) / 2, y: bannerY, width: bannerWidth, height: bannerHeight });
     const branchText = `Cabang ${printableText(branch)}  |  ${products.length} pilihan laptop  |  ${today}`;
     const infoSize = 6.7;
     const branchWidth = regular.widthOfTextAtSize(branchText, infoSize);
@@ -170,13 +172,12 @@ export async function downloadProductCatalog({ store, branch, products }) {
       page.drawText(promoText, { x: x + 20, y: promoY + 3, size: 4.5, font: bold, color: colors.white });
     });
 
-    const footerY = 17;
-    page.drawLine({ start: { x: margin, y: footerY + 8 }, end: { x: width - margin, y: footerY + 8 }, thickness: 0.6, color: colors.border });
-    const footer = 'Hubungi untuk memesan :';
-    page.drawText(footer, { x: margin, y: footerY - 1, size: 7, font: regular, color: colors.muted });
+    const footerY = 10;
+    page.drawRectangle({ x: margin, y: footerY, width: width - margin * 2, height: 25, color: colors.pale });
+    page.drawText('HUBUNGI UNTUK MEMESAN :', { x: margin + 8, y: footerY + 15, size: 7.4, font: bold, color: colors.muted });
     const pageText = `${pageIndex + 1} / ${pageCount}`;
-    const pageTextWidth = regular.widthOfTextAtSize(pageText, 7);
-    page.drawText(pageText, { x: width - margin - pageTextWidth, y: footerY - 1, size: 7, font: regular, color: colors.muted });
+    const pageTextWidth = regular.widthOfTextAtSize(pageText, 7.2);
+    page.drawText(pageText, { x: width - margin - pageTextWidth - 8, y: footerY + 9, size: 7.2, font: regular, color: colors.muted });
   }
 
   const bytes = await pdf.save();
