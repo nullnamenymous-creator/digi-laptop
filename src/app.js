@@ -1,4 +1,5 @@
 import { pamphletSpecs, renderProductPamphlet, downloadProductPamphlet } from './product-pamphlet.js';
+import { downloadProductCatalog } from './product-catalog-pdf.js';
 import { hasBackendConfig, supabase } from './supabase.js';
 import { mountPrayerReminder } from './prayer-reminder.js';
 import { mountGuardian } from './guardian.js';
@@ -34,8 +35,8 @@ const readyStockLabel = () => atCentral() ? 'Siap didistribusikan' : 'Siap jual'
 const rolePages = () => {
   const role = state.profile?.role;
   if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality', 'qc_new', 'qc_handover', 'parts_stock'] : [])];
-  if (role === 'investor') return ['reports'];
-  if (role === 'technician') return canStockQc() ? ['qc_parts','qc_repair','quality','parts_stock','service'] : ['service'];
+  if (role === 'investor') return ['inventory','reports'];
+  if (role === 'technician') return canStockQc() ? ['inventory','qc_parts','qc_repair','quality','parts_stock','service'] : ['inventory','service'];
   if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality','qc_new','qc_handover','parts_stock'] : [])];
   if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','contacts','reports'];
   return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty', ...(role === 'operator' ? ['contacts'] : []), 'reports', ...(atCentral() ? ['receiving'] : [])];
@@ -1258,10 +1259,12 @@ async function repairPartModal(repairId, returnPage = state.page) {
   openModal('Pakai sparepart', 'Pemakaian mengurangi stok cabang dan tercatat pada pekerjaan repair ini.', `<div class="form-grid"><div class="field full"><label>Sparepart</label><select name="part_stock_item_id" data-stock-picker required>${parts.map((item) => `<option data-barcode="${esc(item.barcode)}" value="${item.id}">${esc(item.products?.name || 'Sparepart')} · ${item.quantity} unit · ${esc(item.barcode)}</option>`).join('')}</select></div><div class="field"><label>Jumlah terpakai</label><input name="quantity" type="number" min="1" value="1" required /></div></div>`, async (form) => { const { error } = await supabase.rpc('take_qc_sparepart', { _request_id: requestId, _repair_id: repairId, _stock_id: form.get('part_stock_item_id'), _quantity: Number(form.get('quantity')) }); if (error) throw error; toast('Pemakaian sparepart tercatat dan stok diperbarui.'); await showPage(returnPage); }, 'Catat pemakaian');
 }
 
-async function fetchInventory() {
+async function fetchInventory(catalogOnly = false) {
+  const productFields = catalogOnly ? 'id,name,sku,category,brand,model,specifications,image_path,retail_price,archived_at' : '*';
+  const stockFields = catalogOnly ? 'product_id,branch_id,quantity,status' : 'id,product_id,branch_id,barcode,supplier_barcode,serial_number,supplier,quantity,status,acquisition_cost,warranty_until,warranty_code,opening_batch_id,intake_batch_id,created_at,qc_stage';
   const [products, stock] = await Promise.all([
-    fetchAllRows(supabase.from('products').select('*').order('name')),
-    fetchAllRows(supabase.from('stock_items').select('id,product_id,branch_id,barcode,supplier_barcode,serial_number,supplier,quantity,status,acquisition_cost,warranty_until,warranty_code,opening_batch_id,intake_batch_id,created_at,qc_stage').eq('branch_id', state.branchId).neq('status', 'awaiting_qc_handover').order('created_at', { ascending: false })),
+    fetchAllRows(supabase.from('products').select(productFields).order('name')),
+    fetchAllRows(supabase.from('stock_items').select(stockFields).eq('branch_id', state.branchId).neq('status', 'awaiting_qc_handover').order('created_at', { ascending: false })),
   ]);
   state.products = products;
   return { products: state.products, stock };
@@ -1706,11 +1709,45 @@ async function fetchAllRows(query, primaryKey = 'id') { const all=[],ordered=que
 function downloadCsv(filename, rows) { const keys=Object.keys(rows[0]||{name:'',sku:'',category:''}); const cell=(v)=>`"${String(v??'').replaceAll('"','""')}"`; const csv=[keys.map(cell).join(','),...rows.map(row=>keys.map((key)=>cell(row[key])).join(','))].join('\r\n'); const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download=filename;a.click();URL.revokeObjectURL(a.href); }
 function parseCsv(text) { const rows=[];let row=[],value='',quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}else if(c==='"')quoted=true;else if(c===','){row.push(value);value=''}else if(c==='\n'){row.push(value.replace(/\r$/,''));rows.push(row);row=[];value=''}else value+=c}if(value||row.length){row.push(value.replace(/\r$/,''));rows.push(row)}const headers=(rows.shift()||[]).map((h)=>h.trim().replace(/^\ufeff/,''));return rows.filter((r)=>r.some((v)=>v.trim())).map((r)=>Object.fromEntries(headers.map((h,i)=>[h,r[i]||''])));}
 
+function openInventoryCatalogPicker({ page, products, totals, branchId }) {
+  const eligible = products.filter((product) => product.category === 'Laptop' && !product.archived_at && (totals.get(product.id) || 0) > 0)
+    .sort((a, b) => Number(a.retail_price || 0) - Number(b.retail_price || 0));
+  if (!eligible.length) return toast(`Belum ada laptop siap jual di ${branchName(branchId)}.`);
+  const host = openModal('Pilih produk katalog', `Hanya laptop siap jual di ${branchName(branchId)} yang bisa dipilih. Katalog memakai template premium, hingga 12 produk per halaman.`, `
+    <div class="catalog-pick-tools"><input type="search" data-catalog-pick-search placeholder="Cari nama, merek, model, atau SKU" aria-label="Cari produk untuk katalog" /><label><input type="checkbox" data-catalog-pick-all /> Pilih semua hasil</label></div>
+    <div class="catalog-pick-list">${eligible.map((product) => `<label class="catalog-pick-item" data-catalog-pick-row data-search="${esc(`${product.name} ${product.brand || ''} ${product.model || ''} ${product.sku || ''}`.toLocaleLowerCase('id'))}"><input type="checkbox" name="catalog_product" value="${esc(product.id)}" /><span class="catalog-pick-photo">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="" />` : 'Foto belum ada'}</span><span class="catalog-pick-info"><b>${esc(product.name)}</b><small>${esc([product.brand, product.model].filter(Boolean).join(' · ') || product.sku)}</small><small>${esc(product.sku)} · ${totals.get(product.id) || 0} unit siap jual</small><strong>${money(product.retail_price)}</strong></span></label>`).join('')}</div>
+    <p class="field-hint">Foto, spesifikasi, dan harga jual akan dimasukkan ke katalog. Produk tanpa stok siap jual tidak akan ditampilkan.</p>`, async (form) => {
+    const chosenIds = [...new Set(form.getAll('catalog_product').map(String))];
+    if (!chosenIds.length) throw new Error('Pilih setidaknya satu produk untuk dibuatkan katalog.');
+    if (state.branchId !== branchId || !page.isConnected) throw new Error('Cabang berubah. Buka kembali pemilihan katalog dari cabang yang aktif.');
+    const availableRows = [];
+    for (let index = 0; index < chosenIds.length; index += 100) {
+      availableRows.push(...await fetchAllRows(supabase.from('stock_items').select('id,product_id,quantity')
+        .eq('branch_id', branchId).eq('status', 'available').gt('quantity', 0).in('product_id', chosenIds.slice(index, index + 100))));
+    }
+    const stillReadyIds = new Set(availableRows.filter((item) => Number(item.quantity) > 0).map((item) => item.product_id));
+    if (chosenIds.some((id) => !stillReadyIds.has(id))) throw new Error('Stok beberapa produk berubah sejak daftar dibuka. Tutup lalu buka kembali katalog agar pilihan diperbarui.');
+    const selectedProducts = eligible.filter((product) => chosenIds.includes(product.id))
+      .map((product) => ({ ...product, image_url: productImageUrl(product.image_path) }));
+    await downloadProductCatalog({ store: state.organization.name || 'DIGITAL LAPTOP JOMBANG', branch: branchName(branchId), products: selectedProducts });
+    toast(`Katalog ${selectedProducts.length} produk berhasil diunduh.`);
+  }, 'Download PDF');
+  const searchInput = host.querySelector('[data-catalog-pick-search]');
+  const selectAll = host.querySelector('[data-catalog-pick-all]');
+  const rows = [...host.querySelectorAll('[data-catalog-pick-row]')];
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.trim().toLocaleLowerCase('id');
+    rows.forEach((row) => { row.hidden = !row.dataset.search.includes(query); });
+  });
+  selectAll.addEventListener('change', () => rows.filter((row) => !row.hidden).forEach((row) => { row.querySelector('input').checked = selectAll.checked; }));
+}
+
 async function inventoryPage(page) {
   if (canManage() && state.inventoryArchiveOpen) return inventoryArchivePage(page);
   const branchId = state.branchId;
+  const catalogOnly = ['technician','investor'].includes(state.profile.role);
   const [{ products, stock }, openingBatches] = await Promise.all([
-    fetchInventory(),
+    fetchInventory(catalogOnly),
     canEditProducts()
       ? fetchAllRows(supabase.from('stock_opening_batches')
         .select('id,branch_id,product_id,unit_count,unit_cost,notes,created_at,products(name,sku,category,brand,model),stock_items(barcode)')
@@ -1719,6 +1756,15 @@ async function inventoryPage(page) {
   ]);
   if (!page.isConnected || state.branchId !== branchId) return;
   const totals = new Map(); stock.forEach((item) => totals.set(item.product_id, (totals.get(item.product_id) || 0) + (item.status === 'available' ? Number(item.quantity) : 0)));
+  if (catalogOnly) {
+    const eligible = products.filter((product) => product.category === 'Laptop' && !product.archived_at && (totals.get(product.id) || 0) > 0)
+      .sort((a, b) => Number(a.retail_price || 0) - Number(b.retail_price || 0));
+    page.innerHTML = `${header('Katalog Produk', `Laptop siap jual di ${esc(branchName(branchId))}. Pilih beberapa produk untuk mengunduh katalog premium.`, '<button class="btn primary" id="download-product-catalog">Download katalog produk</button>')}
+      <section class="panel inventory-catalog-panel" style="margin-top:13px"><div class="panel-head"><div><div class="panel-title">${eligible.length} laptop siap jual</div><div class="panel-sub">Harga termurah ditampilkan lebih dulu. Katalog memuat hingga 12 produk per halaman.</div></div></div>
+      <div class="inventory-product-grid">${eligible.map((product) => `<article class="inventory-product-card"><div class="inventory-product-image">${product.image_path ? `<img loading="lazy" src="${esc(productImageUrl(product.image_path))}" alt="${esc(product.name)}" />` : '<span>Foto belum ada</span>'}</div><div class="inventory-product-body"><div class="field-hint">${esc([product.brand,product.model].filter(Boolean).join(' · ') || product.sku)}</div><h3>${esc(product.name)}</h3><strong class="inventory-product-price">${money(product.retail_price)}</strong><span class="pill">${Number(totals.get(product.id) || 0)} unit siap jual</span></div></article>`).join('') || '<div class="empty"><b>Belum ada laptop siap jual</b>Unit akan muncul setelah lolos pemeriksaan dan tersedia untuk dijual.</div>'}</div></section>`;
+    page.querySelector('#download-product-catalog')?.addEventListener('click', () => openInventoryCatalogPicker({ page, products, totals, branchId }));
+    return;
+  }
   const branchProductIds = new Set(stock.map((item) => item.product_id));
   const branchProducts = products.filter((product) => branchProductIds.has(product.id));
   const stockByProduct = new Map();
@@ -1755,7 +1801,7 @@ async function inventoryPage(page) {
         </div>
       </div>
     </article>`).join('');
-  const action = `${canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label>' : ''}${canManageOpeningStock() ? '<button class="btn" id="open-opening-stock">+ Stok awal</button>' : ''}${canManage() || isCentralAdmin() ? '<button class="btn primary" id="new-product">+ Produk baru</button>' : ''}`;
+  const action = `<button class="btn" id="download-product-catalog">Download katalog produk</button>${canManage() ? '<button class="btn" id="export-products">Ekspor CSV</button><label class="btn">Impor CSV<input id="import-products" type="file" accept=".csv,text/csv" hidden /></label>' : ''}${canManageOpeningStock() ? '<button class="btn" id="open-opening-stock">+ Stok awal</button>' : ''}${canManage() || isCentralAdmin() ? '<button class="btn primary" id="new-product">+ Produk baru</button>' : ''}`;
   const laptopUnits = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category === 'Laptop');
   const componentLots = stock.filter((item) => products.find((product) => product.id === item.product_id)?.category !== 'Laptop');
   const unitCountFor = (status) => laptopUnits.filter((item) => item.status === status).reduce((sum, item) => sum + Number(item.quantity || 1), 0);
@@ -1934,6 +1980,7 @@ async function inventoryPage(page) {
     partsButton.addEventListener('click', () => showPage('parts_stock')); page.querySelector('.head-actions').append(partsButton);
   }
   page.querySelector('#new-product')?.addEventListener('click', () => productModal());
+  page.querySelector('#download-product-catalog')?.addEventListener('click', () => openInventoryCatalogPicker({ page, products, totals, branchId }));
   page.querySelector('#open-opening-stock')?.addEventListener('click', () => openingStockModal(products.filter((product) => !product.archived_at)));
   page.querySelector('#export-products')?.addEventListener('click', () => downloadCsv('digi-laptop-produk.csv', products.map(({name,sku,brand,model,category,cost_price,retail_price,reseller_price,warranty_months,image_path}) => ({name,sku,brand,model,category,cost_price,retail_price,reseller_price,warranty_months,image_path}))));
   page.querySelector('#import-products')?.addEventListener('change', async (event) => { const file=event.target.files?.[0]; if(!file)return; try { const rows=parseCsv(await file.text()); const required=['name','sku','category']; if(!rows.length||required.some((key)=>!(key in rows[0]))) throw new Error('CSV wajib punya kolom name, sku, category. Gunakan Ekspor CSV sebagai contoh format.'); const seen=new Set();const productsToImport=rows.map((row)=>{const sku=String(row.sku||'').trim()||`DL-${crypto.randomUUID().slice(0,8).toUpperCase()}`;if(seen.has(sku))throw new Error(`SKU ${sku} muncul lebih dari sekali di file.`);seen.add(sku);return {id:products.find(p=>p.sku===sku)?.id||crypto.randomUUID(),organization_id:state.organization.id,name:String(row.name||'').trim(),sku,brand:row.brand||'',model:row.model||'',category:row.category||'Lainnya',cost_price:Number(row.cost_price||0),retail_price:Number(row.retail_price||0),reseller_price:Number(row.reseller_price||0),warranty_months:Number(row.warranty_months||0),image_path:row.image_path||products.find(p=>p.sku===sku)?.image_path||''}}); if(productsToImport.some((x)=>!x.name||![x.cost_price,x.retail_price,x.reseller_price,x.warranty_months].every(Number.isFinite)||[x.cost_price,x.retail_price,x.reseller_price,x.warranty_months].some(v=>v<0))) throw new Error('Nama produk atau nominal di CSV tidak valid.'); const result=await supabase.from('products').upsert(productsToImport,{onConflict:'id'}); if(result.error)throw result.error; toast(`${productsToImport.length} produk berhasil diimpor.`); await showPage('inventory'); } catch(error){toast(error.message||'CSV gagal diimpor.',true)} finally{event.target.value=''} });
