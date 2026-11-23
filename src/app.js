@@ -4755,6 +4755,7 @@ function customerPortal(tracking) {
       contact.hidden = false;
     }
     const sharedProduct = sharedProductId && products.find((product) => product.product_id === sharedProductId);
+    const defaultSort = sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0 ? '' : 'asc';
     const unavailableNotice = sharedProductId && !sharedProduct
       ? '<p class="notice" role="status">Produk dari link ini sudah tidak tersedia di katalog.</p>' : '';
     if (!products.length) {
@@ -4781,7 +4782,7 @@ function customerPortal(tracking) {
         <details class="storefront-filter-options" open>
           <summary>Filter <span data-filter-badge hidden></span></summary>
           <div class="storefront-sort">
-            <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah</option><option value="desc">Harga tertinggi</option></select>
+            <select aria-label="Urutkan produk"><option value="">Urutan katalog</option><option value="asc">Harga terendah · disarankan</option><option value="desc">Harga tertinggi</option></select>
           </div>
           <div class="storefront-quick">
             ${quickFilterRow('Merek', 'brand', brands)}
@@ -4806,6 +4807,7 @@ function customerPortal(tracking) {
       </nav>`;
     const search = panel.querySelector('input');
     const sort = panel.querySelector('select');
+    sort.value = defaultSort;
     const grid = panel.querySelector('.storefront-grid');
     const count = panel.querySelector('.storefront-count');
     const brandButtons = [...panel.querySelectorAll('[data-quick-brand]')];
@@ -4848,10 +4850,10 @@ function customerPortal(tracking) {
       needButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickNeed === need)));
       budgetButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.quickBudget === budget)));
       promoButton?.setAttribute('aria-pressed', String(promoOnly));
-      const activeFilters = [brand, processor, need, budget, sort.value].filter(Boolean).length;
+      const activeFilters = [brand, processor, need, budget, promoOnly ? 'promo' : '', sort.value !== defaultSort ? 'sort' : ''].filter(Boolean).length;
       filterBadge.hidden = !activeFilters;
       filterBadge.textContent = activeFilters;
-      reset.hidden = !(query || brand || processor || need || budget || promoOnly || sort.value);
+      reset.hidden = !(query || brand || processor || need || budget || promoOnly || sort.value !== defaultSort);
       if (sort.value) results.sort((a, b) => (publicRetailPrice(a) - publicRetailPrice(b)) * (sort.value === 'asc' ? 1 : -1));
       else if (sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0) {
         results.sort((a, b) => Math.abs(publicRetailPrice(a) - sharedPrice) - Math.abs(publicRetailPrice(b) - sharedPrice));
@@ -4917,7 +4919,9 @@ function customerPortal(tracking) {
     }));
     promoButton?.addEventListener('click', () => { promoOnly = !promoOnly; renderFirstPage(); });
     reset.addEventListener('click', () => {
-      search.value = brand = sort.value = processor = need = budget = '';
+      search.value = '';
+      brand = processor = need = budget = '';
+      sort.value = defaultSort;
       promoOnly = false;
       renderFirstPage();
       search.focus();
