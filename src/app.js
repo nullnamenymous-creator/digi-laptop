@@ -4800,11 +4800,7 @@ function customerPortal(tracking) {
         <button type="button" data-reset-catalog hidden>Reset filter</button>
       </div>
       <div class="storefront-grid"></div>
-      <nav class="storefront-pagination" aria-label="Halaman katalog" hidden>
-        <button type="button" data-catalog-prev aria-label="Halaman produk sebelumnya">&larr; Sebelumnya</button>
-        <span data-catalog-page aria-live="polite"></span>
-        <button type="button" data-catalog-next aria-label="Halaman produk berikutnya">Berikutnya &rarr;</button>
-      </nav>`;
+      `;
     const search = panel.querySelector('input');
     const sort = panel.querySelector('select');
     sort.value = defaultSort;
@@ -4816,15 +4812,10 @@ function customerPortal(tracking) {
     const reset = panel.querySelector('[data-reset-catalog]');
     const needButtons = [...panel.querySelectorAll('[data-quick-need]')];
     const budgetButtons = [...panel.querySelectorAll('[data-quick-budget]')];
-    const pagination = panel.querySelector('.storefront-pagination');
-    const previous = pagination.querySelector('[data-catalog-prev]');
-    const next = pagination.querySelector('[data-catalog-next]');
     const mobileCatalog = matchMedia('(max-width: 760px)');
     const filterOptions = panel.querySelector('.storefront-filter-options');
     const filterBadge = filterOptions.querySelector('[data-filter-badge]');
     filterOptions.open = !mobileCatalog.matches;
-    let productsPerPage = mobileCatalog.matches ? 8 : 12;
-    let currentPage = 1;
     let brand = '';
     let processor = '';
     let need = '';
@@ -4858,16 +4849,8 @@ function customerPortal(tracking) {
       else if (sharedProductId && !sharedProduct && Number.isFinite(sharedPrice) && sharedPrice > 0) {
         results.sort((a, b) => Math.abs(publicRetailPrice(a) - sharedPrice) - Math.abs(publicRetailPrice(b) - sharedPrice));
       }
-      const totalPages = Math.max(1, Math.ceil(results.length / productsPerPage));
-      currentPage = Math.min(currentPage, totalPages);
-      const first = (currentPage - 1) * productsPerPage;
-      const shown = results.slice(first, first + productsPerPage);
-      count.textContent = results.length ? `${first + 1}–${first + shown.length} dari ${results.length} produk` : 'Produk yang cocok belum ditemukan.';
-      pagination.hidden = totalPages === 1;
-      previous.disabled = currentPage === 1;
-      next.disabled = currentPage === totalPages;
-      pagination.querySelector('[data-catalog-page]').textContent = `Halaman ${currentPage} dari ${totalPages}`;
-      grid.innerHTML = shown.map(product => {
+      count.textContent = results.length ? `${results.length} produk` : 'Produk yang cocok belum ditemukan.';
+      grid.innerHTML = results.map(product => {
         const specs = pamphletSpecs.flatMap(([key, label]) => {
           const value = product.specifications?.[key]?.trim();
           return value && ['processor', 'ram', 'storage', 'display'].includes(key) ? [[label, value]] : [];
@@ -4890,17 +4873,10 @@ function customerPortal(tracking) {
         </button>`;
       }).join('');
       grid.querySelectorAll('[data-public-product]').forEach((button, index) => {
-        button.addEventListener('click', () => showPublicProduct(shown[index]));
+        button.addEventListener('click', () => showPublicProduct(results[index]));
       });
     };
-    const renderFirstPage = () => { currentPage = 1; render(); };
-    const movePage = (offset) => {
-      currentPage += offset;
-      render();
-      count.scrollIntoView({ block: 'start' });
-    };
-    previous.addEventListener('click', () => movePage(-1));
-    next.addEventListener('click', () => movePage(1));
+    const renderFirstPage = render;
     brandButtons.forEach((button) => button.addEventListener('click', () => {
       brand = brand === button.dataset.quickBrand ? '' : button.dataset.quickBrand;
       renderFirstPage();
@@ -4930,10 +4906,6 @@ function customerPortal(tracking) {
     mobileCatalog.addEventListener('change', (event) => {
       if (!panel.isConnected) { viewportListener.abort(); return; }
       filterOptions.open = !event.matches;
-      const firstVisible = (currentPage - 1) * productsPerPage;
-      productsPerPage = event.matches ? 8 : 12;
-      currentPage = Math.floor(firstVisible / productsPerPage) + 1;
-      render();
     }, { signal: viewportListener.signal });
     search.addEventListener('input', renderFirstPage);
     sort.addEventListener('change', renderFirstPage);
