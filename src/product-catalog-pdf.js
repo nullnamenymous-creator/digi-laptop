@@ -89,15 +89,13 @@ export async function downloadProductCatalog({ store, branch, products }) {
   const rows = 4;
   const perPage = columns * rows;
   const cardWidth = (width - margin * 2 - gapX * (columns - 1)) / columns;
-  const cardHeight = (height - 22 - 78 - 32 - gapY * (rows - 1)) / rows;
+  const bannerHeight = (width - margin * 2) / 3;
+  const cardHeight = (height - 22 - bannerHeight - 26 - 32 - gapY * (rows - 1)) / rows;
   const pageCount = Math.ceil(products.length / perPage);
   const today = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date());
-
-  let logo = null;
-  try {
-    const response = await fetch('/store-logo-transparent.png');
-    if (response.ok) logo = await pdf.embedPng(new Uint8Array(await response.arrayBuffer()));
-  } catch { /* The catalog header remains branded with the store name. */ }
+  const bannerResponse = await fetch('/catalog-header-banner.png');
+  if (!bannerResponse.ok) throw new Error('Header katalog tidak bisa dimuat. Muat ulang halaman lalu coba lagi.');
+  const banner = await pdf.embedPng(new Uint8Array(await bannerResponse.arrayBuffer()));
 
   const images = new Map();
   for (let start = 0; start < products.length; start += 6) {
@@ -109,90 +107,67 @@ export async function downloadProductCatalog({ store, branch, products }) {
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const page = pdf.addPage(PageSizes.A4);
     const top = height - 22;
-    if (logo) drawContainedImage(page, logo, margin, top - 31, 34, 30);
-    page.drawText(printableText(store || 'DIGITAL LAPTOP JOMBANG').toUpperCase(), {
-      x: margin + (logo ? 42 : 0), y: top - 9, size: 7.5, font: bold, color: colors.greenMid,
-    });
-    page.drawText('Banyak Pilihan Laptop,', {
-      x: margin + (logo ? 42 : 0), y: top - 26, size: 13.5, font: bold, color: colors.green,
-    });
-    page.drawText('Sesuai Kebutuhan dan Budget', {
-      x: margin + (logo ? 42 : 0), y: top - 42, size: 13.5, font: bold, color: colors.green,
-    });
-    page.drawText('Laptop siap pakai untuk sekolah, kuliah, dan kerja.', {
-      x: margin + (logo ? 42 : 0), y: top - 56, size: 7.4, font: regular, color: colors.muted,
-    });
-    page.drawLine({ start: { x: margin + (logo ? 42 : 0), y: top - 47 }, end: { x: margin + 208, y: top - 47 }, thickness: 1.3, color: colors.gold });
-
-    const badgeX = width - margin - 174;
-    const badgeY = top - 48;
-    page.drawRectangle({ x: badgeX, y: badgeY, width: 174, height: 42, color: colors.promoRed, borderColor: colors.gold, borderWidth: 2 });
-    page.drawCircle({ x: badgeX + 17, y: badgeY + 21, size: 10, color: colors.gold });
-    page.drawText('%', { x: badgeX + 12.1, y: badgeY + 17.5, size: 9, font: bold, color: colors.promoRed });
-    page.drawText('DAPATKAN DISKON', { x: badgeX + 32, y: badgeY + 26, size: 8.2, font: bold, color: colors.white });
-    page.drawText('POTONGAN HARGA', { x: badgeX + 32, y: badgeY + 15, size: 8.4, font: bold, color: colors.gold });
-    page.drawText('Datang langsung ke toko', { x: badgeX + 32, y: badgeY + 5, size: 6.1, font: regular, color: colors.white });
-
-    const branchText = `Cabang ${printableText(branch)}  |  ${products.length} pilihan laptop`;
-    const branchWidth = regular.widthOfTextAtSize(branchText, 7);
-    page.drawText(branchText, { x: width - margin - branchWidth, y: top - 58, size: 7, font: regular, color: colors.muted });
-    const dateWidth = regular.widthOfTextAtSize(today, 7);
-    page.drawText(today, { x: width - margin - dateWidth, y: top - 69, size: 7, font: regular, color: colors.muted });
-    page.drawLine({ start: { x: margin, y: top - 76 }, end: { x: width - margin, y: top - 76 }, thickness: 1.1, color: colors.greenMid });
+    const bannerY = top - bannerHeight;
+    page.drawImage(banner, { x: margin, y: bannerY, width: width - margin * 2, height: bannerHeight });
+    const branchText = `Cabang ${printableText(branch)}  |  ${products.length} pilihan laptop  |  ${today}`;
+    const infoSize = 6.7;
+    const branchWidth = regular.widthOfTextAtSize(branchText, infoSize);
+    page.drawText(branchText, { x: width - margin - branchWidth, y: bannerY - 12, size: infoSize, font: regular, color: colors.muted });
+    page.drawLine({ start: { x: margin, y: bannerY - 18 }, end: { x: width - margin, y: bannerY - 18 }, thickness: 0.8, color: colors.greenMid });
 
     const pageProducts = products.slice(pageIndex * perPage, (pageIndex + 1) * perPage);
     pageProducts.forEach((product, localIndex) => {
       const column = localIndex % columns;
       const row = Math.floor(localIndex / columns);
       const x = margin + column * (cardWidth + gapX);
-      const cardTop = top - 81 - row * (cardHeight + gapY);
+      const cardTop = bannerY - 25 - row * (cardHeight + gapY);
       const y = cardTop - cardHeight;
       page.drawRectangle({ x, y, width: cardWidth, height: cardHeight, color: colors.white, borderColor: colors.border, borderWidth: 0.8 });
 
       const imageX = x + 7;
-      const imageY = cardTop - 68;
+      const imageY = cardTop - 55;
       const imageWidth = cardWidth - 14;
-      const imageHeight = 58;
+      const imageHeight = 47;
       page.drawRectangle({ x: imageX, y: imageY, width: imageWidth, height: imageHeight, color: colors.pale });
       const image = images.get(product.id);
       if (image) drawContainedImage(page, image, imageX + 4, imageY + 3, imageWidth - 8, imageHeight - 6);
       else {
         const placeholder = 'FOTO PRODUK';
         const placeholderWidth = regular.widthOfTextAtSize(placeholder, 8);
-        page.drawText(placeholder, { x: imageX + (imageWidth - placeholderWidth) / 2, y: imageY + 29, size: 8, font: regular, color: colors.muted });
+        page.drawText(placeholder, { x: imageX + (imageWidth - placeholderWidth) / 2, y: imageY + 20, size: 7, font: regular, color: colors.muted });
       }
 
       const title = [product.brand, product.model].filter(Boolean).join(' ') || product.name;
-      const nameLines = fitLines(title, bold, 9.2, cardWidth - 14, 2);
-      nameLines.forEach((line, index) => page.drawText(line, { x: x + 7, y: cardTop - 80 - index * 10, size: 9.2, font: bold, color: colors.green }));
+      const nameLines = fitLines(title, bold, 8.6, cardWidth - 14, 2);
+      nameLines.forEach((line, index) => page.drawText(line, { x: x + 7, y: cardTop - 64 - index * 9, size: 8.6, font: bold, color: colors.green }));
       const secondary = product.brand && product.model ? product.name : product.sku;
-      const secondaryLines = fitLines(secondary, regular, 7.2, cardWidth - 14, 1);
-      if (secondaryLines[0]) page.drawText(secondaryLines[0], { x: x + 7, y: cardTop - 102, size: 7.2, font: regular, color: colors.muted });
+      const secondaryLines = fitLines(secondary, regular, 6.4, cardWidth - 14, 1);
+      if (secondaryLines[0]) page.drawText(secondaryLines[0], { x: x + 7, y: cardTop - 83, size: 6.4, font: regular, color: colors.muted });
 
       const specValues = specRows.map(([key, label]) => {
         const value = printableText(product.specifications?.[key]);
         return value ? `${label}: ${value}` : '';
       }).filter(Boolean).slice(0, 3);
       specValues.forEach((line, index) => {
-        const wrapped = fitLines(line, regular, 7, cardWidth - 14, 1)[0];
-        if (wrapped) page.drawText(wrapped, { x: x + 7, y: cardTop - 113 - index * 8, size: 7, font: regular, color: colors.ink });
+        const wrapped = fitLines(line, regular, 6.1, cardWidth - 14, 1)[0];
+        if (wrapped) page.drawText(wrapped, { x: x + 7, y: cardTop - 93 - index * 7, size: 6.1, font: regular, color: colors.ink });
       });
 
-      page.drawRectangle({ x: x + 7, y: y + 6, width: cardWidth - 14, height: 18, color: colors.pale });
+      page.drawRectangle({ x: x + 7, y: y + 3, width: cardWidth - 14, height: 15, color: colors.pale });
       const price = `Rp ${Number(product.retail_price || 0).toLocaleString('id-ID')}`;
-      let priceSize = 12;
+      let priceSize = 10.5;
       while (priceSize > 8 && bold.widthOfTextAtSize(price, priceSize) > cardWidth - 28) priceSize -= 0.5;
-      page.drawText(price, { x: x + 13, y: y + 11, size: priceSize, font: bold, color: colors.green });
+      page.drawText(price, { x: x + 12, y: y + 7, size: priceSize, font: bold, color: colors.green });
       const readyText = 'SIAP JUAL';
-      const readySize = 6.2;
+      const readySize = 5.3;
       const readyWidth = bold.widthOfTextAtSize(readyText, readySize);
-      page.drawText(readyText, { x: x + cardWidth - 14 - readyWidth, y: y + 12, size: readySize, font: bold, color: colors.greenMid });
-      const promoY = y + 27;
-      page.drawRectangle({ x: x + 7, y: promoY, width: cardWidth - 14, height: 12, color: colors.promoRed, borderColor: colors.gold, borderWidth: 0.7 });
-      page.drawCircle({ x: x + 15, y: promoY + 6, size: 4.3, color: colors.gold });
-      page.drawText('%', { x: x + 12.9, y: promoY + 4.1, size: 4.8, font: bold, color: colors.promoRed });
-      const promoText = fitLines('POTONGAN HARGA | DATANG LANGSUNG KE TOKO', bold, 5.2, cardWidth - 37, 1)[0];
-      page.drawText(promoText, { x: x + 22, y: promoY + 4, size: 5.2, font: bold, color: colors.white });
+      page.drawText(readyText, { x: x + cardWidth - 14 - readyWidth, y: y + 8, size: readySize, font: bold, color: colors.greenMid });
+      const promoY = y + 20;
+      page.drawRectangle({ x: x + 7, y: promoY, width: cardWidth - 14, height: 10, color: colors.promoRed, borderColor: colors.gold, borderWidth: 0.6 });
+      page.drawCircle({ x: x + 14, y: promoY + 5, size: 3.7, color: colors.gold });
+      page.drawText('%', { x: x + 12.2, y: promoY + 3.2, size: 4.1, font: bold, color: colors.promoRed });
+      const promoText = fitLines('POTONGAN HARGA | DATANG LANGSUNG KE TOKO', bold, 4.5, cardWidth - 31, 1)[0];
+      page.drawText(promoText, { x: x + 20, y: promoY + 3, size: 4.5, font: bold, color: colors.white });
     });
 
     const footerY = 17;
