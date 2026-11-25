@@ -1049,10 +1049,10 @@ async function qcHandoverPage(page) {
   page.innerHTML = `${header('Serah terima hasil QC', 'Pindai barcode pada laptop fisik. Hanya unit yang dikonfirmasi diterima yang menjadi stok siap mutasi.')}
     <div class="cards">${summary('Lolos QC dalam daftar','total')}${summary('Sudah diterima fisik','received')}${summary('Belum diterima fisik','pending')}${summary('Perlu ditelusuri','issues')}</div>
     <section class="panel scan-panel"><form id="handover-scan" class="scan-form"><input name="barcode" autocomplete="off" required aria-label="Barcode laptop fisik" placeholder="Scan / ketik barcode laptop fisik" /><button type="button" class="btn" id="handover-camera">Kamera</button><button class="btn primary" type="submit">Cocokkan unit</button></form><div id="handover-scanner"></div></section>
-    <p class="notice">Contoh: 10 lolos QC, 9 diterima fisik = 9 siap mutasi + 1 belum diterima. Unit belum diterima tetap tercatat dalam modal, tetapi tidak dapat dijual atau dimutasi. Catatan selisih tidak otomatis menghapus aset.</p>
+    <p class="notice">Periksa laptop dan barcode pada setiap baris, lalu pilih <b>Cek fisik & loloskan ke stok</b>. Unit baru siap dijual atau dimutasi setelah Admin Pusat mengonfirmasi penerimaan fisiknya. Catatan selisih tidak otomatis menghapus aset.</p>
     <div class="field"><label for="handover-search">Cari kode penerimaan, barcode, produk, atau serial</label><input type="search" id="handover-search" /></div>
     <section class="panel table-panel" data-handover-pending><div class="panel-head"><div class="panel-title">Belum diterima fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / UNIT</th><th>PENERIMAAN / QC</th><th>CATATAN SELISIH</th><th>AKSI</th></tr></thead><tbody>
-    ${pending.map(item => `<tr data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button> <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button></td></tr>`).join('')}
+    ${pending.map(item => `<tr data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn primary" type="button" data-handover-accept="${item.id}">Cek fisik & loloskan ke stok</button><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button> <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button></td></tr>`).join('')}
     <tr data-handover-empty><td colspan="4">Tidak ada unit yang cocok.</td></tr></tbody></table></div></section>
     <section class="panel table-panel" data-handover-received style="margin-top:14px"><div class="panel-head"><div class="panel-title">Riwayat penerimaan fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / PRODUK</th><th>PENERIMAAN / TEKNISI</th><th>DITERIMA OLEH</th><th>WAKTU / CATATAN</th></tr></thead><tbody>
     ${received.map(item => `<tr data-handover-search="${esc(searchText(item))}"><td><b>${esc(item.barcode)}</b><div>${esc(item.product_name)}</div></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${esc(item.technician_name)}</div></td><td>${esc(item.accepted_by_name)}</td><td>${new Date(item.accepted_at).toLocaleString('id-ID')}<div>${esc(item.note || '-')}</div>${notes.filter(note => note.stock_item_id === item.stock_item_id && note.qc_at === item.qc_at).map(note => `<div class="field-hint">Riwayat selisih: ${esc(note.note)} · ${esc(note.created_by_name)}</div>`).join('')}</td></tr>`).join('')}
@@ -1070,23 +1070,26 @@ async function qcHandoverPage(page) {
     for (const [key,value] of Object.entries({total: pendingCount+receivedCount, pending: pendingCount, received: receivedCount, issues})) page.querySelector(`[data-handover-count="${key}"]`).textContent = value;
   };
   search.addEventListener('input', filterRows); filterRows();
+  const confirmHandover = item => openModal('Cek fisik & loloskan ke stok', 'Cocokkan barcode pada laptop fisik dengan data unit. Setelah dikonfirmasi, status menjadi siap didistribusikan untuk dijual atau dimutasi.',
+    `<div class="notice"><b>${esc(item.barcode)}</b><p>${esc(item.products?.name || item.product_name || 'Laptop')} · Serial ${esc(item.serial_number || '-')}</p><p>Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}</p><p>Catatan QC: ${esc(item.qc_notes || '—')}</p></div><div class="field"><label>Catatan penerimaan (opsional)</label><textarea name="note" maxlength="1000"></textarea></div><label><input type="checkbox" name="confirmed" required /> Saya sudah mencocokkan barcode dan menerima laptop fisik ini.</label>`, async form=>{
+      if(state.branchId!==branchId)throw new Error('Cabang berubah. Buka kembali halaman serah terima di Cabang Pusat.');
+      const result=checkError(await supabase.rpc('accept_qc_handover',{_barcode:item.barcode,_confirmed:form.get('confirmed')==='on',_note:String(form.get('note')||'')}));
+      toast(result.already_received?'Unit ini sudah diterima sebelumnya.':`${item.barcode} lolos serah terima dan masuk stok siap didistribusikan.`);
+      await showPage('qc_handover');
+    },'Konfirmasi & masukkan ke stok');
   const openScan = () => {
     const input = page.querySelector('#handover-scan [name="barcode"]');
     const code = input.value.trim().toUpperCase();
     const item = pending.find(row => row.barcode === code);
     if (!item) { toast(received.some(row => row.barcode === code) ? 'Barcode sudah diterima. Periksa riwayat penerimaan fisik.' : 'Barcode tidak ada di daftar menunggu serah terima. Cocokkan label laptop.', true); input.select(); return; }
-    openModal('Konfirmasi penerimaan fisik', 'Pastikan laptop dan label yang dipindai sesuai dengan identitas berikut.',
-      `<div class="notice"><b>${esc(item.barcode)}</b><p>${esc(item.products?.name || 'Laptop')} · Serial ${esc(item.serial_number || '-')}</p><p>Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}</p></div>
-      <div class="field"><label>Catatan penerimaan (opsional)</label><textarea name="note" maxlength="1000"></textarea></div>
-      <label><input type="checkbox" name="confirmed" required /> Saya sudah menerima laptop fisik dan mencocokkan barcode serta identitas unit ini.</label>`, async form => {
-        if (state.branchId !== branchId) throw new Error('Cabang berubah. Pindai kembali di Cabang Pusat.');
-        const result = checkError(await supabase.rpc('accept_qc_handover', {_barcode: code, _confirmed: form.get('confirmed') === 'on', _note: String(form.get('note') || '')}));
-        toast(result.already_received ? 'Unit sudah diterima sebelumnya. Stok tidak ditambah lagi.' : `${code} diterima fisik dan masuk stok siap distribusi.`);
-        await showPage('qc_handover');
-      }, 'Terima fisik & masukkan stok');
+    confirmHandover(item);
   };
   page.querySelector('#handover-scan').addEventListener('submit', event => { event.preventDefault(); openScan(); });
   page.querySelector('#handover-camera').addEventListener('click', () => startScanner(page.querySelector('#handover-scanner'), page.querySelector('#handover-scan [name="barcode"]'), ['code_128'], openScan));
+  page.querySelectorAll('[data-handover-accept]').forEach(button=>button.addEventListener('click',()=>{
+    const item=pending.find(row=>row.id===button.dataset.handoverAccept);
+    if(item)confirmHandover(item);
+  }));
   page.querySelectorAll('[data-handover-issue-unit]').forEach(button => button.addEventListener('click', () => {
     const item = pending.find(row => row.id === button.dataset.handoverIssueUnit);
     openModal('Catat selisih serah terima', esc(item.barcode) + ' · Tetap belum diterima fisik dan tidak siap mutasi.',
