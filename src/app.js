@@ -943,7 +943,8 @@ async function technicianWorkflowPage(page, stage) {
     qc_dispatch:'Hasil teknisi sudah selesai. Admin Pusat atau Pemilik harus memindai barcode dan menerima fisik sebelum unit menjadi stok siap distribusi.',
   };
   page.innerHTML = `${header(title,messages[stage],stage==='qc_parts' || stage==='qc_repair' ? '<button type="button" class="btn" id="tech-parts-stock">Lihat stok sparepart Pusat</button>' : '')}
-    <div class="cards"><article class="card"><div class="card-label">Unit pada tahap ini</div><div class="card-value">${rows.length}</div><div class="card-sub">${esc(branchName(branchId))}</div></article></div>
+    <div class="cards"><article class="card"><div class="card-label">Unit pada tahap ini</div><div class="card-value" data-tech-stage-count>${rows.length}</div><div class="card-sub">${esc(branchName(branchId))}</div></article></div>
+    ${stage==='qc_new' ? activityDateFilterMarkup() : ''}
     <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Daftar unit</div><input type="search" class="search" id="tech-unit-search" placeholder="Kode penerimaan, barcode, serial, atau produk" /></div>
     <div class="table-wrap"><table><thead><tr><th>BARCODE / DETAIL</th><th>STATUS / CATATAN</th><th>MODAL UNIT</th><th>AKSI</th></tr></thead><tbody>
     ${rows.map(unit => {
@@ -951,13 +952,15 @@ async function technicianWorkflowPage(page, stage) {
       const receivedDate = unit.created_at ? new Date(unit.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Tanggal tidak tersedia';
       const intakeDetails = stage === 'qc_new' ? `<div class="field-hint">Supplier: ${esc(unit.supplier || 'Tidak tercatat')}</div><div class="field-hint">Diterima: ${esc(receivedDate)}</div>` : '';
       const actions = stage==='qc_new' ? `<button type="button" class="small-btn" data-tech-check="${unit.id}">Input data QC</button><button type="button" class="small-btn danger" data-archive-test="${unit.id}">Arsip uji coba</button>`
-        : ['qc_parts','qc_repair'].includes(stage) && job ? `${job.status==='repair_needed' ? `<button type="button" class="small-btn" data-tech-start="${job.id}">Mulai repair</button>` : ''}<button type="button" class="small-btn" data-tech-part="${job.id}">Ambil sparepart Pusat</button><button type="button" class="small-btn" data-tech-external="${job.id}">Beli dari luar</button><button type="button" class="small-btn" data-tech-finish="${job.id}">${parts.length ? 'Simpan & loloskan ke Admin' : 'Selesai & serahkan'}</button>${stage==='qc_repair' ? `<button type="button" class="small-btn" data-tech-wait="${job.id}">Menunggu sparepart</button>` : ''}<button type="button" class="small-btn danger" data-tech-scrap="${unit.id}">Scrap / kanibal</button>`
+        : ['qc_parts','qc_repair'].includes(stage) && job ? stage==='qc_repair' && parts.length ? `<button type="button" class="small-btn primary" data-tech-finish="${job.id}">Simpan & loloskan ke Admin</button>` : `${job.status==='repair_needed' ? `<button type="button" class="small-btn" data-tech-start="${job.id}">Mulai repair</button>` : ''}<button type="button" class="small-btn" data-tech-part="${job.id}">Ambil sparepart Pusat</button><button type="button" class="small-btn" data-tech-external="${job.id}">Beli dari luar</button><button type="button" class="small-btn" data-tech-finish="${job.id}">${parts.length ? 'Simpan & loloskan ke Admin' : 'Selesai & serahkan'}</button>${stage==='qc_repair' ? `<button type="button" class="small-btn" data-tech-wait="${job.id}">Menunggu sparepart</button>` : ''}<button type="button" class="small-btn danger" data-tech-scrap="${unit.id}">Scrap / kanibal</button>`
         : ['qc_parts','qc_repair'].includes(stage) ? 'Pekerjaan repair tidak ditemukan. Hubungi Pemilik untuk memeriksa riwayat unit.' : stage==='qc_dispatch' ? 'Menunggu scan penerimaan fisik admin' : 'Tidak dapat dijual';
-      return `<tr data-tech-search="${esc([unit.barcode,unit.intake_batch_id,unit.serial_number,unit.supplier,unit.products?.name,unit.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${unit.id}">${esc(unit.barcode)} Â· Detail</button><div>${esc(unit.products?.name || 'Laptop')}</div><small>Penerimaan ${esc(unit.intake_batch_id?.slice(0,8).toUpperCase() || '-')} Â· ${esc(unit.serial_number || 'Tanpa serial')}</small>${intakeDetails}</td>
+      return `<tr data-tech-date="${esc(unit.created_at)}" data-tech-search="${esc([unit.barcode,unit.intake_batch_id,unit.serial_number,unit.supplier,unit.products?.name,unit.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${unit.id}">${esc(unit.barcode)} Â· Detail</button><div>${esc(unit.products?.name || 'Laptop')}</div><small>Penerimaan ${esc(unit.intake_batch_id?.slice(0,8).toUpperCase() || '-')} Â· ${esc(unit.serial_number || 'Tanpa serial')}</small>${intakeDetails}</td>
       <td><span class="pill">${esc(qcTrackingLabels[qcTrackingStatus(unit)] || unit.status)}</span><div>${esc(job?.issue || unit.qc_notes || '-')}</div>${parts.map(part=>`<div class="field-hint">${esc(part.product_name)} Ã— ${Number(part.quantity)} Â· ${money(part.cost)}</div>`).join('')}</td><td>${money(Number(unit.acquisition_cost || 0)+cost)}<div class="field-hint">Beli ${money(unit.acquisition_cost)} Â· part/jasa ${money(cost)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
     }).join('')}<tr data-tech-empty><td colspan="4">Tidak ada unit pada pencarian ini.</td></tr></tbody></table></div></section>`;
   const search=page.querySelector('#tech-unit-search'), body=page.querySelector('tbody'), tableRows=[...body.querySelectorAll('[data-tech-search]')];
-  const render=()=>filterPagedRows(body,tableRows,row=>row.dataset.techSearch.includes(search.value.trim().toLowerCase()),body.querySelector('[data-tech-empty]'));
+  let dateMatches=value=>activityDateMatches('today',value);
+  const render=()=>{const matches=row=>(stage!=='qc_new'||dateMatches(row.dataset.techDate)) && row.dataset.techSearch.includes(search.value.trim().toLowerCase());filterPagedRows(body,tableRows,matches,body.querySelector('[data-tech-empty]'));const count=page.querySelector('[data-tech-stage-count]');if(count)count.textContent=tableRows.filter(matches).length;};
+  if(stage==='qc_new')bindActivityDateFilter(page,predicate=>{dateMatches=predicate;render();});
   search.addEventListener('input',render); render(); bindQcUnitDetails(page);
   page.querySelector('#tech-parts-stock')?.addEventListener('click',()=>showPage('parts_stock'));
   page.querySelectorAll('[data-tech-check]').forEach(button=>button.addEventListener('click',()=>beginStockQc(rows.find(unit=>unit.id===button.dataset.techCheck))));
@@ -1053,26 +1056,30 @@ async function qcHandoverPage(page) {
     <div class="cards">${summary('Lolos QC dalam daftar','total')}${summary('Sudah diterima fisik','received')}${summary('Belum diterima fisik','pending')}${summary('Perlu ditelusuri','issues')}</div>
     <section class="panel scan-panel"><form id="handover-scan" class="scan-form"><input name="barcode" autocomplete="off" required aria-label="Barcode laptop fisik" placeholder="Scan / ketik barcode laptop fisik" /><button type="button" class="btn" id="handover-camera">Kamera</button><button class="btn primary" type="submit">Cocokkan unit</button></form><div id="handover-scanner"></div></section>
     <p class="notice">Periksa laptop dan barcode pada setiap baris, lalu pilih <b>Cek fisik & loloskan ke stok</b>. Unit baru siap dijual atau dimutasi setelah Admin Pusat mengonfirmasi penerimaan fisiknya. Catatan selisih tidak otomatis menghapus aset.</p>
+    ${activityDateFilterMarkup()}
     <div class="field"><label for="handover-search">Cari kode penerimaan, barcode, produk, atau serial</label><input type="search" id="handover-search" /></div>
     <section class="panel table-panel" data-handover-pending><div class="panel-head"><div class="panel-title">Belum diterima fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / UNIT</th><th>PENERIMAAN / QC</th><th>RINCIAN MODAL UNIT</th><th>CATATAN SELISIH</th><th>AKSI</th></tr></thead><tbody>
-    ${pending.map(item => {const cost=repairCosts.get(item.id)||{labor:0,parts:0,items:[]};const base=Number(item.acquisition_cost||0);return `<tr data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td><div>Modal beli: <b>${money(base)}</b></div><div>Sparepart: ${money(cost.parts)}</div>${cost.items.map(part=>`<div class="field-hint">${esc(part.product_name)} × ${Number(part.quantity)}${part.external_supplier?` · ${esc(part.external_supplier)}`:''}</div>`).join('')}<div>Ongkos jasa: ${money(cost.labor)}</div><div class="field-hint"><b>Total modal unit: ${money(base+cost.parts+cost.labor)}</b></div></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn primary" type="button" data-handover-accept="${item.id}">Cek fisik & loloskan ke stok</button><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button> <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button></td></tr>`;})}
+    ${pending.map(item => {const cost=repairCosts.get(item.id)||{labor:0,parts:0,items:[]};const base=Number(item.acquisition_cost||0);return `<tr data-handover-date="${esc(item.qc_at)}" data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td><div>Modal beli: <b>${money(base)}</b></div><div>Sparepart: ${money(cost.parts)}</div>${cost.items.map(part=>`<div class="field-hint">${esc(part.product_name)} × ${Number(part.quantity)}${part.external_supplier?` · ${esc(part.external_supplier)}`:''}</div>`).join('')}<div>Ongkos jasa: ${money(cost.labor)}</div><div class="field-hint"><b>Total modal unit: ${money(base+cost.parts+cost.labor)}</b></div></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn primary" type="button" data-handover-accept="${item.id}">Cek fisik & loloskan ke stok</button><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button> <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button></td></tr>`;})}
     <tr data-handover-empty><td colspan="5">Tidak ada unit yang cocok.</td></tr></tbody></table></div></section>
     <section class="panel table-panel" data-handover-received style="margin-top:14px"><div class="panel-head"><div class="panel-title">Riwayat penerimaan fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / PRODUK</th><th>PENERIMAAN / TEKNISI</th><th>DITERIMA OLEH</th><th>WAKTU / CATATAN</th></tr></thead><tbody>
-    ${received.map(item => `<tr data-handover-search="${esc(searchText(item))}"><td><b>${esc(item.barcode)}</b><div>${esc(item.product_name)}</div></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${esc(item.technician_name)}</div></td><td>${esc(item.accepted_by_name)}</td><td>${new Date(item.accepted_at).toLocaleString('id-ID')}<div>${esc(item.note || '-')}</div>${notes.filter(note => note.stock_item_id === item.stock_item_id && note.qc_at === item.qc_at).map(note => `<div class="field-hint">Riwayat selisih: ${esc(note.note)} · ${esc(note.created_by_name)}</div>`).join('')}</td></tr>`).join('')}
+    ${received.map(item => `<tr data-handover-date="${esc(item.accepted_at)}" data-handover-search="${esc(searchText(item))}"><td><b>${esc(item.barcode)}</b><div>${esc(item.product_name)}</div></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${esc(item.technician_name)}</div></td><td>${esc(item.accepted_by_name)}</td><td>${new Date(item.accepted_at).toLocaleString('id-ID')}<div>${esc(item.note || '-')}</div>${notes.filter(note => note.stock_item_id === item.stock_item_id && note.qc_at === item.qc_at).map(note => `<div class="field-hint">Riwayat selisih: ${esc(note.note)} · ${esc(note.created_by_name)}</div>`).join('')}</td></tr>`).join('')}
     <tr data-handover-empty><td colspan="4">Tidak ada penerimaan yang cocok.</td></tr></tbody></table></div></section>`;
   const search = page.querySelector('#handover-search');
+  let dateMatches=value=>activityDateMatches('today',value);
   const filterRows = () => {
     const query = search.value.trim().toLowerCase();
     let pendingCount = 0, receivedCount = 0, issues = 0;
     for (const selector of ['[data-handover-pending]','[data-handover-received]']) {
       const section = page.querySelector(selector), rows = [...section.querySelectorAll('[data-handover-search]')];
-      const matches = rows.filter(row => row.dataset.handoverSearch.includes(query));
+      const matches = rows.filter(row => dateMatches(row.dataset.handoverDate) && row.dataset.handoverSearch.includes(query));
       if (selector === '[data-handover-pending]') { pendingCount = matches.length; issues = matches.filter(row => row.dataset.handoverIssue === 'yes').length; } else receivedCount = matches.length;
-      filterPagedRows(section.querySelector('tbody'), rows, row => row.dataset.handoverSearch.includes(query), section.querySelector('[data-handover-empty]'));
+      filterPagedRows(section.querySelector('tbody'), rows, row => dateMatches(row.dataset.handoverDate) && row.dataset.handoverSearch.includes(query), section.querySelector('[data-handover-empty]'));
     }
     for (const [key,value] of Object.entries({total: pendingCount+receivedCount, pending: pendingCount, received: receivedCount, issues})) page.querySelector(`[data-handover-count="${key}"]`).textContent = value;
   };
-  search.addEventListener('input', filterRows); filterRows();
+  search.addEventListener('input', filterRows);
+  bindActivityDateFilter(page,predicate=>{dateMatches=predicate;filterRows();});
+  filterRows();
   const confirmHandover = item => {const cost=repairCosts.get(item.id)||{labor:0,parts:0};const base=Number(item.acquisition_cost||0);return openModal('Cek fisik & loloskan ke stok', 'Cocokkan barcode pada laptop fisik dengan data unit. Setelah dikonfirmasi, status menjadi siap didistribusikan untuk dijual atau dimutasi.',
     `<div class="notice"><b>${esc(item.barcode)}</b><p>${esc(item.products?.name || item.product_name || 'Laptop')} · Serial ${esc(item.serial_number || '-')}</p><p>Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}</p><p>Catatan QC: ${esc(item.qc_notes || '—')}</p><p>Modal beli ${money(base)} + sparepart ${money(cost.parts)} + jasa ${money(cost.labor)} = <b>${money(base+cost.parts+cost.labor)}</b></p></div><div class="field"><label>Catatan penerimaan (opsional)</label><textarea name="note" maxlength="1000"></textarea></div><label><input type="checkbox" name="confirmed" required /> Saya sudah mencocokkan barcode dan menerima laptop fisik ini.</label>`, async form=>{
       if(state.branchId!==branchId)throw new Error('Cabang berubah. Buka kembali halaman serah terima di Cabang Pusat.');
@@ -1167,8 +1174,9 @@ async function qcResultsPanel() {
     <div class="panel-head"><div><div class="panel-title">Progres penerimaan & hasil QC</div><div class="panel-sub">Semua unit sejak diterima, termasuk yang belum diperiksa. Hasil QC tetap tercatat setelah status berubah.</div></div>
     <input class="search" id="qc-result-search" type="search" placeholder="Cari kode penerimaan, barcode, produk, atau serial" aria-label="Cari unit dan kode penerimaan" />
     <label>Status <select id="qc-result-status" class="status-select"><option value="">Semua status</option>${Object.entries(labels).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div>
+    ${activityDateFilterMarkup()}
     <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${canManage() ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
-    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}${canAdminQc() && item.intake_batch_id && item.branch_id === state.branchId ? ` <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button>` : ''}</td></tr>`).join('')}
+    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-date="${esc(item.created_at)}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}${canAdminQc() && item.intake_batch_id && item.branch_id === state.branchId ? ` <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button>` : ''}</td></tr>`).join('')}
     <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${canManage() ? 5 : 4}"><div class="empty">Tidak ada unit yang cocok dengan pencarian atau status ini.</div></td></tr></tbody></table></div>
   </section>`;
 }
@@ -1179,8 +1187,10 @@ function bindQcResultFilter(page) {
   search.value = state.qcSearchQuery || '';
   const rows = [...page.querySelectorAll('[data-qc-result]')];
   const empty = page.querySelector('#qc-result-empty');
+  let dateMatches=value=>activityDateMatches('today',value);
   const render = () => filterPagedRows(empty.closest('tbody'), rows,
-    (row) => (!filter.value || row.dataset.qcResult === filter.value) && (row.dataset.qcSearch || '').includes(search.value.trim().toLowerCase()), empty);
+    (row) => dateMatches(row.dataset.qcDate) && (!filter.value || row.dataset.qcResult === filter.value) && (row.dataset.qcSearch || '').includes(search.value.trim().toLowerCase()), empty);
+  bindActivityDateFilter(page,predicate=>{dateMatches=predicate;render();});
   filter.addEventListener('change', render);
   search.addEventListener('input', () => { state.qcSearchQuery = search.value; render(); });
   render();
@@ -4015,6 +4025,74 @@ function financeSummaryCard(key, label, amount, detail) {
   </button>`;
 }
 
+function activityDateFilterMarkup() {
+  return `<div class="activity-date-filter" data-activity-filter>
+    <span class="activity-date-filter-label">Lihat proses:</span>
+    <div class="activity-date-presets" role="group" aria-label="Filter tanggal proses">
+      <button type="button" class="small-btn primary" data-activity-range="today">Hari ini</button>
+      <button type="button" class="small-btn" data-activity-range="yesterday">Kemarin</button>
+      <button type="button" class="small-btn" data-activity-range="week">Minggu ini</button>
+      <button type="button" class="small-btn" data-activity-range="month">Bulan ini</button>
+      <button type="button" class="small-btn" data-activity-range="custom">Pilih tanggal</button>
+    </div>
+    <div class="activity-date-custom" data-activity-custom hidden>
+      <label>Dari <input type="date" data-activity-from /></label>
+      <label>Sampai <input type="date" data-activity-to /></label>
+    </div>
+    <span class="field-hint" data-activity-range-label>Hari ini</span>
+  </div>`;
+}
+
+function jakartaDateKey(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Jakarta'}).format(date);
+}
+
+function shiftDateKey(key, days) {
+  const [year,month,day]=key.split('-').map(Number);
+  const date=new Date(Date.UTC(year,month-1,day+days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
+}
+
+function activityDateMatches(range, value, from, to) {
+  const key=jakartaDateKey(value);
+  if(!key)return false;
+  const today=jakartaDateKey(new Date());
+  if(range==='today')return key===today;
+  if(range==='yesterday')return key===shiftDateKey(today,-1);
+  if(range==='week'){
+    const [year,month,day]=today.split('-').map(Number), weekday=new Date(Date.UTC(year,month-1,day)).getUTCDay();
+    const mondayOffset=weekday===0?-6:1-weekday;
+    return key>=shiftDateKey(today,mondayOffset) && key<=today;
+  }
+  if(range==='month')return key>=`${today.slice(0,7)}-01` && key<=today;
+  const start=from || to, end=to || from;
+  return Boolean(start && end && key>=start && key<=end);
+}
+
+function bindActivityDateFilter(page, onChange) {
+  const filter=page.querySelector('[data-activity-filter]');
+  if(!filter)return;
+  const buttons=[...filter.querySelectorAll('[data-activity-range]')];
+  const custom=filter.querySelector('[data-activity-custom]');
+  const from=filter.querySelector('[data-activity-from]'),to=filter.querySelector('[data-activity-to]');
+  const label=filter.querySelector('[data-activity-range-label]');
+  const today=jakartaDateKey(new Date());
+  from.value=today;to.value=today;
+  let range='today';
+  const render=()=>{
+    buttons.forEach(button=>button.classList.toggle('primary',button.dataset.activityRange===range));
+    custom.hidden=range!=='custom';
+    label.textContent=range==='today'?'Hari ini':range==='yesterday'?'Kemarin':range==='week'?'Minggu ini':range==='month'?'Bulan ini':`${from.value || '…'} – ${to.value || from.value || '…'}`;
+    onChange(value=>activityDateMatches(range,value,from.value,to.value));
+  };
+  buttons.forEach(button=>button.addEventListener('click',()=>{range=button.dataset.activityRange;render();}));
+  from.addEventListener('change',()=>{range='custom';render();});
+  to.addEventListener('change',()=>{range='custom';render();});
+  render();
+}
+
 function filterPagedRows(body, rows, predicate, emptyRow) {
   const wrap = body.closest('.table-wrap');
   const previousControls = wrap.nextElementSibling;
@@ -4086,7 +4164,7 @@ async function reportsPage(page) {
   const otherIncomeCategory = 'Pemasukan lain';
   const excludedPurchasePayments = new Set(['Pembayaran pembelian','Pembayaran hutang supplier','Pembelian laptop tunai','Pembelian sparepart internal']);
   const cashRows = cash.map((entry) => {
-    const purchasePayment = entry.direction === 'expense' && (excludedPurchasePayments.has(entry.category) || ['stock_repair_external_part','stock_repair'].includes(entry.source_type));
+    const purchasePayment = entry.direction === 'expense' && (excludedPurchasePayments.has(entry.category) || ['stock_repair_external_part','stock_repair','stock_repair_labor'].includes(entry.source_type));
     const otherIncome = entry.direction === 'income' && entry.category === otherIncomeCategory;
     const commissionPayment = entry.source_type === 'sale_commission';
     const operatingExpense = entry.direction === 'expense' && !purchasePayment && !commissionPayment;
@@ -4266,7 +4344,7 @@ function reportFinanceTable(rows, mode, tableClass = '') {
       ${row.referralSource ? `<div class="field-hint">Referensi ${esc(saleReferralLabels.get(row.referralSource))}${row.referralNote ? ` · ${esc(row.referralNote)}` : ''}</div>` : ''}
       ${row.discount ? `<div class="field-hint">Potongan ${money(row.discount)}</div>` : ''}
       ${mode === 'cash' ? `<div class="field-hint">${row.direction === 'income' ? 'Masuk' : 'Keluar'}</div>` : ''}
-      ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Pembayaran stok tidak dihitung sebagai biaya laba.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
+      ${row.purchasePayment && mode === 'detail' ? '<div class="field-hint">Dicatat sebagai arus kas keluar; biaya barang/repair masuk HPP saat unit terjual agar laba tidak dihitung dua kali.</div>' : ''}</td><td>${esc(row.branch || branchName(row.branch_id))}</td>
       ${showValue ? `<td>${money(row.value)}</td>` : ''}${showCost ? `<td>${money(row.cost)}</td>` : ''}
       ${showImpact ? `<td>${money(row.profitImpact)}</td>` : ''}</tr>`).join('')}</tbody></table>`;
 }

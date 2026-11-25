@@ -112,6 +112,13 @@ a { color: inherit; }
 .team-table .actions-cell { min-width: 0; }
 .panel { min-width: 0; padding: 14px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+.activity-date-filter { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 14px; border-bottom:1px solid #e5e9e4; background:#fbfcf9; }
+.activity-date-filter-label { color:#536459; font-size:12px; font-weight:700; }
+.activity-date-presets { display:flex; flex-wrap:wrap; gap:5px; }
+.activity-date-custom { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.activity-date-custom[hidden] { display:none; }
+.activity-date-custom label { display:flex; align-items:center; gap:5px; color:#617067; font-size:11px; }
+.activity-date-custom input { min-height:30px; padding:4px 7px; border:1px solid #d6ddd6; background:#fff; color:#26372d; }
 .panel-title { color: #233128; font: 700 11px Manrope, Inter, sans-serif; }
 .panel-sub { margin-top: 4px; color: #89938b; font-size: 11px; line-height: 1.5; }
 .quick-links { display: grid; }
