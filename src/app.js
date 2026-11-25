@@ -1153,11 +1153,16 @@ async function qcResultsPanel() {
   const results = rows.filter(item => !item.test_archived_at && (item.intake_batch_id || item.qc_at || item.status === 'pending_qc') && (item.products?.category === 'Laptop' || item.qc_at) && (item.intake_batches?.branch_id === state.branchId || (!item.intake_batches && item.branch_id === state.branchId)));
   const labels = qcTrackingLabels;
   const repairCosts = new Map();
-  if (canManage()) {
-    const jobs = await fetchAllRows(supabase.from('stock_repairs')
-      .select('id,stock_item_id,labor_cost,stock_repair_parts(id,product_name,quantity,cost,external_supplier,purchased_on,invoice_number,paid_at)')
-      .eq('branch_id', state.branchId));
-    for (const job of jobs) {
+  const latestRepairActivity = new Map();
+  const jobs = await fetchAllRows(supabase.from('stock_repairs')
+    .select('id,stock_item_id,labor_cost,updated_at,stock_repair_parts(id,product_name,quantity,cost,labor_cost,labor_recorded_at,external_supplier,purchased_on,invoice_number,paid_at)')
+    .eq('branch_id', state.branchId));
+  for (const job of jobs) {
+    if (job.updated_at) {
+      const previous = latestRepairActivity.get(job.stock_item_id);
+      if (!previous || new Date(job.updated_at) > new Date(previous)) latestRepairActivity.set(job.stock_item_id, job.updated_at);
+    }
+    if (canManage() || isCentralAdmin()) {
       const costs = repairCosts.get(job.stock_item_id) || { total: 0, parts: [] };
       costs.total += Number(job.labor_cost || 0);
       for (const part of job.stock_repair_parts || []) {
@@ -1167,6 +1172,14 @@ async function qcResultsPanel() {
       repairCosts.set(job.stock_item_id, costs);
     }
   }
+  const reportActivityDate = item => [item.created_at, item.qc_at, item.qc_started_at, latestRepairActivity.get(item.id)]
+    .filter(Boolean).reduce((latest, value) => !latest || new Date(value) > new Date(latest) ? value : latest, '');
+  const reportStatus = item => {
+    const status = qcTrackingStatus(item);
+    const repairInputExists = jobs.some(job => job.stock_item_id === item.id && (job.stock_repair_parts || []).some(part => Boolean(part.labor_recorded_at) || Number(part.labor_cost || 0) > 0 || Number(job.labor_cost || 0) > 0));
+    return status === 'repairing' && !repairInputExists ? 'waiting_parts' : status;
+  };
+  const showRepairCosts = canManage() || isCentralAdmin();
   const names = new Map();
   if (canManage() || canTechnician() || isCentralAdmin()) {
     const profiles = await fetchAllRows(supabase.from('profiles').select('id,full_name'));
@@ -1177,9 +1190,9 @@ async function qcResultsPanel() {
     <input class="search" id="qc-result-search" type="search" placeholder="Cari kode penerimaan, barcode, produk, atau serial" aria-label="Cari unit dan kode penerimaan" />
     <label>Status <select id="qc-result-status" class="status-select"><option value="">Semua status</option>${Object.entries(labels).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div>
     ${activityDateFilterMarkup()}
-    <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${canManage() ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
-    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-date="${esc(item.created_at)}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}${canAdminQc() && item.intake_batch_id && item.branch_id === state.branchId ? ` <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button>` : ''}</td></tr>`).join('')}
-    <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${canManage() ? 5 : 4}"><div class="empty">Tidak ada unit yang cocok dengan pencarian atau status ini.</div></td></tr></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${showRepairCosts ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN / AKTIVITAS TERAKHIR</th></tr></thead><tbody>
+    ${results.map((item) => { const status = reportStatus(item); return `<tr data-qc-result="${esc(status)}" data-qc-date="${esc(reportActivityDate(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[status] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${showRepairCosts ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at && canManage() ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">Aktivitas terakhir: ${new Date(reportActivityDate(item)).toLocaleString('id-ID')}</div><div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}${canAdminQc() && item.intake_batch_id && item.branch_id === state.branchId ? ` <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button>` : ''}</td></tr>`; }).join('')}
+    <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${showRepairCosts ? 5 : 4}"><div class="empty">Tidak ada unit yang cocok dengan pencarian atau status ini.</div></td></tr></tbody></table></div>
   </section>`;
 }
 
