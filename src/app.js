@@ -34,17 +34,17 @@ const canEditProducts = () => canManage() || isCentralAdmin();
 const readyStockLabel = () => atCentral() ? 'Siap didistribusikan' : 'Siap jual';
 const rolePages = () => {
   const role = state.profile?.role;
-  if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality', 'qc_new', 'qc_handover', 'parts_stock'] : [])];
+  if (role === 'central_admin') return ['dashboard', 'orders', 'inventory', 'transfers', 'reports', ...(atCentral() ? ['receiving', 'quality', 'qc_new', 'qc_handover', 'qc_archive', 'parts_stock'] : [])];
   if (role === 'investor') return ['inventory','reports'];
   if (role === 'technician') return canStockQc() ? ['inventory','qc_parts','qc_repair','quality','parts_stock','service'] : ['inventory','service'];
-  if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality','qc_new','qc_handover','parts_stock'] : [])];
+  if (role === 'owner') return ['dashboard','orders','inventory','transfers','service','warranty','contacts','finance','reports','branches', ...(atCentral() ? ['receiving','quality','qc_new','qc_handover','qc_archive','parts_stock'] : [])];
   if (role === 'operator' && atCentral()) return ['dashboard','inventory','service','warranty','contacts','reports'];
   return ['dashboard','inventory','transfers', ...(role === 'operator' ? ['orders','cashier'] : []), 'service','warranty', ...(role === 'operator' ? ['contacts'] : []), 'reports', ...(atCentral() ? ['receiving'] : [])];
 };
 const canTechnician = () => state.profile?.role === 'technician';
 const statusText = { received: 'Diterima', diagnosing: 'Diagnosa', waiting_approval: 'Menunggu persetujuan', waiting_parts: 'Menunggu sparepart', repairing: 'Sedang dikerjakan', ready: 'Siap diambil', handed_over: 'Diserahkan', cancelled: 'Dibatalkan' };
 const stockStatusText = { awaiting_qc_handover: 'Lolos QC · menunggu terima fisik', reserved_online: 'Dipesan online', withdrawn: 'Dikeluarkan lewat koreksi', pending_qc: 'Menunggu QC', repair_needed: 'Perlu repair', repairing: 'Sedang repair', waiting_parts: 'Menunggu sparepart', available: 'Tersedia', not_sellable: 'Karantina / retur', scrap: 'Scrap / kanibal', sold: 'Terjual', used_for_service: 'Terpakai servis', transferred: 'Dipindahkan' };
-const pages = { orders: ['Pesanan online', '▣'], dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], qc_handover: ['Serah terima hasil QC', '▣'], qc_new: ['Terima Laptop Borongan', '▤'], qc_parts: ['Menunggu sparepart', '▧'], qc_repair: ['Repair fisik', '⌁'], qc_scrap: ['Scrap / kanibal', '▣'], qc_dispatch: ['Serah terima ke Admin', '⇄'], parts_stock: ['Sparepart Pusat', '▧'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
+const pages = { orders: ['Pesanan online', '▣'], dashboard: ['Dashboard', '▦'], receiving: ['Penerimaan & barcode', '▤'], quality: ['QC & repair', '⌁'], qc_handover: ['Serah terima hasil QC', '▣'], qc_new: ['Terima Laptop Borongan', '▤'], qc_archive: ['Arsip uji coba', '▤'], qc_parts: ['Menunggu sparepart', '▧'], qc_repair: ['Repair fisik', '⌁'], qc_scrap: ['Scrap / kanibal', '▣'], qc_dispatch: ['Serah terima ke Admin', '⇄'], parts_stock: ['Sparepart Pusat', '▧'], inventory: ['Produk & stok', '▧'], transfers: ['Mutasi stok', '⇄'], cashier: ['Kasir', '▣'], service: ['Servis pelanggan', '⌁'], warranty: ['Garansi', '◈'], contacts: ['Pelanggan & supplier', '♙'], finance: ['Keuangan', 'Rp'], reports: ['Laporan', '▥'], branches: ['Pengaturan Aplikasi', '⌂'] };
 
 function toast(message, error = false) {
   const old = document.querySelector('.toast');
@@ -548,6 +548,7 @@ async function showPage(name, { background = false } = {}) {
     else if (name === 'receiving') await receivingPage(page);
     else if (name === 'quality') await qualityPage(page);
     else if (name === 'qc_handover') await qcHandoverPage(page);
+    else if (name === 'qc_archive') await qcArchivePage(page);
     else if (['qc_new','qc_parts','qc_repair','qc_scrap','qc_dispatch'].includes(name)) await technicianWorkflowPage(page, name);
     else if (name === 'parts_stock') await partsStockPage(page);
     else if (name === 'inventory') await inventoryPage(page);
@@ -907,11 +908,11 @@ function bindQcUnitDetails(page) {
 }
 
 function completeQcRepairModal(repairId) {
-  openModal('Selesai dan serahkan ke Admin Pusat', 'Pastikan sparepart terpasang dan uji fungsi akhir selesai. Unit tetap belum siap mutasi sampai admin menerima fisiknya.',
+  openModal('Simpan dan loloskan ke Admin Pusat', 'Catat hasil pemasangan dan uji fungsi akhir. Biaya sparepart yang sudah dicatat otomatis masuk riwayat repair dan laporan QC. Unit menunggu pemeriksaan fisik Admin sebelum siap dijual atau dimutasi.',
     '<div class="form-grid"><div class="field full"><label>Hasil pengerjaan dan uji fungsi</label><textarea name="resolution" required minlength="5" maxlength="2000"></textarea></div><div class="field"><label>Ongkos jasa / repair luar yang dibayar sekarang</label><input type="number" name="labor" min="0" max="1000000000" value="0" required /><small>Isi 0 untuk pekerjaan internal tanpa pembayaran jasa baru.</small></div><label class="full"><input type="checkbox" name="final_check" required /> Saya telah menguji fungsi akhir dan memastikan unit normal.</label></div>', async form => {
       checkError(await supabase.rpc('complete_qc_repair', {_repair_id: repairId,_resolution: String(form.get('resolution') || '').trim(),_labor_cost: Number(form.get('labor')),_final_check: form.get('final_check') === 'on'}));
       toast('Pengerjaan dan uji akhir tersimpan. Unit masuk antrean QC akhir Admin Pusat.'); await showPage('quality');
-    }, 'Selesai & kirim serah terima');
+    }, 'Simpan & loloskan ke Admin');
 }
 
 function scrapQcUnitModal(id) {
@@ -949,8 +950,8 @@ async function technicianWorkflowPage(page, stage) {
       const job = jobFor(unit), parts=(job?.stock_repair_parts || []), cost=jobs.filter(j=>j.stock_item_id===unit.id).reduce((n,j)=>n+Number(j.labor_cost || 0)+(j.stock_repair_parts || []).reduce((m,p)=>m+Number(p.cost || 0),0),0);
       const receivedDate = unit.created_at ? new Date(unit.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Tanggal tidak tersedia';
       const intakeDetails = stage === 'qc_new' ? `<div class="field-hint">Supplier: ${esc(unit.supplier || 'Tidak tercatat')}</div><div class="field-hint">Diterima: ${esc(receivedDate)}</div>` : '';
-      const actions = stage==='qc_new' ? `<button type="button" class="small-btn" data-tech-check="${unit.id}">Input data QC</button>`
-        : ['qc_parts','qc_repair'].includes(stage) && job ? `${job.status==='repair_needed' ? `<button type="button" class="small-btn" data-tech-start="${job.id}">Mulai repair</button>` : ''}<button type="button" class="small-btn" data-tech-part="${job.id}">Ambil sparepart Pusat</button><button type="button" class="small-btn" data-tech-external="${job.id}">Beli dari luar</button><button type="button" class="small-btn" data-tech-finish="${job.id}">Selesai & serahkan</button>${stage==='qc_repair' ? `<button type="button" class="small-btn" data-tech-wait="${job.id}">Menunggu sparepart</button>` : ''}<button type="button" class="small-btn danger" data-tech-scrap="${unit.id}">Scrap / kanibal</button>`
+      const actions = stage==='qc_new' ? `<button type="button" class="small-btn" data-tech-check="${unit.id}">Input data QC</button><button type="button" class="small-btn danger" data-archive-test="${unit.id}">Arsip uji coba</button>`
+        : ['qc_parts','qc_repair'].includes(stage) && job ? `${job.status==='repair_needed' ? `<button type="button" class="small-btn" data-tech-start="${job.id}">Mulai repair</button>` : ''}<button type="button" class="small-btn" data-tech-part="${job.id}">Ambil sparepart Pusat</button><button type="button" class="small-btn" data-tech-external="${job.id}">Beli dari luar</button><button type="button" class="small-btn" data-tech-finish="${job.id}">${parts.length ? 'Simpan & loloskan ke Admin' : 'Selesai & serahkan'}</button>${stage==='qc_repair' ? `<button type="button" class="small-btn" data-tech-wait="${job.id}">Menunggu sparepart</button>` : ''}<button type="button" class="small-btn danger" data-tech-scrap="${unit.id}">Scrap / kanibal</button>`
         : ['qc_parts','qc_repair'].includes(stage) ? 'Pekerjaan repair tidak ditemukan. Hubungi Pemilik untuk memeriksa riwayat unit.' : stage==='qc_dispatch' ? 'Menunggu scan penerimaan fisik admin' : 'Tidak dapat dijual';
       return `<tr data-tech-search="${esc([unit.barcode,unit.intake_batch_id,unit.serial_number,unit.supplier,unit.products?.name,unit.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${unit.id}">${esc(unit.barcode)} Â· Detail</button><div>${esc(unit.products?.name || 'Laptop')}</div><small>Penerimaan ${esc(unit.intake_batch_id?.slice(0,8).toUpperCase() || '-')} Â· ${esc(unit.serial_number || 'Tanpa serial')}</small>${intakeDetails}</td>
       <td><span class="pill">${esc(qcTrackingLabels[qcTrackingStatus(unit)] || unit.status)}</span><div>${esc(job?.issue || unit.qc_notes || '-')}</div>${parts.map(part=>`<div class="field-hint">${esc(part.product_name)} Ã— ${Number(part.quantity)} Â· ${money(part.cost)}</div>`).join('')}</td><td>${money(Number(unit.acquisition_cost || 0)+cost)}<div class="field-hint">Beli ${money(unit.acquisition_cost)} Â· part/jasa ${money(cost)}</div></td><td><div class="actions-cell">${actions}</div></td></tr>`;
@@ -960,6 +961,7 @@ async function technicianWorkflowPage(page, stage) {
   search.addEventListener('input',render); render(); bindQcUnitDetails(page);
   page.querySelector('#tech-parts-stock')?.addEventListener('click',()=>showPage('parts_stock'));
   page.querySelectorAll('[data-tech-check]').forEach(button=>button.addEventListener('click',()=>beginStockQc(rows.find(unit=>unit.id===button.dataset.techCheck))));
+  page.querySelectorAll('[data-archive-test]').forEach(button=>button.addEventListener('click',()=>archiveTestLaptopModal(rows.find(unit=>unit.id===button.dataset.archiveTest))));
   page.querySelectorAll('[data-tech-part]').forEach(button=>button.addEventListener('click',()=>repairPartModal(button.dataset.techPart,stage)));
   page.querySelectorAll('[data-tech-external]').forEach(button=>button.addEventListener('click',()=>externalRepairPartModal(button.dataset.techExternal,stage)));
   page.querySelectorAll('[data-tech-finish]').forEach(button=>button.addEventListener('click',()=>completeQcRepairModal(button.dataset.techFinish)));
@@ -1030,13 +1032,16 @@ function sparepartEditModal(product) {
 async function qcHandoverPage(page) {
   if (!atCentral() || !(canManage() || isCentralAdmin())) throw new Error('Serah terima hanya untuk Pemilik dan Admin Pusat di Cabang Pusat.');
   const branchId = state.branchId;
-  const [pending, received, notes, people] = await Promise.all([
+  const [pending, receivedRows, notes, people, archivedItems] = await Promise.all([
     fetchAllRows(supabase.from('stock_items').select('id,barcode,serial_number,intake_batch_id,qc_at,qc_by,qc_notes,products(name)').eq('branch_id', branchId).eq('status', 'awaiting_qc_handover').order('qc_at')),
     fetchAllRows(supabase.from('qc_handovers').select('id,stock_item_id,intake_batch_id,barcode,product_name,technician_name,accepted_by_name,accepted_at,qc_at,note').eq('organization_id', state.organization.id).eq('branch_id', branchId).order('accepted_at', {ascending: false})),
     fetchAllRows(supabase.from('qc_handover_notes').select('id,stock_item_id,barcode,qc_at,note,created_by_name,created_at').eq('organization_id', state.organization.id).eq('branch_id', branchId).order('created_at', {ascending: false})),
     fetchAllRows(supabase.from('profiles').select('id,full_name').eq('organization_id', state.organization.id)),
+    fetchAllRows(supabase.from('stock_items').select('id').eq('branch_id',branchId).not('test_archive_id','is',null)),
   ]);
   if (!page.isConnected || state.branchId !== branchId) return;
+  const archivedIds=new Set(archivedItems.map(item=>item.id));
+  const received=receivedRows.filter(item=>!archivedIds.has(item.stock_item_id));
   const technicianNames = new Map(people.map(person => [person.id,person.full_name]));
   const relevantNotes = item => notes.filter(note => note.stock_item_id === item.id && note.qc_at === item.qc_at);
   const summary = (label, key) => `<article class="card"><div class="card-label">${label}</div><div class="card-value" data-handover-count="${key}">0</div><div class="card-sub">Sesuai pencarian / kode penerimaan</div></article>`;
@@ -1047,7 +1052,7 @@ async function qcHandoverPage(page) {
     <p class="notice">Contoh: 10 lolos QC, 9 diterima fisik = 9 siap mutasi + 1 belum diterima. Unit belum diterima tetap tercatat dalam modal, tetapi tidak dapat dijual atau dimutasi. Catatan selisih tidak otomatis menghapus aset.</p>
     <div class="field"><label for="handover-search">Cari kode penerimaan, barcode, produk, atau serial</label><input type="search" id="handover-search" /></div>
     <section class="panel table-panel" data-handover-pending><div class="panel-head"><div class="panel-title">Belum diterima fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / UNIT</th><th>PENERIMAAN / QC</th><th>CATATAN SELISIH</th><th>AKSI</th></tr></thead><tbody>
-    ${pending.map(item => `<tr data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button></td></tr>`).join('')}
+    ${pending.map(item => `<tr data-handover-search="${esc(searchText(item))}" data-handover-issue="${relevantNotes(item).length ? 'yes' : 'no'}"><td><b>${esc(item.barcode)}</b><div>${esc(item.products?.name || 'Laptop')}</div><small>${esc(item.serial_number || 'Tanpa serial')}</small></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${new Date(item.qc_at).toLocaleString('id-ID')}</div><div>${esc(technicianNames.get(item.qc_by) || 'Teknisi tidak tercatat')}</div><small>${esc(item.qc_notes || '')}</small></td><td>${relevantNotes(item).map(note => `<div>${esc(note.note)}<small> · ${esc(note.created_by_name)} · ${new Date(note.created_at).toLocaleString('id-ID')}</small></div>`).join('') || 'Belum ada catatan'}</td><td><button class="small-btn" type="button" data-handover-issue-unit="${item.id}">Catat selisih</button> <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button></td></tr>`).join('')}
     <tr data-handover-empty><td colspan="4">Tidak ada unit yang cocok.</td></tr></tbody></table></div></section>
     <section class="panel table-panel" data-handover-received style="margin-top:14px"><div class="panel-head"><div class="panel-title">Riwayat penerimaan fisik</div></div><div class="table-wrap"><table><thead><tr><th>BARCODE / PRODUK</th><th>PENERIMAAN / TEKNISI</th><th>DITERIMA OLEH</th><th>WAKTU / CATATAN</th></tr></thead><tbody>
     ${received.map(item => `<tr data-handover-search="${esc(searchText(item))}"><td><b>${esc(item.barcode)}</b><div>${esc(item.product_name)}</div></td><td>${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}<div>${esc(item.technician_name)}</div></td><td>${esc(item.accepted_by_name)}</td><td>${new Date(item.accepted_at).toLocaleString('id-ID')}<div>${esc(item.note || '-')}</div>${notes.filter(note => note.stock_item_id === item.stock_item_id && note.qc_at === item.qc_at).map(note => `<div class="field-hint">Riwayat selisih: ${esc(note.note)} · ${esc(note.created_by_name)}</div>`).join('')}</td></tr>`).join('')}
@@ -1090,13 +1095,47 @@ async function qcHandoverPage(page) {
         toast('Catatan selisih tersimpan. Aset dan modal tidak dihapus.'); await showPage('qc_handover');
       });
   }));
+  page.querySelectorAll('[data-archive-test]').forEach(button=>button.addEventListener('click',()=>archiveTestLaptopModal(pending.find(item=>item.id===button.dataset.archiveTest))));
+}
+
+function archiveTestLaptopModal(item) {
+  if (!item) return;
+  openModal('Arsipkan laptop uji coba?', `${esc(item.barcode || 'Unit ini')} akan dikeluarkan dari antrean operasional dan stok aktif. Riwayat QC, repair, sparepart, penerimaan fisik, dan biaya tetap disimpan sebagai audit.`,
+    '<div class="field"><label>Alasan arsip</label><textarea name="reason" required minlength="10" maxlength="500" placeholder="Contoh: unit/barcode ini hanya data uji coba aplikasi."></textarea></div><label class="full"><input type="checkbox" name="test_only" required /> Saya memastikan laptop ini hanya data uji coba, bukan unit pembelian aktif.</label>',
+    async form => {
+      checkError(await supabase.rpc('archive_test_laptop',{_stock_item_id:item.id,_reason:String(form.get('reason') || '').trim(),_confirmed:form.get('test_only')==='on'}));
+      toast('Unit uji coba masuk Arsip uji coba. Riwayat biaya dan sparepart tetap tercatat.');
+      await showPage(state.page);
+    }, 'Arsipkan unit');
+}
+
+async function qcArchivePage(page) {
+  if (!canAdminQc()) throw new Error('Arsip uji coba hanya untuk Admin Pusat dan Pemilik.');
+  const branchId=state.branchId;
+  const units=await fetchAllRows(supabase.from('qc_test_archive_log').select('*').eq('branch_id',branchId).order('archived_at',{ascending:false}));
+  if(!page.isConnected || state.branchId!==branchId)return;
+  page.innerHTML=`${header('Arsip uji coba','Unit yang diarsipkan keluar dari antrean dan stok aktif. Riwayat pembelian, sparepart, QC, dan serah terima tetap tersimpan.', '<button type="button" class="btn" id="archive-back-quality">Kembali ke Laporan QC Teknisi</button>')}
+    <div class="notice">Pulihkan hanya jika unit ternyata bukan data uji coba. Pemulihan selalu mengembalikan unit ke antrean QC akhir Admin Pusat, bukan langsung ke stok jual.</div>
+    <section class="panel table-panel"><div class="panel-head"><div class="panel-title">Unit diarsipkan</div><input type="search" id="archive-search" class="search" placeholder="Cari barcode, batch, atau produk" /></div><div class="table-wrap"><table><thead><tr><th>BARCODE / PRODUK</th><th>STATUS SEBELUM ARSIP</th><th>ALASAN</th><th>DIARSIPKAN</th><th>AKSI</th></tr></thead><tbody>
+    ${units.map(item=>`<tr data-archive-row data-archive-search="${esc([item.barcode,item.intake_batch_id,item.product_name].join(' ').toLowerCase())}"><td><b>${esc(item.barcode)}</b><div>${esc(item.product_name || 'Laptop')}</div><small>Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')}</small></td><td>${esc(qcTrackingLabels[item.status_before] || stockStatusText[item.status_before] || item.status_before || '—')}</td><td>${esc(item.reason || '—')}</td><td>${new Date(item.archived_at).toLocaleString('id-ID')}<div class="field-hint">${esc(item.archived_by_name || 'Admin/Pemilik')}${item.restored_at ? ` · Dipulihkan ${new Date(item.restored_at).toLocaleString('id-ID')}` : ''}</div></td><td>${item.restored_at ? 'Sudah dipulihkan' : `<button type="button" class="small-btn" data-restore-test="${item.id}">Pulihkan ke antrean QC</button>`}</td></tr>`).join('') || '<tr><td colspan="5">Belum ada unit uji coba yang diarsipkan.</td></tr>'}
+    <tr id="archive-empty" hidden><td colspan="5">Tidak ada unit yang cocok.</td></tr></tbody></table></div></section>`;
+  page.querySelector('#archive-back-quality').addEventListener('click',()=>showPage('quality'));
+  const search=page.querySelector('#archive-search'),rows=[...page.querySelectorAll('[data-archive-row]')],empty=page.querySelector('#archive-empty');
+  search.addEventListener('input',()=>filterPagedRows(empty.closest('tbody'),rows,row=>row.dataset.archiveSearch.includes(search.value.trim().toLowerCase()),empty));
+  page.querySelectorAll('[data-restore-test]').forEach(button=>button.addEventListener('click',()=>{
+    openModal('Pulihkan unit ke QC akhir?', 'Unit akan kembali ke antrean Admin Pusat untuk pemeriksaan ulang. Riwayat arsip dan transaksi sebelumnya tetap tersimpan.',
+      '<div class="field"><label>Alasan pemulihan</label><textarea name="reason" required minlength="5" maxlength="500"></textarea></div>',async form=>{
+        checkError(await supabase.rpc('restore_test_laptop',{_archive_id:button.dataset.restoreTest,_reason:String(form.get('reason') || '').trim()}));
+        toast('Unit dipulihkan ke antrean QC akhir Admin Pusat.'); await showPage('qc_archive');
+      },'Pulihkan ke antrean QC');
+  }));
 }
 
 async function qcResultsPanel() {
   const rows = await fetchAllRows(supabase.from('stock_items')
-    .select('id,barcode,serial_number,branch_id,status,intake_batch_id,created_at,qc_stage,qc_at,qc_by,qc_notes,qc_started_at,qc_started_by,products(name,sku,category),intake_batches(branch_id)')
+    .select('id,barcode,serial_number,branch_id,status,intake_batch_id,created_at,qc_stage,qc_at,qc_by,qc_notes,qc_started_at,qc_started_by,test_archived_at,products(name,sku,category),intake_batches(branch_id)')
     .order('created_at', { ascending: false }));
-  const results = rows.filter(item => (item.intake_batch_id || item.qc_at || item.status === 'pending_qc') && (item.products?.category === 'Laptop' || item.qc_at) && (item.intake_batches?.branch_id === state.branchId || (!item.intake_batches && item.branch_id === state.branchId)));
+  const results = rows.filter(item => !item.test_archived_at && (item.intake_batch_id || item.qc_at || item.status === 'pending_qc') && (item.products?.category === 'Laptop' || item.qc_at) && (item.intake_batches?.branch_id === state.branchId || (!item.intake_batches && item.branch_id === state.branchId)));
   const labels = qcTrackingLabels;
   const repairCosts = new Map();
   if (canManage()) {
@@ -1123,7 +1162,7 @@ async function qcResultsPanel() {
     <input class="search" id="qc-result-search" type="search" placeholder="Cari kode penerimaan, barcode, produk, atau serial" aria-label="Cari unit dan kode penerimaan" />
     <label>Status <select id="qc-result-status" class="status-select"><option value="">Semua status</option>${Object.entries(labels).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div>
     <div class="table-wrap"><table><thead><tr><th>UNIT / PRODUK</th><th>STATUS</th><th>CATATAN QC</th>${canManage() ? '<th>BIAYA REPAIR</th>' : ''}<th>PEMERIKSAAN TERAKHIR</th></tr></thead><tbody>
-    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}</td></tr>`).join('')}
+    ${results.map((item) => `<tr data-qc-result="${esc(qcTrackingStatus(item))}" data-qc-search="${esc([item.intake_batch_id, item.barcode, item.serial_number, item.products?.name, item.products?.sku].join(' ').toLowerCase())}"><td><button type="button" class="link-button" data-qc-unit-detail="${esc(item.id)}">${esc(item.barcode)} · Detail</button><div class="field-hint">${esc(item.products?.name || 'Laptop')} · ${esc(item.serial_number || 'Tanpa serial')}</div><div class="field-hint">Penerimaan ${esc(item.intake_batch_id?.slice(0,8).toUpperCase() || '-')} · Diterima ${new Date(item.created_at).toLocaleDateString('id-ID')}</div><div class="field-hint">Lokasi sekarang: ${esc(branchName(item.branch_id))}</div></td><td><span class="pill">${esc(labels[qcTrackingStatus(item)] || item.status)}</span></td><td>${esc(item.qc_notes || '—')}</td>${canManage() ? `<td><b>${money(repairCosts.get(item.id)?.total || 0)}</b>${(repairCosts.get(item.id)?.parts || []).map((part) => `<div class="field-hint">${esc(part.product_name)} × ${part.quantity} · ${money(part.cost)} · ${esc(part.external_supplier || 'Stok Pusat')}${part.external_supplier ? ` · ${esc(part.purchased_on)}${part.invoice_number ? ' · Nota ' + esc(part.invoice_number) : ''} · ${part.paid_at ? 'Dibayar' : 'Belum dibayar'}${!part.paid_at ? ` <button type="button" class="small-btn" data-pay-external="${part.id}" data-pay-repair="${part.repairId}">Catat pembayaran</button>` : ''}` : ''}</div>`).join('')}</td>` : ''}<td>${item.qc_at ? new Date(item.qc_at).toLocaleString('id-ID') : 'Belum diperiksa Admin Pusat'}${qcTrackingStatus(item) === 'checking' ? `<div class="field-hint">Mulai ${new Date(item.qc_started_at).toLocaleString('id-ID')}</div>` : ''}<div class="field-hint">${esc(names.get(qcTrackingStatus(item) === 'checking' ? item.qc_started_by : item.qc_by) || '-')}</div>${canAdminQc() && item.status === 'pending_qc' && item.branch_id === state.branchId ? `<button type="button" class="small-btn" data-qc="${item.id}">${item.qc_stage === 'final' ? 'QC akhir' : 'Mulai QC'}</button>` : ''}${canAdminQc() && item.intake_batch_id && item.branch_id === state.branchId ? ` <button type="button" class="small-btn danger" data-archive-test="${item.id}">Arsip uji coba</button>` : ''}</td></tr>`).join('')}
     <tr id="qc-result-empty" ${results.length ? 'hidden' : ''}><td colspan="${canManage() ? 5 : 4}"><div class="empty">Tidak ada unit yang cocok dengan pencarian atau status ini.</div></td></tr></tbody></table></div>
   </section>`;
 }
@@ -1144,11 +1183,13 @@ function bindQcResultFilter(page) {
 async function qualityPage(page) {
   if (!canStockQc()) throw new Error('QC stok hanya tersedia di Cabang Pusat.');
   const resultsPanel = await qcResultsPanel();
-  page.innerHTML = `${header('Laporan QC Teknisi', 'Pantau setiap unit sejak penerimaan hingga hasil QC dan progres perbaikan.')}${resultsPanel}`;
+  page.innerHTML = `${header('Laporan QC Teknisi', 'Pantau setiap unit sejak penerimaan hingga hasil QC dan progres perbaikan.', canAdminQc() ? '<button type="button" class="btn" id="open-qc-archive">Arsip uji coba</button>' : '')}${resultsPanel}`;
+  page.querySelector('#open-qc-archive')?.addEventListener('click',()=>showPage('qc_archive'));
   bindQcResultFilter(page);
   page.querySelectorAll('[data-qc]').forEach(button => button.addEventListener('click', async () => {
     try { await beginStockQc(await fetchQcUnit(button.dataset.qc)); } catch (error) { toast(error.message,true); }
   }));
+  page.querySelectorAll('[data-archive-test]').forEach(button => button.addEventListener('click',()=>archiveTestLaptopModal({id:button.dataset.archiveTest,barcode:button.closest('tr')?.querySelector('[data-qc-unit-detail]')?.textContent?.replace(' · Detail','') || ''})));
   bindQcUnitDetails(page);
   if (canManage()) bindExternalPartPayments(page);
 }
@@ -1813,7 +1854,7 @@ async function inventoryPage(page) {
     const badge = item.status === 'available' ? '' : ['pending_qc','repair_needed','repairing','waiting_parts'].includes(item.status) ? 'warn' : 'gray';
     return `<tr data-unit-status="${esc(item.status)}" data-unit-batch="${esc(item.intake_batch_id || '')}"><td data-label="Barcode / unit" class="product-name"><label class="unit-barcode-choice"><input type="checkbox" data-unit-label-id="${esc(item.id)}" aria-label="Pilih barcode ${esc(item.barcode)} untuk dicetak" /><span>${esc(item.barcode)}<span class="field-hint">${esc(product?.name || 'Laptop')}</span>${item.intake_batch_id ? `<span class="field-hint">Penerimaan ${esc(item.intake_batch_id.slice(0,8).toUpperCase())}</span>` : ''}</span></label></td><td data-label="Serial / supplier">${esc(item.serial_number || '—')}<div class="field-hint">Sumber: ${item.opening_batch_id ? 'Stok awal' : esc(item.supplier || 'Supplier tidak dicatat')}</div></td><td data-label="Status unit"><span class="pill ${badge}">${stockStatusText[item.status] || item.status}</span></td><td data-label="Modal per unit">${money(item.acquisition_cost)}</td><td data-label="Garansi">${item.warranty_until ? new Date(`${item.warranty_until}T00:00:00`).toLocaleDateString('id-ID') : 'Mulai setelah terjual'}</td><td><div class="actions-cell"><button class="small-btn" data-print-barcode="${esc(item.barcode)}">Cetak barcode stok</button>${item.warranty_code ? `<button class="small-btn" data-print-warranty-unit="${item.id}">Cetak QR garansi</button>` : ''}${canEditProducts() && item.status === 'available' && Number(item.quantity) === 1
       ? `<button type="button" class="small-btn danger" data-withdraw-stock-unit="${esc(item.id)}">Keluarkan unit</button>` : ''}
-      ${canManage() && item.status === 'withdrawn' ? restoreUnitButton(item.id) : ''}</div></td></tr>`;
+      ${canManage() && item.status === 'withdrawn' && !item.test_archive_id ? restoreUnitButton(item.id) : ''}</div></td></tr>`;
   }).join('');
   const renderComponentLots = (items) => items.map((item) => {
     const product = products.find((row) => row.id === item.product_id);
